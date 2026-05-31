@@ -5,14 +5,16 @@
 #include <cstdint>
 #include <vector>
 
+#include "d3renderstream.h"
+
 namespace rs {
 
 struct ClipRect { float left = 0; float right = 1; float top = 0; float bottom = 1; };
 
 struct LayoutInfo {
-    int n_layers = 1;
-    int width    = 1920;
-    int height   = 1080;
+    int n_layers = 0;
+    int width    = 0;
+    int height   = 0;
     ClipRect clip;
 };
 
@@ -32,10 +34,11 @@ public:
     bool Initialize(ID3D12Device* device, ID3D12CommandQueue* queue);
     void Shutdown();
 
-    // Queue a texture→readback copy. When the last layer of a frame is
-    // submitted, the GPU work is flushed and the previous frame's readback
-    // data becomes available via GetReadyPack().
-    bool SubmitFrame(ID3D12Resource* tex, const LayoutInfo& layout, int layer_key);
+    // Set the output layout (called once after initialise).
+    void SetLayout(const LayoutInfo& layout) { layout_ = layout; }
+
+    // Queue a texture→readback copy for one layer.
+    bool SubmitFrame(const SenderFrame* frame, int layer_key);
 
     // After SubmitFrame: returns completed frame data for NDI shipping.
     // The returned vector is moved out; the internal pack is cleared.
@@ -51,6 +54,8 @@ private:
     void EnsureResources();
     bool EnsureReadbackPool(int width, int height, UINT row_pitch, UINT64 total_bytes);
     void ReleaseReadbackPool();
+
+    LayoutInfo layout_;
 
     // D3D12 core
     ID3D12Device*              device_          = nullptr;

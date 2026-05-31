@@ -74,8 +74,16 @@ void GpuContext::EnsureResources() {
                                    allocator_[0], nullptr, IID_PPV_ARGS(&cmd_list_));
 }
 
-bool GpuContext::SubmitFrame(ID3D12Resource* tex, const LayoutInfo& layout, int layer_key) {
-    if (!device_ || !queue_ || !tex) return false;
+bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
+    if (!device_ || !queue_ || !frame) return false;
+
+    // Extract D3D12 texture from the Disguise SenderFrame.
+    ID3D12Resource* tex = nullptr;
+    if (frame->type == RS_FRAMETYPE_DX12_TEXTURE)
+        tex = frame->dx12.resource;
+    else if (frame->type == RS_FRAMETYPE_DX11_TEXTURE)
+        tex = reinterpret_cast<ID3D12Resource*>(frame->dx11.resource);
+    if (!tex) return false;
 
     D3D12_RESOURCE_DESC desc = tex->GetDesc();
     const int tex_w = static_cast<int>(desc.Width);
@@ -98,18 +106,17 @@ bool GpuContext::SubmitFrame(ID3D12Resource* tex, const LayoutInfo& layout, int 
                                    nullptr, nullptr, &buffer_size_);
 
     D3D12_BOX box;
-    box.left   = static_cast<UINT>(static_cast<float>(tex_w) * layout.clip.left);
-    box.right  = static_cast<UINT>(static_cast<float>(tex_w) * layout.clip.right);
-    box.top    = static_cast<UINT>(static_cast<float>(tex_h) * layout.clip.top);
-    box.bottom = static_cast<UINT>(static_cast<float>(tex_h) * layout.clip.bottom);
+    box.left   = static_cast<UINT>(static_cast<float>(tex_w) * layout_.clip.left);
+    box.right  = static_cast<UINT>(static_cast<float>(tex_w) * layout_.clip.right);
+    box.top    = static_cast<UINT>(static_cast<float>(tex_h) * layout_.clip.top);
+    box.bottom = static_cast<UINT>(static_cast<float>(tex_h) * layout_.clip.bottom);
     box.front  = 0;
     box.back   = 1;
     footprint.Footprint.Width  = box.right - box.left;
     footprint.Footprint.Height = box.bottom - box.top;
     footprint.Footprint.Depth  = 1;
 
-    const UINT64 row_pitch  = Align(footprint.Footprint.Width * 4,
-                                    D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
+    const UINT64 row_pitch  = Align(footprint.Footprint.Width * 4, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
     const UINT64 total_bytes = row_pitch * footprint.Footprint.Height;
     block_size_ = static_cast<UINT>(total_bytes);
 
@@ -147,7 +154,7 @@ bool GpuContext::SubmitFrame(ID3D12Resource* tex, const LayoutInfo& layout, int 
     data_pack_[data_pack_index_ == 0 ? 0 : 1].push_back(buf);
 
     // Check if this was the last layer of the frame.
-    if (image_index_ == (layout.n_layers - 1)) {
+    if (image_index_ == (layout_.n_layers - 1)) {
         // Close, execute, signal.
         cmd_list_->Close();
         ID3D12CommandList* lists[] = { cmd_list_ };
@@ -173,7 +180,7 @@ bool GpuContext::SubmitFrame(ID3D12Resource* tex, const LayoutInfo& layout, int 
         data_pack_index_ = other;
         command_index_ = (command_index_ + 1) % 2;
     }
-    image_index_ = (image_index_ + 1) % layout.n_layers;
+    image_index_ = (image_index_ + 1) % layout_.n_layers;
     return true;
 }
 
@@ -277,8 +284,6 @@ bool GpuContext::EnsureReadbackPool(int frame_w, int frame_h,
 }
 
 }  // namespace rs
-
-// ---- exported API (DLL entry points) -----------------------------------------
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithoutInterop(ID3D11Device*) {
     return RS_ERROR_SUCCESS;
