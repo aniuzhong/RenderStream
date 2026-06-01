@@ -229,7 +229,7 @@ bool GpuContext::EnsureReadbackPool(int frame_w, int frame_h,
     total_bytes = (std::max)(total_bytes, req_total_bytes);
     total_bytes = (std::max)(total_bytes, static_cast<UINT64>(row_pitch) * fp_h);
 
-    int n_l = 1;
+    int n_l = layout_.n_layers > 0 ? layout_.n_layers : 1;
     if (n_l > kMaxLayers)
         n_l = kMaxLayers;
 
