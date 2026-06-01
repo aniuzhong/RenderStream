@@ -185,15 +185,23 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
 }
 
 std::vector<FrameBuffer> GpuContext::ConsumeReadyPack() {
-    int ready_idx = (data_pack_index_ + 1) % 2;
+    // data_pack_index_ points to the pack whose fence was just waited
+    // in SubmitFrame.  That pack is safe to consume.
+    int ready_idx = data_pack_index_;
+    if (ready_idx < 0) ready_idx = 0;
     std::vector<FrameBuffer> result = std::move(data_pack_[ready_idx]);
     data_pack_[ready_idx].clear();
     return result;
 }
 
-// readback pool
-
 void GpuContext::ReleaseReadbackPool() {
+    // Wait for all in-flight GPU work before releasing buffers.
+    for (int i = 0; i < 2; ++i) {
+        if (fence_[i] && fence_[i]->GetCompletedValue() < fence_value_[i]) {
+            fence_[i]->SetEventOnCompletion(fence_value_[i], fence_event_[i]);
+            WaitForSingleObject(fence_event_[i], INFINITE);
+        }
+    }
     for (int l = 0; l < kMaxLayers; ++l) {
         rb_next_bank_[l] = 0;
         for (int b = 0; b < 2; ++b) {
