@@ -1,0 +1,105 @@
+#include "hosting.h"
+#include "logging.h"
+#include "topology.h"
+#include "utils.h"
+
+#include <thread>
+#include <utility>
+
+namespace chrono = std::chrono;
+
+namespace rs {
+
+Hosting::Hosting(Config cfg)
+    : cfg_(std::move(cfg)),
+      fn_(cfg_.camera ? cfg_.camera : OrbitCameraFn),
+      dt_(1.0 / cfg_.fps) {}
+
+//  Frame pacing 
+
+RS_ERROR Hosting::AwaitFrame(FrameData* data) {
+    auto now = chrono::steady_clock::now();
+    if (!t0_set_) {
+        t0_ = now;
+        t0_set_ = true;
+    } else {
+        auto target = t0_ + chrono::duration_cast<chrono::steady_clock::duration>(
+                                chrono::duration<double>(frame_ * dt_));
+        if (target > now)
+            std::this_thread::sleep_until(target);
+    }
+
+    const double t = chrono::duration<double>(chrono::steady_clock::now() - t0_).count();
+    ++frame_;
+
+    data->tTracked              = t;
+    data->localTime             = t;
+    data->localTimeDelta        = dt_;
+    data->frameRateNumerator    = static_cast<unsigned int>(cfg_.fps);
+    data->frameRateDenominator  = 1;
+    data->flags                 = 0;
+    data->scene                 = 0;
+
+    const auto* topo = cfg_.topology;
+    const int n = topo ? topo->Count() : 0;
+    const int w = (n > 0) ? topo->At(0).width  : 1920;
+    const int h = (n > 0) ? topo->At(0).height : 1080;
+
+    const uint32_t current_version = topo ? topo->Version() : 0;
+    const bool topology_changed = (current_version == 0 || current_version != last_topology_version_);
+
+    if (current_version > 0)
+        last_topology_version_ = current_version;
+
+    if (topology_changed) {
+        rs::log::Info("[Hosting] AwaitFrame #%d: topo_version=%u last=%u (not-loaded=%d, changed=%d) → STREAMS_CHANGED",
+                      frame_, current_version, last_topology_version_,
+                      current_version == 0 ? 1 : 0,
+                      (current_version > 0 && current_version != last_topology_version_) ? 1 : 0);
+    }
+
+    cameras_.resize(n > 0 ? n : 1);
+    for (int i = 0; i < (n > 0 ? n : 1); ++i) {
+        CameraPose pose;
+        fn_(t, i, &pose);
+        cameras_[i] = PoseToCameraData(pose, w, h);
+    }
+
+    static int s_frame_log = 0;
+    if (++s_frame_log <= 3 || s_frame_log % 120 == 0)
+        rs::log::Info("[Hosting] AwaitFrame #%d: n_streams=%d %dx%d t=%.3f topo_version=%u changed=%d",
+                      frame_, n, w, h, t, current_version, topology_changed ? 1 : 0);
+
+    return topology_changed ? RS_ERROR_STREAMS_CHANGED : RS_ERROR_SUCCESS;
+}
+
+//  Cameras 
+
+RS_ERROR Hosting::GetCamera(StreamHandle handle, CameraData* out) {
+    if (!out) return RS_ERROR_INVALID_PARAMETERS;
+    int idx = static_cast<int>(handle) - 1;
+    if (idx < 0) idx = 0;
+    if (static_cast<size_t>(idx) >= cameras_.size()) idx = 0;
+    *out = cameras_.empty() ? CameraData{} : cameras_[idx];
+    return RS_ERROR_SUCCESS;
+}
+
+//  Scene parameters (hosting mode: no Disguise operator) 
+
+RS_ERROR Hosting::GetFrameParameters(uint64_t, void*, uint64_t) {
+    return RS_ERROR_SUCCESS;  // empty — UE plugin handles zero parameters
+}
+
+RS_ERROR Hosting::GetFrameImageData(uint64_t, ImageFrameData*, uint64_t) {
+    return RS_ERROR_SUCCESS;  // empty — no images in hosting mode
+}
+
+RS_ERROR Hosting::GetFrameImage(int64_t, const SenderFrame*) {
+    return RS_ERROR_NOTFOUND;  // no images available
+}
+
+RS_ERROR Hosting::GetFrameText(uint64_t, uint32_t, const char**) {
+    return RS_ERROR_NOTFOUND;  // no text parameters
+}
+
+}  // namespace rs
