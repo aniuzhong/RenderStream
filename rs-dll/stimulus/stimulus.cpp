@@ -5,7 +5,7 @@
 
 namespace rs {
 
-//  Singleton 
+// Singleton
 
 static std::unique_ptr<IStimulus> g_stimulus;
 
@@ -20,7 +20,7 @@ IStimulus* GetStimulus() {
 
 }  // namespace rs
 
-//  Frame pacing 
+// Frame pacing
 
 RS_ERROR rs_awaitFrameData(int timeoutMs, FrameData* data) {
     (void)timeoutMs;
@@ -38,7 +38,7 @@ RS_ERROR rs_awaitFrameData(int timeoutMs, FrameData* data) {
     return err;
 }
 
-//  Cameras 
+// Cameras
 
 RS_ERROR rs_getFrameCamera(StreamHandle streamHandle, CameraData* outCameraData) {
     auto* s = rs::GetStimulus();
@@ -46,7 +46,7 @@ RS_ERROR rs_getFrameCamera(StreamHandle streamHandle, CameraData* outCameraData)
     return s->GetCamera(streamHandle, outCameraData);
 }
 
-//  Scene parameters 
+// Scene parameters
 
 RS_ERROR rs_getFrameParameters(uint64_t schemaHash, void* outData, uint64_t size) {
     auto* s = rs::GetStimulus();
@@ -71,3 +71,25 @@ RS_ERROR rs_getFrameText(uint64_t schemaHash, uint32_t index, const char** outTe
     if (!s) return RS_ERROR_NOTFOUND;
     return s->GetFrameText(schemaHash, index, outText);
 }
+
+// Skeleton
+
+extern "C" {
+
+D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointPoses(uint64_t schemaHash, uint32_t poseParamIndex, SkeletonPose* pose, int* numJoints) {
+    if (numJoints) *numJoints = 0;
+    return RS_ERROR_NOTFOUND;
+}
+
+D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonLayout(uint64_t schemaHash, uint64_t id, SkeletonLayout* layout, int* numJoints) {
+    if (numJoints) *numJoints = 0;
+    return RS_ERROR_NOTFOUND;
+}
+
+D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointNames(uint64_t schemaHash, uint64_t layoutId, const char** names, int** nameByteLengths, int* numJoints) {
+    if (numJoints) *numJoints = 0;
+    return RS_ERROR_NOTFOUND;
+}
+
+}  // extern "C"
+

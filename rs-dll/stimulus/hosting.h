@@ -22,17 +22,13 @@ public:
 
     explicit Hosting(Config cfg);
 
-    //  IStimulus 
+    // IStimulus
     RS_ERROR AwaitFrame(FrameData* data) override;
     RS_ERROR GetCamera(StreamHandle handle, CameraData* out) override;
-
-    RS_ERROR GetFrameParameters(uint64_t schemaHash,
-                                void* outData, uint64_t size) override;
-    RS_ERROR GetFrameImageData(uint64_t schemaHash,
-                               ImageFrameData* out, uint64_t count) override;
+    RS_ERROR GetFrameParameters(uint64_t schemaHash, void* outData, uint64_t size) override;
+    RS_ERROR GetFrameImageData(uint64_t schemaHash, ImageFrameData* out, uint64_t count) override;
     RS_ERROR GetFrameImage(int64_t imageId, const SenderFrame* frame) override;
-    RS_ERROR GetFrameText(uint64_t schemaHash,
-                          uint32_t index, const char** outText) override;
+    RS_ERROR GetFrameText(uint64_t schemaHash, uint32_t index, const char** outText) override;
 
 private:
     Config cfg_;

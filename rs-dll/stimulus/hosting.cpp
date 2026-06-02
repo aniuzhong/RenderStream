@@ -73,7 +73,7 @@ RS_ERROR Hosting::AwaitFrame(FrameData* data) {
     return topology_changed ? RS_ERROR_STREAMS_CHANGED : RS_ERROR_SUCCESS;
 }
 
-//  Cameras 
+//  Cameras
 
 RS_ERROR Hosting::GetCamera(StreamHandle handle, CameraData* out) {
     if (!out) return RS_ERROR_INVALID_PARAMETERS;
