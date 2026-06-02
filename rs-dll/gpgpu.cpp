@@ -74,7 +74,7 @@ void GpuContext::EnsureResources() {
                                    allocator_[0], nullptr, IID_PPV_ARGS(&cmd_list_));
 }
 
-bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
+bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key, const ClipRect& clip) {
     if (!device_ || !queue_ || !frame) return false;
 
     // Extract D3D12 texture from the Disguise SenderFrame.
@@ -106,10 +106,10 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
                                    nullptr, nullptr, &buffer_size_);
 
     D3D12_BOX box;
-    box.left   = static_cast<UINT>(static_cast<float>(tex_w) * layout_.clip.left);
-    box.right  = static_cast<UINT>(static_cast<float>(tex_w) * layout_.clip.right);
-    box.top    = static_cast<UINT>(static_cast<float>(tex_h) * layout_.clip.top);
-    box.bottom = static_cast<UINT>(static_cast<float>(tex_h) * layout_.clip.bottom);
+    box.left   = static_cast<UINT>(static_cast<float>(tex_w) * clip.left);
+    box.right  = static_cast<UINT>(static_cast<float>(tex_w) * clip.right);
+    box.top    = static_cast<UINT>(static_cast<float>(tex_h) * clip.top);
+    box.bottom = static_cast<UINT>(static_cast<float>(tex_h) * clip.bottom);
     box.front  = 0;
     box.back   = 1;
     footprint.Footprint.Width  = box.right - box.left;
@@ -225,8 +225,15 @@ bool GpuContext::EnsureReadbackPool(int frame_w, int frame_h,
 
     int res_w = (std::max)(1, frame_w);
     int res_h = (std::max)(1, frame_h);
-    res_w = (std::max)(res_w, 1920);
-    res_h = (std::max)(res_h, 1080);
+
+    rs::log::Info("[GPU] EnsureReadbackPool: frame=%dx%d layout=%dx%d req_pitch=%u req_bytes=%llu",
+                  frame_w, frame_h, layout_.width, layout_.height, req_row_pitch, req_total_bytes);
+
+    res_w = (std::max)(res_w, layout_.width);
+    res_h = (std::max)(res_h, layout_.height);
+
+    rs::log::Info("[GPU] EnsureReadbackPool: after layout floor (%dx%d) → %dx%d",
+                  layout_.width, layout_.height, res_w, res_h);
 
     UINT fp_w = static_cast<UINT>(res_w);
     UINT fp_h = static_cast<UINT>(res_h);
@@ -237,12 +244,18 @@ bool GpuContext::EnsureReadbackPool(int frame_w, int frame_h,
     total_bytes = (std::max)(total_bytes, req_total_bytes);
     total_bytes = (std::max)(total_bytes, static_cast<UINT64>(row_pitch) * fp_h);
 
+    rs::log::Info("[GPU] EnsureReadbackPool: final row_pitch=%u total_bytes=%llu (layers=%d)",
+                  row_pitch, total_bytes, layout_.n_layers);
+
     int n_l = layout_.n_layers > 0 ? layout_.n_layers : 1;
     if (n_l > kMaxLayers)
         n_l = kMaxLayers;
 
-    if (rb_ready_ && rb_layer_count_ >= n_l && rb_row_pitch_ >= row_pitch && rb_buffer_bytes_ >= total_bytes)
+    if (rb_ready_ && rb_layer_count_ >= n_l && rb_row_pitch_ >= row_pitch && rb_buffer_bytes_ >= total_bytes) {
+        rs::log::Info("[GPU] EnsureReadbackPool: reusing existing pool (rb_row_pitch=%u ≥ %u, rb_bytes=%llu ≥ %llu)",
+                      rb_row_pitch_, row_pitch, rb_buffer_bytes_, total_bytes);
         return true;
+    }
 
     ReleaseReadbackPool();
 

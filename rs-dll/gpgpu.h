@@ -15,7 +15,6 @@ struct LayoutInfo {
     int n_layers = 0;
     int width    = 0;
     int height   = 0;
-    ClipRect clip;
 };
 
 // Filled by GpuContext::SubmitFrame — the caller ships to NDI.
@@ -38,7 +37,8 @@ public:
     void SetLayout(const LayoutInfo& layout) { layout_ = layout; }
 
     // Queue a texture→readback copy for one layer.
-    bool SubmitFrame(const SenderFrame* frame, int layer_key);
+    // |clip| is per-stream clipping from Topology {left, right, top, bottom} in [0,1].
+    bool SubmitFrame(const SenderFrame* frame, int layer_key, const ClipRect& clip);
 
     // After SubmitFrame: returns completed frame data for NDI shipping.
     // The returned vector is moved out; the internal pack is cleared.
