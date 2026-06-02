@@ -1,7 +1,7 @@
 #include "topology.h"
 #include "gpgpu.h"
 #include "logging.h"
-#include "ndisender.h"
+#include "sender.h"
 
 #include <Windows.h>
 #include <algorithm>
@@ -128,8 +128,8 @@ static void InitPipelineFromTopology() {
     rs::GetGpu().SetLayout(layout);
     rs::log::Info("[Topology] GPU layout: %d layers %dx%d", topo.Count(), max_w, max_h);
 
-    rs::GetNdi().Stop();
-    std::vector<rs::NdiLayerConfig> ndi_layers;
+    rs::GetSender().Stop();
+    std::vector<rs::LayerConfig> ndi_layers;
     for (int i = 0; i < topo.Count(); ++i) {
         const auto& s = topo.At(i);
         int cw = static_cast<int>((s.clipping.right  - s.clipping.left) * static_cast<float>(s.width));
@@ -141,8 +141,8 @@ static void InitPipelineFromTopology() {
     }
     // Must match GpuContext::Align(w*4, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT).
     const uint32_t row_pitch = (static_cast<uint32_t>(max_w * 4) + 255) & ~255u;
-    rs::GetNdi().Configure("rs_output", 0, ndi_layers);
-    rs::GetNdi().Start(row_pitch);
+    rs::GetSender().Configure("rs_output", 0, ndi_layers);
+    rs::GetSender().Start(row_pitch);
     rs::log::Info("[Topology] NDI: %d layers, max=%dx%d row_pitch=%u", topo.Count(), max_w, max_h, row_pitch);
 }
 
