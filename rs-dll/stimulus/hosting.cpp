@@ -61,7 +61,8 @@ RS_ERROR Hosting::AwaitFrame(FrameData* data) {
     cameras_.resize(n > 0 ? n : 1);
     for (int i = 0; i < (n > 0 ? n : 1); ++i) {
         CameraPose pose;
-        fn_(t, i, &pose);
+        int cam_idx = (topo && topo->IsLoaded()) ? topo->At(i).viewpoint : i;
+        fn_(t, cam_idx, &pose);
         cameras_[i] = PoseToCameraData(pose, w, h);
     }
 
