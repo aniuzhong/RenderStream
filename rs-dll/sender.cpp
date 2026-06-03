@@ -20,21 +20,25 @@ Sender& GetSender() {
 }
 
 Sender::~Sender() {
+    rs::log::Info("[Sender] ~Sender destructor fired (started=%d layers=%zu)", started_ ? 1 : 0, layers_.size());
     Stop();
 }
 
 void Sender::Stop() {
     std::lock_guard lock(mtx_);
     if (!started_) return;
+    rs::log::Info("[Sender] Stop: shutting down %zu NDI sender(s)...", layers_.size());
     started_ = false;
 
-    for (auto& [_, l] : layers_) {
+    for (auto& [id, l] : layers_) {
         if (l.instance) {
+            rs::log::Info("[Sender] Stop: destroying NDI sender layer %d", id);
             NDIlib_send_send_video_async_v2(l.instance, nullptr);
             NDIlib_send_destroy(l.instance);
             l.instance = nullptr;
         }
     }
+    rs::log::Info("[Sender] Stop: complete");
 }
 
 void Sender::Configure(const std::string& name, int device_id,

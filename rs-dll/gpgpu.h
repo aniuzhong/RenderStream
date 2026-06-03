@@ -30,6 +30,7 @@ struct FrameBuffer {
 // readback buffer pool used by rs_sendFrame2.
 class GpuContext {
 public:
+    ~GpuContext();
     bool Initialize(ID3D12Device* device, ID3D12CommandQueue* queue);
     void Shutdown();
 
@@ -84,6 +85,7 @@ private:
     std::vector<FrameBuffer> data_pack_[2];
     int                      data_pack_index_ = -1;
     int                      image_index_     = 0;
+    bool                     frame_complete_  = false;
 };
 
 GpuContext& GetGpu();

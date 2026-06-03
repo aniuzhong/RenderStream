@@ -1,5 +1,7 @@
 #include "gpgpu.h"
 
+#include <cassert>
+#include <cstdio>
 #include <vector>
 
 #include "d3renderstream.h"
@@ -9,7 +11,14 @@ namespace rs {
 
 GpuContext& GetGpu() {
     static GpuContext instance;
+    static bool s_logged = false;
+    if (!s_logged) { rs::log::Info("[GPU] GpuContext singleton created at %p", &instance); s_logged = true; }
     return instance;
+}
+
+GpuContext::~GpuContext() {
+    rs::log::Info("[GPU] ~GpuContext destructor fired (device=%p queue=%p)", device_, queue_);
+    Shutdown();
 }
 
 bool GpuContext::Initialize(ID3D12Device* device, ID3D12CommandQueue* queue) {
@@ -30,7 +39,13 @@ bool GpuContext::Initialize(ID3D12Device* device, ID3D12CommandQueue* queue) {
 }
 
 void GpuContext::Shutdown() {
+    if (!device_ && !queue_ && !cmd_list_) {
+        rs::log::Info("[GPU] Shutdown: already shut down — skipping");
+        return;
+    }
+    rs::log::Info("[GPU] Shutdown: releasing readback pool...");
     ReleaseReadbackPool();
+    rs::log::Info("[GPU] Shutdown: releasing fences/allocators/events...");
     for (int i = 0; i < 2; ++i) {
         if (fence_event_[i]) {
             CloseHandle(fence_event_[i]);
@@ -53,9 +68,11 @@ void GpuContext::Shutdown() {
     queue_  = nullptr;
     for (auto& pack : data_pack_) pack.clear();
     data_pack_index_ = -1;
+    frame_complete_  = false;
     image_index_     = 0;
     reset_command_   = true;
     command_index_   = 0;
+    rs::log::Info("[GPU] Shutdown: complete");
 }
 
 void GpuContext::EnsureResources() {
@@ -75,7 +92,9 @@ void GpuContext::EnsureResources() {
 }
 
 bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key, const ClipRect& clip) {
+    assert(frame);
     if (!device_ || !queue_ || !frame) return false;
+    assert(layout_.n_layers > 0 && "SetLayout must be called before SubmitFrame");
 
     // Extract D3D12 texture from the Disguise SenderFrame.
     ID3D12Resource* tex = nullptr;
@@ -88,10 +107,12 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key, const Clip
     D3D12_RESOURCE_DESC desc = tex->GetDesc();
     const int tex_w = static_cast<int>(desc.Width);
     const int tex_h = static_cast<int>(desc.Height);
+    assert(tex_w > 0 && tex_h > 0);
 
     // Clamp layer key.
     if (layer_key < 0) layer_key = 0;
     if (layer_key >= kMaxLayers) layer_key = kMaxLayers - 1;
+    assert(layer_key < layout_.n_layers);
 
     // Reset command allocator + list if needed.
     if (reset_command_) {
@@ -112,6 +133,9 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key, const Clip
     box.bottom = static_cast<UINT>(static_cast<float>(tex_h) * clip.bottom);
     box.front  = 0;
     box.back   = 1;
+    assert(box.right > box.left && box.bottom > box.top && "clip region must be non-empty");
+    assert(box.right <= static_cast<UINT>(tex_w) && box.bottom <= static_cast<UINT>(tex_h) && "clip must be within texture bounds");
+
     footprint.Footprint.Width  = box.right - box.left;
     footprint.Footprint.Height = box.bottom - box.top;
     footprint.Footprint.Depth  = 1;
@@ -124,10 +148,32 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key, const Clip
     if (!EnsureReadbackPool(tex_w, tex_h, static_cast<UINT>(row_pitch), total_bytes))
         return false;
 
+    // CRITICAL: verify the pool buffer can hold this copy.
+    // GPU writes total_bytes using rb_row_pitch_ stride. If the pool is too small
+    // or the pitch mismatches, the GPU will write past the buffer → heap corruption.
+    assert(rb_row_pitch_ >= static_cast<UINT>(row_pitch) &&
+           "readback pool row_pitch must be >= requested row_pitch");
+    assert(rb_buffer_bytes_ >= total_bytes &&
+           "readback pool buffer must be large enough for total_bytes");
+    {
+        // Total bytes GPU will write = rb_row_pitch_ * (Height-1) + Width * 4
+        const UINT64 gpu_write_bytes = static_cast<UINT64>(rb_row_pitch_) * (footprint.Footprint.Height - 1)
+                                       + static_cast<UINT64>(footprint.Footprint.Width) * 4;
+        assert(gpu_write_bytes <= rb_buffer_bytes_ &&
+               "GPU copy footprint must fit within readback buffer");
+    }
+
     // Queue GPU copy.
     const int bank = rb_next_bank_[layer_key];
     ID3D12Resource* rb_buf = rb_res_[layer_key][bank];
+    assert(rb_buf && "readback buffer resource must exist");
     if (!rb_buf) return false;
+
+    // Verify the mapped CPU pointer is within the expected allocation.
+    // This catches cases where the buffer was unmapped or reallocated without updating rb_cpu_.
+    uint8_t* const cpu_ptr = rb_cpu_[layer_key][bank];
+    assert(cpu_ptr && "readback CPU pointer must be non-null");
+    assert(rb_buffer_bytes_ > 0 && "readback buffer size must be positive");
 
     D3D12_TEXTURE_COPY_LOCATION src_loc = {};
     src_loc.pResource = tex;
@@ -174,23 +220,46 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key, const Clip
             fence_value_[data_pack_index_]) {
             fence_[data_pack_index_]->SetEventOnCompletion(
                 fence_value_[data_pack_index_], fence_event_[data_pack_index_]);
-            WaitForSingleObject(fence_event_[data_pack_index_], INFINITE);
+            const DWORD wait_result = WaitForSingleObject(fence_event_[data_pack_index_], 5000);
+            assert(wait_result == WAIT_OBJECT_0 && "GPU fence wait must succeed within timeout (5s) — possible TDR or GPU hang");
         }
+        // Double-check fence actually completed.
+        assert(data_pack_index_ < 0 ||
+               fence_[data_pack_index_]->GetCompletedValue() >= fence_value_[data_pack_index_] &&
+               "GPU fence must be at or past the expected value after wait");
 
         data_pack_index_ = other;
         command_index_ = (command_index_ + 1) % 2;
+        frame_complete_ = true;
     }
     image_index_ = (image_index_ + 1) % layout_.n_layers;
     return true;
 }
 
 std::vector<FrameBuffer> GpuContext::ConsumeReadyPack() {
-    // data_pack_index_ points to the pack whose fence was just waited
-    // in SubmitFrame.  That pack is safe to consume.
-    int ready_idx = data_pack_index_;
-    if (ready_idx < 0) ready_idx = 0;
+    if (!frame_complete_) return {};
+    frame_complete_ = false;
+    // data_pack_index_ points to the next write pack (after swap).
+    // The completed pack is (data_pack_index_ + 1) % 2.
+    int ready_idx = (data_pack_index_ + 1) % 2;
+    if (ready_idx < 0) ready_idx = 0;  // safety: data_pack_index_ = -1 → ready_idx = 0
     std::vector<FrameBuffer> result = std::move(data_pack_[ready_idx]);
     data_pack_[ready_idx].clear();
+
+    // Validate every returned buffer — null pointers or out-of-range data cause NDI to crash or corrupt memory.
+    for (const auto& buf : result) {
+        assert(buf.cpu_base && "ConsumeReadyPack: cpu_base must not be null");
+        assert(buf.stage_buffer && "ConsumeReadyPack: stage_buffer must not be null");
+        assert(buf.frame_bytes > 0 && buf.frame_bytes <= rb_buffer_bytes_ &&
+               "ConsumeReadyPack: frame_bytes must be positive and within pool buffer size");
+        assert(buf.layer_id >= 0 && buf.layer_id < kMaxLayers &&
+               "ConsumeReadyPack: layer_id must be valid");
+        // GPU overrun check: the canary at the end of the buffer must be intact.
+        // If the GPU wrote past the clipped region, it would have corrupted this value.
+        const size_t canary_offset = static_cast<size_t>(rb_buffer_bytes_) - sizeof(uint32_t);
+        const uint32_t canary = *reinterpret_cast<const uint32_t*>(buf.cpu_base + canary_offset);
+        assert(canary == 0xDEADBEEF && "GPU WRITE OVERRUN DETECTED: canary corrupted — GPU wrote past buffer bounds!");
+    }
     return result;
 }
 
@@ -222,6 +291,7 @@ void GpuContext::ReleaseReadbackPool() {
 bool GpuContext::EnsureReadbackPool(int frame_w, int frame_h,
                                     UINT req_row_pitch, UINT64 req_total_bytes) {
     if (!device_) return false;
+    assert(req_row_pitch > 0 && req_total_bytes > 0 && "readback pool request must have positive size");
 
     int res_w = (std::max)(1, frame_w);
     int res_h = (std::max)(1, frame_h);
@@ -279,6 +349,7 @@ bool GpuContext::EnsureReadbackPool(int frame_w, int frame_h,
                 &heap, D3D12_HEAP_FLAG_NONE, &buf_desc,
                 D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&res));
             if (FAILED(hr) || !res) {
+                assert(!"CreateCommittedResource for readback buffer must succeed");
                 ReleaseReadbackPool();
                 return false;
             }
@@ -286,10 +357,16 @@ bool GpuContext::EnsureReadbackPool(int frame_w, int frame_h,
             void* mapped = nullptr;
             hr = res->Map(0, nullptr, &mapped);
             if (FAILED(hr) || !mapped) {
+                assert(!"Map of readback buffer must succeed");
                 res->Release();
                 ReleaseReadbackPool();
                 return false;
             }
+
+            // Guard: write a canary at the end to detect GPU overrun.
+            // The last 4 bytes are reserved for validation.
+            const size_t canary_offset = static_cast<size_t>(total_bytes) - sizeof(uint32_t);
+            *reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(mapped) + canary_offset) = 0xDEADBEEF;
 
             rb_res_[l][b] = res;
             rb_cpu_[l][b] = static_cast<uint8_t*>(mapped);
