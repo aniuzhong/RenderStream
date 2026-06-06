@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstdio>
 #include <vector>
+#include <profileapi.h>
 
 #include "d3renderstream.h"
 #include "logging.h"
@@ -213,16 +214,48 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key, const Clip
         // On the first frame data_pack_index_ is -1 → other = 0 → empty → no wait.
         int other = (data_pack_index_ + 1) % 2;
 
-        // Wait for the fence guarding the other pack's GPU work.
-        // data_pack_index_ < 0 means first frame — no fence to wait on.
-        if (data_pack_index_ >= 0 &&
-            fence_[data_pack_index_]->GetCompletedValue() <
-            fence_value_[data_pack_index_]) {
-            fence_[data_pack_index_]->SetEventOnCompletion(
-                fence_value_[data_pack_index_], fence_event_[data_pack_index_]);
-            const DWORD wait_result = WaitForSingleObject(fence_event_[data_pack_index_], 5000);
-            assert(wait_result == WAIT_OBJECT_0 && "GPU fence wait must succeed within timeout (5s) — possible TDR or GPU hang");
+        // ── diagnostic: GPU fence wait timing ──
+        {
+            static int s_frame = 0;
+            ++s_frame;
+            const int wait_idx = data_pack_index_;  // which fence we're waiting on
+            const bool need_wait = (wait_idx >= 0 &&
+                fence_[wait_idx]->GetCompletedValue() < fence_value_[wait_idx]);
+
+            if (need_wait) {
+                LARGE_INTEGER t0, t1, freq;
+                QueryPerformanceFrequency(&freq);
+                QueryPerformanceCounter(&t0);
+
+                const UINT64 expected = fence_value_[wait_idx];
+                const UINT64 before  = fence_[wait_idx]->GetCompletedValue();
+                fence_[wait_idx]->SetEventOnCompletion(expected, fence_event_[wait_idx]);
+                const DWORD wait_result = WaitForSingleObject(fence_event_[wait_idx], 5000);
+
+                QueryPerformanceCounter(&t1);
+                const double wait_ms = static_cast<double>(t1.QuadPart - t0.QuadPart)
+                                     / freq.QuadPart * 1000.0;
+                const UINT64 after = fence_[wait_idx]->GetCompletedValue();
+
+                if (wait_result != WAIT_OBJECT_0) {
+                    rs::log::Error("[GPU] FENCE TIMEOUT #%d: slot=%d expected=%llu before=%llu after=%llu waited=%.1fms — likely TDR or GPU hang",
+                        s_frame, wait_idx, expected, before, after, wait_ms);
+                    assert(wait_result == WAIT_OBJECT_0 && "GPU fence wait must succeed within timeout (5s) — possible TDR or GPU hang");
+                } else if (wait_ms > 1000.0) {
+                    rs::log::Error("[GPU] FENCE SLOW #%d: slot=%d expected=%llu before=%llu after=%llu waited=%.1fms — GPU under heavy load",
+                        s_frame, wait_idx, expected, before, after, wait_ms);
+                } else if (wait_ms > 100.0) {
+                    rs::log::Info("[GPU] FENCE WARN #%d: slot=%d expected=%llu before=%llu after=%llu waited=%.1fms",
+                        s_frame, wait_idx, expected, before, after, wait_ms);
+                } else if (s_frame <= 30) {
+                    rs::log::Info("[GPU] FENCE #%d: slot=%d expected=%llu before=%llu after=%llu waited=%.1fms",
+                        s_frame, wait_idx, expected, before, after, wait_ms);
+                }
+            } else if (s_frame <= 5) {
+                rs::log::Info("[GPU] FENCE #%d: slot=%d NO WAIT (first frame or fence already signaled)", s_frame, wait_idx);
+            }
         }
+
         // Double-check fence actually completed.
         assert(data_pack_index_ < 0 ||
                fence_[data_pack_index_]->GetCompletedValue() >= fence_value_[data_pack_index_] &&
