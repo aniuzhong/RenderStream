@@ -1,5 +1,9 @@
+// Compile-time mode switch: comment out to use Hosting (self-clocked 60fps).
+#define RS_NETWORK_TICK_PORT 9581
+
 #include "d3renderstream.h"
 
+#include <winsock2.h>
 #include <windows.h>
 
 #include <cstring>
@@ -11,6 +15,7 @@
 #include "topology.h"
 #include "frame_source/frame_source.h"
 #include "frame_source/hosting.h"
+#include "frame_source/network_frame_source.h"
 #include "frame_source/utils.h"
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor, int expectedVersionMinor) {
@@ -25,42 +30,59 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor,
     HMODULE self = nullptr;
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                        reinterpret_cast<LPCWSTR>(&rs_initialise), &self);
-    rs::log::Info("[rs_initialise] RenderStream DLL v%d.%d initialising [HOSTING] base=%p",
-                  RENDER_STREAM_VERSION_MAJOR, RENDER_STREAM_VERSION_MINOR, self);
 
-    rs::Hosting::Config cfg;
-    cfg.topology = &rs::Topology::Instance();
-    cfg.camera   = rs::MakeKeyframeCamera({
-        // camera0 — left-top
+    auto camera_fn = rs::MakeKeyframeCamera({
+        // camera0 - left-top
         {true, {
             {0.0, {-2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0}},
             {3.0, { 2.00, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0}},
             {6.0, {-2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0}},
         }},
-        // camera1 — right-top
+        // camera1 - right-top
         {true, {
             {0.0, { 5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0}},
             {3.0, {-5.59, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0}},
             {6.0, { 5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0}},
         }},
-        // camera2 — left-bottom
+        // camera2 - left-bottom
         {true, {
             {0.0, {-11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0}},
             {3.0, {-11.395, 8.30, -5.00, -20.0, 84.1, 0.0, 90.0}},
             {6.0, {-11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0}},
         }},
-        // camera3 — right-bottom
+        // camera3 - right-bottom
         {true, {
             {0.0, {12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0}},
             {3.0, {12.40, 7.70,  7.00, -30.0, -90.0, 0.0, 90.0}},
             {6.0, {12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0}},
         }},
     });
-    cfg.fps = 60.0;
-
+#ifdef RS_NETWORK_TICK_PORT
+    rs::log::Info("[rs_initialise] network tick mode on port %d", RS_NETWORK_TICK_PORT);
+    try {
+        rs::NetworkFrameSource::Config cfg;
+        cfg.port     = RS_NETWORK_TICK_PORT;
+        cfg.topology = &rs::Topology::Instance();
+        cfg.camera   = camera_fn;
+        rs::SetFrameSource(std::make_unique<rs::NetworkFrameSource>(std::move(cfg)));
+    } catch (const std::exception& e) {
+        rs::log::Error("[rs_initialise] network listener failed: %s - falling back to hosting", e.what());
+        rs::Hosting::Config cfg;
+        cfg.topology = &rs::Topology::Instance();
+        cfg.camera   = camera_fn;
+        cfg.fps      = 60.0;
+        rs::SetFrameSource(std::make_unique<rs::Hosting>(std::move(cfg)));
+    }
+#else
+    rs::log::Info("[rs_initialise] hosting mode (self-clocked 60fps)");
+    rs::Hosting::Config cfg;
+    cfg.topology = &rs::Topology::Instance();
+    cfg.camera   = camera_fn;
+    cfg.fps      = 60.0;
     rs::SetFrameSource(std::make_unique<rs::Hosting>(std::move(cfg)));
+#endif
 
-    rs::log::Info("[rs_initialise] done — no remote IO yet");
+    rs::log::Info("[rs_initialise] done");
     return RS_ERROR_SUCCESS;
 }
 
