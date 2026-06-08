@@ -1,6 +1,6 @@
 #pragma once
 
-#include "stimulus.h"
+#include "frame_source.h"
 
 #include <string>
 #include <vector>

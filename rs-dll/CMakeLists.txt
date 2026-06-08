@@ -17,9 +17,9 @@ add_library(renderstream SHARED
     schema/schema.cpp
     schema/schema_serializer.cpp
     topology.cpp
-    stimulus/hosting.cpp
-    stimulus/stimulus.cpp
-    stimulus/utils.cpp
+    frame_source/hosting.cpp
+    frame_source/frame_source.cpp
+    frame_source/utils.cpp
 )
 
 set_target_properties(renderstream PROPERTIES

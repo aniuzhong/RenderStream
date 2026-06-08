@@ -1,4 +1,4 @@
-#include "stimulus.h"
+#include "frame_source.h"
 #include "logging.h"
 
 #include <memory>
@@ -7,15 +7,15 @@ namespace rs {
 
 // Singleton
 
-static std::unique_ptr<IStimulus> g_stimulus;
+static std::unique_ptr<IFrameSource> g_frameSource;
 
-void SetStimulus(std::unique_ptr<IStimulus> s) {
-    g_stimulus = std::move(s);
-    rs::log::Info("[Stimulus] set: %p", static_cast<void*>(g_stimulus.get()));
+void SetFrameSource(std::unique_ptr<IFrameSource> s) {
+    g_frameSource = std::move(s);
+    rs::log::Info("[FrameSource] set: %p", static_cast<void*>(g_frameSource.get()));
 }
 
-IStimulus* GetStimulus() {
-    return g_stimulus.get();
+IFrameSource* GetFrameSource() {
+    return g_frameSource.get();
 }
 
 }  // namespace rs
@@ -24,7 +24,7 @@ IStimulus* GetStimulus() {
 
 RS_ERROR rs_awaitFrameData(int timeoutMs, FrameData* data) {
     (void)timeoutMs;
-    auto* s = rs::GetStimulus();
+    auto* s = rs::GetFrameSource();
     if (!data || !s)
         return RS_ERROR_INVALID_PARAMETERS;
 
@@ -41,7 +41,7 @@ RS_ERROR rs_awaitFrameData(int timeoutMs, FrameData* data) {
 // Cameras
 
 RS_ERROR rs_getFrameCamera(StreamHandle streamHandle, CameraData* outCameraData) {
-    auto* s = rs::GetStimulus();
+    auto* s = rs::GetFrameSource();
     if (!s) return RS_ERROR_NOTFOUND;
     return s->GetCamera(streamHandle, outCameraData);
 }
@@ -49,25 +49,25 @@ RS_ERROR rs_getFrameCamera(StreamHandle streamHandle, CameraData* outCameraData)
 // Scene parameters
 
 RS_ERROR rs_getFrameParameters(uint64_t schemaHash, void* outData, uint64_t size) {
-    auto* s = rs::GetStimulus();
+    auto* s = rs::GetFrameSource();
     if (!s) return RS_ERROR_NOTFOUND;
     return s->GetFrameParameters(schemaHash, outData, size);
 }
 
 RS_ERROR rs_getFrameImageData(uint64_t schemaHash, ImageFrameData* out, uint64_t count) {
-    auto* s = rs::GetStimulus();
+    auto* s = rs::GetFrameSource();
     if (!s) return RS_ERROR_NOTFOUND;
     return s->GetFrameImageData(schemaHash, out, count);
 }
 
 RS_ERROR rs_getFrameImage2(int64_t imageId, const SenderFrame* frame) {
-    auto* s = rs::GetStimulus();
+    auto* s = rs::GetFrameSource();
     if (!s) return RS_ERROR_NOTFOUND;
     return s->GetFrameImage(imageId, frame);
 }
 
 RS_ERROR rs_getFrameText(uint64_t schemaHash, uint32_t index, const char** outText) {
-    auto* s = rs::GetStimulus();
+    auto* s = rs::GetFrameSource();
     if (!s) return RS_ERROR_NOTFOUND;
     return s->GetFrameText(schemaHash, index, outText);
 }
@@ -92,4 +92,3 @@ D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointNames(uint64_t schemaHash, uint
 }
 
 }  // extern "C"
-

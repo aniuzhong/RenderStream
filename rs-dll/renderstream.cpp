@@ -9,9 +9,9 @@
 #include "logging.h"
 #include "sender.h"
 #include "topology.h"
-#include "stimulus/stimulus.h"
-#include "stimulus/hosting.h"
-#include "stimulus/utils.h"
+#include "frame_source/frame_source.h"
+#include "frame_source/hosting.h"
+#include "frame_source/utils.h"
 
 RS_ERROR rs_initialise(int expectedVersionMajor, int expectedVersionMinor) {
     (void)expectedVersionMajor;
@@ -58,7 +58,7 @@ RS_ERROR rs_initialise(int expectedVersionMajor, int expectedVersionMinor) {
     });
     cfg.fps = 60.0;
 
-    rs::SetStimulus(std::make_unique<rs::Hosting>(std::move(cfg)));
+    rs::SetFrameSource(std::make_unique<rs::Hosting>(std::move(cfg)));
 
     rs::log::Info("[rs_initialise] done — no remote IO yet");
     return RS_ERROR_SUCCESS;
@@ -66,8 +66,8 @@ RS_ERROR rs_initialise(int expectedVersionMajor, int expectedVersionMinor) {
 
 RS_ERROR rs_shutdown() {
     rs::log::Info("[rs_shutdown] >>> shutting down...");
-    rs::log::Info("[rs_shutdown] step 1/4: destroying stimulus...");
-    rs::SetStimulus(nullptr);
+    rs::log::Info("[rs_shutdown] step 1/4: destroying frame source...");
+    rs::SetFrameSource(nullptr);
     rs::log::Info("[rs_shutdown] step 2/4: shutting down GPU...");
     rs::GetGpu().Shutdown();
     rs::log::Info("[rs_shutdown] step 3/4: stopping NDI senders...");

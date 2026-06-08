@@ -1,6 +1,6 @@
 #pragma once
 
-#include "stimulus.h"
+#include "frame_source.h"
 
 #include <vector>
 
@@ -9,10 +9,10 @@ namespace rs {
 class Topology;
 
 //
-// Self-contained stimulus: FixedRatePacer + TrackCamera + empty parameters.
+// Self-contained frame source: FixedRatePacer + TrackCamera + empty parameters.
 // Reads stream topology from the Topology singleton.
 //
-class Hosting : public IStimulus {
+class Hosting : public IFrameSource {
 public:
     struct Config {
         const Topology* topology = nullptr;
@@ -22,7 +22,7 @@ public:
 
     explicit Hosting(Config cfg);
 
-    // IStimulus
+    // IFrameSource
     RS_ERROR AwaitFrame(FrameData* data) override;
     RS_ERROR GetCamera(StreamHandle handle, CameraData* out) override;
     RS_ERROR GetFrameParameters(uint64_t schemaHash, void* outData, uint64_t size) override;

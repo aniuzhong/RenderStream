@@ -21,28 +21,28 @@ struct CameraPose {
 using CameraFn = std::function<void(double t, int stream_idx, CameraPose* out)>;
 
 //
-// Full stimulus interface — the single data source for all per-frame
+// Full frame source interface — the single data source for all per-frame
 // RenderStream queries. Each method corresponds to a C API function.
 //
 // Hosting mode implements AwaitFrame + GetCamera; the remaining methods
 // return empty / NOTFOUND (no Disguise operator driving parameters).
 //
-class IStimulus {
+class IFrameSource {
 public:
-    virtual ~IStimulus() = default;
+    virtual ~IFrameSource() = default;
 
-    //  Frame pacing 
+    //  Frame pacing
 
     // Block until next frame, fill FrameData.  May return
     // RS_ERROR_STREAMS_CHANGED to trigger a stream-pool rebuild.
     virtual RS_ERROR AwaitFrame(FrameData* data) = 0;
 
-    //  Cameras 
+    //  Cameras
 
     // Camera for the 1-based stream handle.  Call after AwaitFrame.
     virtual RS_ERROR GetCamera(StreamHandle handle, CameraData* out) = 0;
 
-    //  Scene parameters 
+    //  Scene parameters
 
     // Per-frame float parameters (NUMBER, EVENT, POSE, TRANSFORM).
     // |schemaHash| identifies the scene; writes into caller buffer.
@@ -62,13 +62,13 @@ public:
                                   uint32_t index, const char** outText) = 0;
 };
 
-//  Global stimulus singleton accessors 
+//  Global frame source singleton accessors
 
-// Set the active stimulus (called once from rs_initialise).
-void SetStimulus(std::unique_ptr<IStimulus> s);
+// Set the active frame source (called once from rs_initialise).
+void SetFrameSource(std::unique_ptr<IFrameSource> s);
 
-// Get the active stimulus. Returns nullptr before rs_initialise or
+// Get the active frame source. Returns nullptr before rs_initialise or
 // after rs_shutdown.
-IStimulus* GetStimulus();
+IFrameSource* GetFrameSource();
 
 }  // namespace rs
