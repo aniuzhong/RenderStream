@@ -42,21 +42,25 @@ void Sender::Stop() {
     rs::log::Info("[Sender] Stop: complete");
 }
 
-void Sender::Configure(const std::string& name, int device_id,
-                       const std::vector<LayerConfig>& layer_configs) {
+void Sender::Configure(const std::string& name, int device_id) {
     std::lock_guard lock(mtx_);
     name_      = name;
     device_id_ = device_id;
     layers_.clear();
-    for (const auto& cfg : layer_configs) {
-        auto& l = layers_[cfg.id];
-        l.width  = cfg.width;
-        l.height = cfg.height;
-        rs::log::Info("[Sender] Configure: layer %d -> %dx%d", cfg.id, cfg.width, cfg.height);
+
+    auto& topo = Topology::Instance();
+    for (int i = 0; i < topo.Count(); ++i) {
+        const auto& s = topo.At(i);
+        int cw = static_cast<int>(static_cast<float>(s.width) * (s.clipping.right - s.clipping.left));
+        int ch = static_cast<int>(static_cast<float>(s.height) * (s.clipping.bottom - s.clipping.top));
+        auto& l = layers_[i];
+        l.width  = cw;
+        l.height = ch;
+        rs::log::Info("[Sender] Configure: layer %d -> %dx%d", i, cw, ch);
     }
 }
 
-bool Sender::Start(uint32_t row_pitch) {
+bool Sender::Start() {
     std::lock_guard lock(mtx_);
     if (started_) return false;
     if (!NDIlib_initialize()) {
@@ -69,7 +73,9 @@ bool Sender::Start(uint32_t row_pitch) {
         return true;
     }
 
-    row_pitch_ = row_pitch;
+    int max_w, max_h;
+    Topology::Instance().MaxResolution(&max_w, &max_h);
+    row_pitch_ = (static_cast<uint32_t>(max_w * 4) + 255) & ~255u;
 
     for (auto& [layer_id, l] : layers_) {
         char ndi_name[256];
@@ -153,16 +159,7 @@ RS_ERROR rs_sendFrame2(StreamHandle streamHandle, const SenderFrame* frame, cons
 
     int layer_key = static_cast<int>(streamHandle) - 1;
 
-    auto& topo = rs::Topology::Instance();
-    rs::ClipRect clip;
-    if (layer_key >= 0 && layer_key < topo.Count()) {
-        const auto& s = topo.At(layer_key);
-        clip = {s.clipping.left, s.clipping.right, s.clipping.top, s.clipping.bottom};
-    } else {
-        clip = {0.f, 1.f, 0.f, 1.f};
-    }
-
-    if (!rs::GetGpu().SubmitFrame(frame, layer_key, clip))
+    if (!rs::GetGpu().SubmitFrame(frame, layer_key))
         return RS_ERROR_UNSPECIFIED;
 
     auto ready_pack = rs::GetGpu().ConsumeReadyPack();

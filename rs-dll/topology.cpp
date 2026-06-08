@@ -1,5 +1,4 @@
 #include "topology.h"
-#include "gpgpu.h"
 #include "logging.h"
 #include "sender.h"
 
@@ -53,16 +52,16 @@ bool Topology::LoadFromRemote() {
         std::vector<StreamDescription> parsed;
         for (const auto& js : j["streams"]) {
             StreamDescription sd;
-            sd.name    = js.value("name", "");
-            sd.channel = js.value("channel", "");
-            sd.width   = js.value("width", 0);
-            sd.height  = js.value("height", 0);
-            sd.format      = static_cast<PixelFormat>(js.value("format", 1));
-            sd.handle      = js.value("handle", 0u);
-            sd.mapping_id  = js.value("mappingId", 0ull);
-            sd.viewpoint   = js.value("viewpoint", 0);
+            sd.name         = js.value("name", "");
+            sd.channel      = js.value("channel", "");
+            sd.width        = js.value("width", 0);
+            sd.height       = js.value("height", 0);
+            sd.format       = static_cast<PixelFormat>(js.value("format", 1));
+            sd.handle       = js.value("handle", 0u);
+            sd.mapping_id   = js.value("mappingId", 0ull);
+            sd.viewpoint    = js.value("viewpoint", 0);
             sd.mapping_name = js.value("mappingName", "");
-            sd.fragment    = js.value("fragment", 0);
+            sd.fragment     = js.value("fragment", 0);
             if (js.contains("clipping")) {
                 const auto& c = js["clipping"];
                 sd.clipping.left   = c.value("left", 0.0f);
@@ -81,8 +80,7 @@ bool Topology::LoadFromRemote() {
         streams_ = std::move(parsed);
         ++version_;
 
-        rs::log::Info("[Topology] LoadFromRemote: %zu streams, version=%u",
-                      streams_.size(), version_);
+        rs::log::Info("[Topology] LoadFromRemote: %zu streams, version=%u", streams_.size(), version_);
         for (size_t i = 0; i < streams_.size(); ++i) {
             const auto& s = streams_[i];
             rs::log::Info("[Topology]   stream[%zu] '%s' chan='%s' %dx%d fmt=%d handle=%u clip=[%.2f,%.2f,%.2f,%.2f]",
@@ -101,8 +99,7 @@ bool Topology::LoadFromRemote() {
 void Topology::LoadFromCache(const std::vector<StreamDescription>& streams) {
     streams_ = streams;
     ++version_;
-    rs::log::Info("[Topology] LoadFromCache: %zu streams, version=%u",
-                  streams_.size(), version_);
+    rs::log::Info("[Topology] LoadFromCache: %zu streams, version=%u", streams_.size(), version_);
 }
 
 void Topology::MaxResolution(int* w, int* h) const {
@@ -118,32 +115,11 @@ void Topology::MaxResolution(int* w, int* h) const {
 static void InitPipelineFromTopology() {
     auto& topo = Topology::Instance();
 
-    int max_w = 0, max_h = 0;
-    topo.MaxResolution(&max_w, &max_h);
-
-    rs::LayoutInfo layout;
-    layout.n_layers = topo.Count();
-    layout.width    = max_w;
-    layout.height   = max_h;
-    rs::GetGpu().SetLayout(layout);
-    rs::log::Info("[Topology] GPU layout: %d layers %dx%d", topo.Count(), max_w, max_h);
-
     rs::GetSender().Stop();
-    std::vector<rs::LayerConfig> ndi_layers;
-    for (int i = 0; i < topo.Count(); ++i) {
-        const auto& s = topo.At(i);
-        int cw = static_cast<int>((s.clipping.right  - s.clipping.left) * static_cast<float>(s.width));
-        int ch = static_cast<int>((s.clipping.bottom - s.clipping.top)  * static_cast<float>(s.height));
-        ndi_layers.push_back({i, cw, ch});
-        rs::log::Info("[Topology] NDI layer %d: clip=[%.2f,%.2f,%.2f,%.2f] full=%dx%d → clipped=%dx%d",
-                      i, s.clipping.left, s.clipping.right, s.clipping.top, s.clipping.bottom,
-                      s.width, s.height, cw, ch);
-    }
-    // Must match GpuContext::Align(w*4, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT).
-    const uint32_t row_pitch = (static_cast<uint32_t>(max_w * 4) + 255) & ~255u;
-    rs::GetSender().Configure("rs_output", 0, ndi_layers);
-    rs::GetSender().Start(row_pitch);
-    rs::log::Info("[Topology] NDI: %d layers, max=%dx%d row_pitch=%u", topo.Count(), max_w, max_h, row_pitch);
+    rs::GetSender().Configure("rs_output", 0);
+    rs::GetSender().Start();
+
+    rs::log::Info("[Topology] pipeline initialized: %d layers", topo.Count());
 }
 
 }  // namespace rs

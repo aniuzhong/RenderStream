@@ -12,13 +12,6 @@
 
 namespace rs {
 
-// Per-layer output configuration.
-struct LayerConfig {
-    int id;
-    int width;   // clipped pixel width
-    int height;  // clipped pixel height
-};
-
 // Singleton output sender — one instance per DLL.
 // Owns N NDI send instances, one per layer, each with its own resolution.
 //
@@ -32,12 +25,11 @@ public:
     Sender(const Sender&) = delete;
     Sender& operator=(const Sender&) = delete;
 
-    // Configure per-layer output sources.
-    void Configure(const std::string& name, int device_id, const std::vector<LayerConfig>& layers);
+    // Configure per-layer output sources from Topology.
+    void Configure(const std::string& name, int device_id);
 
-    // Start all layers. |row_pitch| is the GPU readback buffer row pitch
-    // in bytes — all layers share this stride regardless of per-layer xres.
-    bool Start(uint32_t row_pitch);
+    // Start all layers. Row pitch is computed from Topology max resolution.
+    bool Start();
     void Stop();
     bool IsStarted() const { return started_; }
 

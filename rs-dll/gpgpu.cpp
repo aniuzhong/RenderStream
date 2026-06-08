@@ -7,6 +7,7 @@
 
 #include "d3renderstream.h"
 #include "logging.h"
+#include "topology.h"
 
 namespace rs {
 
@@ -92,10 +93,12 @@ void GpuContext::EnsureResources() {
                                    allocator_[0], nullptr, IID_PPV_ARGS(&cmd_list_));
 }
 
-bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key, const ClipRect& clip) {
+bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
     assert(frame);
     if (!device_ || !queue_ || !frame) return false;
-    assert(layout_.n_layers > 0 && "SetLayout must be called before SubmitFrame");
+
+    auto& topo = Topology::Instance();
+    assert(topo.Count() > 0 && "Topology must be loaded before SubmitFrame");
 
     // Extract D3D12 texture from the Disguise SenderFrame.
     ID3D12Resource* tex = nullptr;
@@ -113,7 +116,9 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key, const Clip
     // Clamp layer key.
     if (layer_key < 0) layer_key = 0;
     if (layer_key >= kMaxLayers) layer_key = kMaxLayers - 1;
-    assert(layer_key < layout_.n_layers);
+    assert(layer_key < topo.Count());
+
+    const Clipping& clip = topo.At(layer_key).clipping;
 
     // Reset command allocator + list if needed.
     if (reset_command_) {
@@ -201,7 +206,7 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key, const Clip
     data_pack_[data_pack_index_ == 0 ? 0 : 1].push_back(buf);
 
     // Check if this was the last layer of the frame.
-    if (image_index_ == (layout_.n_layers - 1)) {
+    if (image_index_ == (topo.Count() - 1)) {
         // Close, execute, signal.
         cmd_list_->Close();
         ID3D12CommandList* lists[] = { cmd_list_ };
@@ -265,7 +270,7 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key, const Clip
         command_index_ = (command_index_ + 1) % 2;
         frame_complete_ = true;
     }
-    image_index_ = (image_index_ + 1) % layout_.n_layers;
+    image_index_ = (image_index_ + 1) % topo.Count();
     return true;
 }
 
@@ -331,8 +336,10 @@ bool GpuContext::EnsureReadbackPool(int frame_w, int frame_h,
 
     // rs::log::Info("[GPU] EnsureReadbackPool: frame=%dx%d layout=%dx%d req_pitch=%u req_bytes=%llu", frame_w, frame_h, layout_.width, layout_.height, req_row_pitch, req_total_bytes);
 
-    res_w = (std::max)(res_w, layout_.width);
-    res_h = (std::max)(res_h, layout_.height);
+    int topo_w, topo_h;
+    Topology::Instance().MaxResolution(&topo_w, &topo_h);
+    res_w = (std::max)(res_w, topo_w);
+    res_h = (std::max)(res_h, topo_h);
 
     // rs::log::Info("[GPU] EnsureReadbackPool: after layout floor (%dx%d) -> %dx%d", layout_.width, layout_.height, res_w, res_h);
 
@@ -347,7 +354,8 @@ bool GpuContext::EnsureReadbackPool(int frame_w, int frame_h,
 
     // rs::log::Info("[GPU] EnsureReadbackPool: final row_pitch=%u total_bytes=%llu (layers=%d)", row_pitch, total_bytes, layout_.n_layers);
 
-    int n_l = layout_.n_layers > 0 ? layout_.n_layers : 1;
+    int n_l = Topology::Instance().Count();
+    if (n_l <= 0) n_l = 1;
     if (n_l > kMaxLayers)
         n_l = kMaxLayers;
 
@@ -411,6 +419,10 @@ bool GpuContext::EnsureReadbackPool(int frame_w, int frame_h,
 }
 
 }  // namespace rs
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_useDX12SharedHeapFlag(UseDX12SharedHeapFlag*) {
+    return RS_ERROR_SUCCESS;
+}
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithoutInterop(ID3D11Device*) {
     return RS_ERROR_SUCCESS;

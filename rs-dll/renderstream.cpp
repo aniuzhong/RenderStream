@@ -84,7 +84,6 @@ extern "C" {
 
 D3_RENDER_STREAM_API RS_ERROR rs_setFollower(int) { return RS_ERROR_SUCCESS; }
 D3_RENDER_STREAM_API RS_ERROR rs_beginFollowerFrame(double) { return RS_ERROR_SUCCESS; }
-D3_RENDER_STREAM_API RS_ERROR rs_useDX12SharedHeapFlag(UseDX12SharedHeapFlag*) { return RS_ERROR_SUCCESS; }
 D3_RENDER_STREAM_API RS_ERROR rs_releaseImage2(const SenderFrame*) { return RS_ERROR_SUCCESS; }
 D3_RENDER_STREAM_API RS_ERROR rs_sendProfilingData(ProfilingEntry*, int) { return RS_ERROR_SUCCESS; }
 D3_RENDER_STREAM_API RS_ERROR rs_setNewStatusMessage(const char*) { return RS_ERROR_SUCCESS; }

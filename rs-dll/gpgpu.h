@@ -6,16 +6,9 @@
 #include <vector>
 
 #include "d3renderstream.h"
+#include "topology.h"
 
 namespace rs {
-
-struct ClipRect { float left = 0; float right = 1; float top = 0; float bottom = 1; };
-
-struct LayoutInfo {
-    int n_layers = 0;
-    int width    = 0;
-    int height   = 0;
-};
 
 // Filled by GpuContext::SubmitFrame — the caller ships to NDI.
 struct FrameBuffer {
@@ -34,12 +27,9 @@ public:
     bool Initialize(ID3D12Device* device, ID3D12CommandQueue* queue);
     void Shutdown();
 
-    // Set the output layout (called once after initialise).
-    void SetLayout(const LayoutInfo& layout) { layout_ = layout; }
-
     // Queue a texture→readback copy for one layer.
-    // |clip| is per-stream clipping from Topology {left, right, top, bottom} in [0,1].
-    bool SubmitFrame(const SenderFrame* frame, int layer_key, const ClipRect& clip);
+    // Clipping is read from Topology per-layer.
+    bool SubmitFrame(const SenderFrame* frame, int layer_key);
 
     // After SubmitFrame: returns completed frame data for NDI shipping.
     // The returned vector is moved out; the internal pack is cleared.
@@ -55,8 +45,6 @@ private:
     void EnsureResources();
     bool EnsureReadbackPool(int width, int height, UINT row_pitch, UINT64 total_bytes);
     void ReleaseReadbackPool();
-
-    LayoutInfo layout_;
 
     // D3D12 core
     ID3D12Device*              device_          = nullptr;
