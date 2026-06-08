@@ -29,6 +29,9 @@ public:
     RS_ERROR GetFrameImageData(uint64_t schemaHash, ImageFrameData* out, uint64_t count) override;
     RS_ERROR GetFrameImage(int64_t imageId, const SenderFrame* frame) override;
     RS_ERROR GetFrameText(uint64_t schemaHash, uint32_t index, const char** outText) override;
+    RS_ERROR GetSkeletonJointPoses(uint64_t schemaHash, uint32_t poseParamIndex, SkeletonPose* pose, int* numJoints) override;
+    RS_ERROR GetSkeletonLayout(uint64_t schemaHash, uint64_t layoutId, SkeletonLayout* layout, int* numJoints) override;
+    RS_ERROR GetSkeletonJointNames(uint64_t schemaHash, uint64_t layoutId, const char** names, int** nameByteLengths, int* numJoints) override;
 
 private:
     Config cfg_;

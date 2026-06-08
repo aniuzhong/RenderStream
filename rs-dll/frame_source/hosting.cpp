@@ -103,4 +103,21 @@ RS_ERROR Hosting::GetFrameText(uint64_t, uint32_t, const char**) {
     return RS_ERROR_NOTFOUND;  // no text parameters
 }
 
+//  Skeleton (hosting mode: no remote data)
+
+RS_ERROR Hosting::GetSkeletonJointPoses(uint64_t, uint32_t, SkeletonPose*, int* numJoints) {
+    if (numJoints) *numJoints = 0;
+    return RS_ERROR_NOTFOUND;
+}
+
+RS_ERROR Hosting::GetSkeletonLayout(uint64_t, uint64_t, SkeletonLayout*, int* numJoints) {
+    if (numJoints) *numJoints = 0;
+    return RS_ERROR_NOTFOUND;
+}
+
+RS_ERROR Hosting::GetSkeletonJointNames(uint64_t, uint64_t, const char**, int**, int* numJoints) {
+    if (numJoints) *numJoints = 0;
+    return RS_ERROR_NOTFOUND;
+}
+
 }  // namespace rs
