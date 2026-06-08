@@ -44,8 +44,9 @@ private:
     int frame_ = 0;
     bool t0_set_ = false;
 
-    uint32_t last_topology_version_ = 0;
-    std::vector<CameraData> cameras_;
+    uint32_t       last_topology_version_ = 0;
+    FrameSnapshot  snapshot_;
+    bool           snapshot_ready_ = false;
 };
 
 }  // namespace rs
