@@ -2,23 +2,9 @@
 
 #include "d3renderstream.h"
 
-#include <chrono>
-#include <functional>
 #include <memory>
 
 namespace rs {
-
-struct CameraPose {
-    double x;
-    double y;
-    double z;
-    double rx;
-    double ry;
-    double rz;
-    double fov_h;
-};
-
-using CameraFn = std::function<void(double t, int stream_idx, CameraPose* out)>;
 
 //
 // Full frame source interface — the single data source for all per-frame

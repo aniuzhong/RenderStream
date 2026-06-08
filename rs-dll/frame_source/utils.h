@@ -1,11 +1,24 @@
 #pragma once
 
-#include "frame_source.h"
+#include "d3renderstream.h"
 
+#include <functional>
 #include <string>
 #include <vector>
 
 namespace rs {
+
+struct CameraPose {
+    double x;
+    double y;
+    double z;
+    double rx;
+    double ry;
+    double rz;
+    double fov_h;
+};
+
+using CameraFn = std::function<void(double t, int stream_idx, CameraPose* out)>;
 
 // CameraPose -> CameraData (computes focalLength from fov_h).
 CameraData PoseToCameraData(const CameraPose& pose, int stream_w, int stream_h);
