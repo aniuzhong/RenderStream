@@ -67,6 +67,23 @@ RS_ERROR Hosting::AwaitFrame(FrameData* data) {
             fn_(t, cam_idx, &pose);
             next.cameras[i] = PoseToCameraData(pose, w, h);
         }
+        // Diagnostic hex dump for comparison with Network mode
+        static int s_data_log = 0;
+        if (++s_data_log <= 3 && !next.cameras.empty()) {
+            const auto& c = next.cameras[0];
+            rs::log::Info("[Hosting] cam[0] id=%llu pos=(%.2f,%.2f,%.2f) rot=(%.2f,%.2f,%.2f) fl=%.2f sensor=(%.0f,%.0f) cx=%.1f cy=%.1f nearZ=%.1f farZ=%.0f orthoW=%.1f",
+                          static_cast<unsigned long long>(c.id),
+                          c.x, c.y, c.z, c.rx, c.ry, c.rz,
+                          c.focalLength, c.sensorX, c.sensorY,
+                          c.cx, c.cy, c.nearZ, c.farZ, c.orthoWidth);
+            const uint8_t* raw = reinterpret_cast<const uint8_t*>(&c);
+            char hex[256];
+            int off = 0;
+            for (int i = 0; i < 100 && off < 240; ++i)
+                off += snprintf(hex + off, sizeof(hex) - off, "%02x ", raw[i]);
+            rs::log::Info("[Hosting] cam[0] raw: %s", hex);
+        }
+
         snapshot_ = std::move(next);
         snapshot_ready_ = true;
     }

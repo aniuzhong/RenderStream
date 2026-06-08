@@ -63,7 +63,6 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor,
         rs::NetworkFrameSource::Config cfg;
         cfg.port     = RS_NETWORK_TICK_PORT;
         cfg.topology = &rs::Topology::Instance();
-        cfg.camera   = camera_fn;
         rs::SetFrameSource(std::make_unique<rs::NetworkFrameSource>(std::move(cfg)));
     } catch (const std::exception& e) {
         rs::log::Error("[rs_initialise] network listener failed: %s - falling back to hosting", e.what());

@@ -9,7 +9,6 @@ namespace rs {
 
 NetworkFrameSource::NetworkFrameSource(Config cfg)
     : cfg_(std::move(cfg))
-    , fn_(cfg_.camera ? cfg_.camera : OrbitCameraFn)
     , acceptor_(io_, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), cfg_.port))
 {
     rs::log::Info("[Network] listener starting on port %u", cfg_.port);
@@ -49,11 +48,12 @@ void NetworkFrameSource::OnAccept(const std::error_code& ec, asio::ip::tcp::sock
                   remote.address().to_string().c_str(), remote.port());
 
     auto sock = std::make_shared<asio::ip::tcp::socket>(std::move(socket));
-    BeginRead(std::move(sock));
+    auto buf  = std::make_shared<asio::streambuf>();
+    BeginRead(std::move(sock), std::move(buf));
 }
 
-void NetworkFrameSource::BeginRead(std::shared_ptr<asio::ip::tcp::socket> socket) {
-    auto buf = std::make_shared<asio::streambuf>();
+void NetworkFrameSource::BeginRead(std::shared_ptr<asio::ip::tcp::socket> socket,
+                                   std::shared_ptr<asio::streambuf> buf) {
     asio::async_read_until(*socket, *buf, '\n',
         [this, socket, buf](const std::error_code& ec, size_t n) {
             OnRead(socket, buf, ec, n);
@@ -74,16 +74,58 @@ void NetworkFrameSource::OnRead(std::shared_ptr<asio::ip::tcp::socket> socket,
     std::getline(is, line);
 
     if (!line.empty()) {
+        // Diagnostic: log line prefix/suffix to detect fragmentation
+        static int s_line_seq = 0;
+        ++s_line_seq;
+        const size_t len = line.size();
+        const bool starts_well = (!line.empty() && line[0] == '{');
+        const bool ends_well   = (!line.empty() && line.back() == '}');
+        if (s_line_seq <= 10 || !starts_well || !ends_well) {
+            const size_t head = (std::min)(len, size_t(60));
+            const size_t tail = len > 60 ? (std::min)(len - 60, size_t(40)) : 0;
+            rs::log::Info("[Network] recv #%d len=%zu start=%c end=%c head='%.*s'%s tail='%s'",
+                          s_line_seq, len,
+                          line.empty() ? '?' : line[0],
+                          line.empty() ? '?' : line.back(),
+                          static_cast<int>(head), line.c_str(),
+                          tail > 0 ? "..." : "",
+                          tail > 0 ? line.c_str() + len - tail : "");
+        }
+
         try {
             auto j = nlohmann::json::parse(line);
             Tick tick;
             tick.t = j.value("t", 0.0);
+
+            if (j.contains("cameras") && j["cameras"].is_array()) {
+                for (const auto& cj : j["cameras"]) {
+                    CameraData cd = {};
+                    cd.id           = cj.value("id", 0ull);
+                    cd.cameraHandle = cj.value("cameraHandle", 0ull);
+                    cd.x            = cj.value("x", 0.0f);
+                    cd.y            = cj.value("y", 0.0f);
+                    cd.z            = cj.value("z", 0.0f);
+                    cd.rx           = cj.value("rx", 0.0f);
+                    cd.ry           = cj.value("ry", 0.0f);
+                    cd.rz           = cj.value("rz", 0.0f);
+                    cd.focalLength  = cj.value("focalLength", 50.0f);
+                    cd.sensorX      = cj.value("sensorX", 36.0f);
+                    cd.sensorY      = cj.value("sensorY", 24.0f);
+                    cd.cx           = cj.value("cx", 0.0f);
+                    cd.cy           = cj.value("cy", 0.0f);
+                    cd.nearZ        = cj.value("nearZ", 1.0f);
+                    cd.farZ         = cj.value("farZ", 10000.0f);
+                    cd.orthoWidth   = cj.value("orthoWidth", 0.0f);
+                    tick.cameras.push_back(cd);
+                }
+            }
+
             {
                 std::lock_guard lock(mutex_);
                 if (latest_tick_) {
                     double spacing = tick.t - latest_tick_->t;
                     if (spacing > 0.0)
-                        tick_spacing_ = spacing;  // learn tick source's actual rate
+                        tick_spacing_ = spacing;
                 }
                 latest_tick_ = tick;
                 ++tick_version_;
@@ -91,13 +133,13 @@ void NetworkFrameSource::OnRead(std::shared_ptr<asio::ip::tcp::socket> socket,
             cv_.notify_one();
             static int s_tick_log = 0;
             if (++s_tick_log <= 5)
-                rs::log::Info("[Network] tick: t=%.3f spacing=%.4f", tick.t, tick_spacing_);
+                rs::log::Info("[Network] tick: t=%.3f n_cameras=%zu", tick.t, tick.cameras.size());
         } catch (const std::exception& e) {
             rs::log::Error("[Network] parse error: %s — line='%s'", e.what(), line.c_str());
         }
     }
 
-    BeginRead(std::move(socket));
+    BeginRead(std::move(socket), std::move(buf));
 }
 
 //  IFrameSource
@@ -138,15 +180,32 @@ RS_ERROR NetworkFrameSource::AwaitFrame(FrameData* data) {
 
     FrameSnapshot next;
     next.frame_id = frame_;
-    next.cameras.resize(n > 0 ? n : 1);
-    for (int i = 0; i < (n > 0 ? n : 1); ++i) {
-        CameraPose pose;
-        int cam_idx = (topo && topo->IsLoaded()) ? topo->At(i).viewpoint : i;
-        fn_(tick.t, cam_idx, &pose);
-        next.cameras[i] = PoseToCameraData(pose, w, h);
+    if (!tick.cameras.empty()) {
+        next.cameras = tick.cameras;
+    } else {
+        next.cameras.resize(n > 0 ? n : 1);  // empty fallback
     }
 
     const int n_cameras = static_cast<int>(next.cameras.size());
+
+    // Diagnostic: log first camera's full data + hex dump on early frames
+    static int s_data_log = 0;
+    if (++s_data_log <= 3 && !next.cameras.empty()) {
+        const auto& c = next.cameras[0];
+        rs::log::Info("[Network] cam[0] id=%llu pos=(%.2f,%.2f,%.2f) rot=(%.2f,%.2f,%.2f) fl=%.2f sensor=(%.0f,%.0f) cx=%.1f cy=%.1f nearZ=%.1f farZ=%.0f orthoW=%.1f",
+                      static_cast<unsigned long long>(c.id),
+                      c.x, c.y, c.z, c.rx, c.ry, c.rz,
+                      c.focalLength, c.sensorX, c.sensorY,
+                      c.cx, c.cy, c.nearZ, c.farZ, c.orthoWidth);
+        // Hex dump of raw struct bytes (pack(4)) — 100 bytes total
+        const uint8_t* raw = reinterpret_cast<const uint8_t*>(&c);
+        char hex[256];
+        int off = 0;
+        for (int i = 0; i < 100 && off < 240; ++i)
+            off += snprintf(hex + off, sizeof(hex) - off, "%02x ", raw[i]);
+        rs::log::Info("[Network] cam[0] raw: %s", hex);
+    }
+
     published_ = std::move(next);
     snapshot_ready_ = true;
 
@@ -166,6 +225,13 @@ RS_ERROR NetworkFrameSource::GetCamera(StreamHandle handle, CameraData* out) {
     if (idx < 0) idx = 0;
     if (static_cast<size_t>(idx) >= published_.cameras.size()) idx = 0;
     *out = published_.cameras.empty() ? CameraData{} : published_.cameras[idx];
+
+    static int s_getcam = 0;
+    if (++s_getcam <= 8)
+        rs::log::Info("[Network] GetCamera h=%llu idx=%d pos=(%.1f,%.1f,%.1f) fl=%.1f sensor=(%.0f,%.0f)",
+                      static_cast<unsigned long long>(handle), idx,
+                      out->x, out->y, out->z, out->focalLength, out->sensorX, out->sensorY);
+
     return RS_ERROR_SUCCESS;
 }
 

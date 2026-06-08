@@ -1,7 +1,6 @@
 #pragma once
 
 #include "frame_source.h"
-#include "utils.h"
 
 #include <asio.hpp>
 
@@ -9,6 +8,7 @@
 #include <mutex>
 #include <optional>
 #include <thread>
+#include <vector>
 
 namespace rs {
 
@@ -16,21 +16,21 @@ class Topology;
 
 struct Tick {
     double t = 0.0;
+    std::vector<CameraData> cameras;
 };
 
 //
 // Frame source driven by an external tick over TCP (NDJSON).
-//   1. Background io_thread accepts a TCP client on localhost:port.
-//   2. Client sends {"t":0.0}\n{"t":0.017}\n...
-//   3. Ticks are queued and consumed by AwaitFrame.
-//   4. Cameras are generated locally with CameraFn (same as Hosting).
+//   1. Background io_thread accepts a TCP client on :port.
+//   2. Client sends {"t":0.0,"cameras":[...]}\n
+//   3. Only the latest tick is kept — AwaitFrame always uses the freshest.
+//   4. Cameras are parsed from the network message, not generated locally.
 //
 class NetworkFrameSource : public IFrameSource {
 public:
     struct Config {
         uint16_t        port     = 9581;
         const Topology* topology = nullptr;
-        CameraFn        camera;
     };
 
     explicit NetworkFrameSource(Config cfg);
@@ -50,13 +50,13 @@ private:
     void IoLoop();
     void BeginAccept();
     void OnAccept(const std::error_code& ec, asio::ip::tcp::socket socket);
-    void BeginRead(std::shared_ptr<asio::ip::tcp::socket> socket);
+    void BeginRead(std::shared_ptr<asio::ip::tcp::socket> socket,
+                    std::shared_ptr<asio::streambuf> buf);
     void OnRead(std::shared_ptr<asio::ip::tcp::socket> socket,
                 std::shared_ptr<asio::streambuf> buf,
                 const std::error_code& ec, size_t n);
 
     Config cfg_;
-    CameraFn fn_;
 
     asio::io_context io_;
     asio::ip::tcp::acceptor acceptor_;
