@@ -13,7 +13,7 @@
 #include "frame_source/hosting.h"
 #include "frame_source/utils.h"
 
-RS_ERROR rs_initialise(int expectedVersionMajor, int expectedVersionMinor) {
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor, int expectedVersionMinor) {
     (void)expectedVersionMajor;
     (void)expectedVersionMinor;
 
@@ -64,7 +64,7 @@ RS_ERROR rs_initialise(int expectedVersionMajor, int expectedVersionMinor) {
     return RS_ERROR_SUCCESS;
 }
 
-RS_ERROR rs_shutdown() {
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_shutdown() {
     rs::log::Info("[rs_shutdown] >>> shutting down...");
     rs::log::Info("[rs_shutdown] step 1/4: destroying frame source...");
     rs::SetFrameSource(nullptr);
@@ -79,13 +79,3 @@ RS_ERROR rs_shutdown() {
     return RS_ERROR_SUCCESS;
 }
 
-// Remaining stubs (API surface required by RenderStream-UE)
-extern "C" {
-
-D3_RENDER_STREAM_API RS_ERROR rs_setFollower(int) { return RS_ERROR_SUCCESS; }
-D3_RENDER_STREAM_API RS_ERROR rs_beginFollowerFrame(double) { return RS_ERROR_SUCCESS; }
-D3_RENDER_STREAM_API RS_ERROR rs_releaseImage2(const SenderFrame*) { return RS_ERROR_SUCCESS; }
-D3_RENDER_STREAM_API RS_ERROR rs_sendProfilingData(ProfilingEntry*, int) { return RS_ERROR_SUCCESS; }
-D3_RENDER_STREAM_API RS_ERROR rs_setNewStatusMessage(const char*) { return RS_ERROR_SUCCESS; }
-
-}  // extern "C"

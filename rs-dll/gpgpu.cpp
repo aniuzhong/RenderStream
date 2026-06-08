@@ -238,8 +238,7 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
                 const DWORD wait_result = WaitForSingleObject(fence_event_[wait_idx], 5000);
 
                 QueryPerformanceCounter(&t1);
-                const double wait_ms = static_cast<double>(t1.QuadPart - t0.QuadPart)
-                                     / freq.QuadPart * 1000.0;
+                const double wait_ms = static_cast<double>(t1.QuadPart - t0.QuadPart) / freq.QuadPart * 1000.0;
                 const UINT64 after = fence_[wait_idx]->GetCompletedValue();
 
                 if (wait_result != WAIT_OBJECT_0) {

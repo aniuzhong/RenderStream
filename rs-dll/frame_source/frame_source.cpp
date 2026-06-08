@@ -22,7 +22,7 @@ IFrameSource* GetFrameSource() {
 
 // Frame pacing
 
-RS_ERROR rs_awaitFrameData(int timeoutMs, FrameData* data) {
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_awaitFrameData(int timeoutMs, FrameData* data) {
     (void)timeoutMs;
     auto* s = rs::GetFrameSource();
     if (!data || !s)
@@ -39,7 +39,7 @@ RS_ERROR rs_awaitFrameData(int timeoutMs, FrameData* data) {
 
 // Cameras
 
-RS_ERROR rs_getFrameCamera(StreamHandle streamHandle, CameraData* outCameraData) {
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameCamera(StreamHandle streamHandle, CameraData* outCameraData) {
     auto* s = rs::GetFrameSource();
     if (!s)
         return RS_ERROR_NOTFOUND;
@@ -48,28 +48,32 @@ RS_ERROR rs_getFrameCamera(StreamHandle streamHandle, CameraData* outCameraData)
 
 // Scene parameters
 
-RS_ERROR rs_getFrameParameters(uint64_t schemaHash, void* outData, uint64_t size) {
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameParameters(uint64_t schemaHash, void* outData, uint64_t size) {
     auto* s = rs::GetFrameSource();
     if (!s)
         return RS_ERROR_NOTFOUND;
     return s->GetFrameParameters(schemaHash, outData, size);
 }
 
-RS_ERROR rs_getFrameImageData(uint64_t schemaHash, ImageFrameData* out, uint64_t count) {
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameImageData(uint64_t schemaHash, ImageFrameData* out, uint64_t count) {
     auto* s = rs::GetFrameSource();
     if (!s)
         return RS_ERROR_NOTFOUND;
     return s->GetFrameImageData(schemaHash, out, count);
 }
 
-RS_ERROR rs_getFrameImage2(int64_t imageId, const SenderFrame* frame) {
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameImage2(int64_t imageId, const SenderFrame* frame) {
     auto* s = rs::GetFrameSource();
     if (!s)
         return RS_ERROR_NOTFOUND;
     return s->GetFrameImage(imageId, frame);
 }
 
-RS_ERROR rs_getFrameText(uint64_t schemaHash, uint32_t index, const char** outText) {
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_releaseImage2(const SenderFrame*) {
+    return RS_ERROR_SUCCESS;
+}
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameText(uint64_t schemaHash, uint32_t index, const char** outText) {
     auto* s = rs::GetFrameSource();
     if (!s)
         return RS_ERROR_NOTFOUND;
@@ -78,9 +82,7 @@ RS_ERROR rs_getFrameText(uint64_t schemaHash, uint32_t index, const char** outTe
 
 // Skeleton
 
-extern "C" {
-
-D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointPoses(uint64_t schemaHash, uint32_t poseParamIndex, SkeletonPose* pose, int* numJoints) {
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointPoses(uint64_t schemaHash, uint32_t poseParamIndex, SkeletonPose* pose, int* numJoints) {
     auto* s = rs::GetFrameSource();
     if (!s) {
         if (numJoints)
@@ -90,7 +92,7 @@ D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointPoses(uint64_t schemaHash, uint
     return s->GetSkeletonJointPoses(schemaHash, poseParamIndex, pose, numJoints);
 }
 
-D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonLayout(uint64_t schemaHash, uint64_t id, SkeletonLayout* layout, int* numJoints) {
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonLayout(uint64_t schemaHash, uint64_t id, SkeletonLayout* layout, int* numJoints) {
     auto* s = rs::GetFrameSource();
     if (!s) {
         if (numJoints)
@@ -100,7 +102,7 @@ D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonLayout(uint64_t schemaHash, uint64_t
     return s->GetSkeletonLayout(schemaHash, id, layout, numJoints);
 }
 
-D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointNames(uint64_t schemaHash, uint64_t layoutId, const char** names, int** nameByteLengths, int* numJoints) {
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointNames(uint64_t schemaHash, uint64_t layoutId, const char** names, int** nameByteLengths, int* numJoints) {
     auto* s = rs::GetFrameSource();
     if (!s) {
         if (numJoints)
@@ -110,4 +112,13 @@ D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointNames(uint64_t schemaHash, uint
     return s->GetSkeletonJointNames(schemaHash, layoutId, names, nameByteLengths, numJoints);
 }
 
-}  // extern "C"
+// Cluster
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_setFollower(int) {
+    return RS_ERROR_SUCCESS;
+}
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_beginFollowerFrame(double) {
+    return RS_ERROR_SUCCESS;
+}
+

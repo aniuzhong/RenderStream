@@ -58,5 +58,8 @@ extern "C" D3_RENDER_STREAM_API void rs_unregisterLoggingFunc()                 
 extern "C" D3_RENDER_STREAM_API void rs_unregisterErrorLoggingFunc()            { rs::log::ClearErrorCallback(); }
 extern "C" D3_RENDER_STREAM_API void rs_unregisterVerboseLoggingFunc()          { rs::log::ClearVerboseCallback(); }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_logToD3(const char*) { return RS_ERROR_SUCCESS; }
+// Remote logging and profiling
 
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_logToD3(const char*) { return RS_ERROR_SUCCESS; }
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_sendProfilingData(ProfilingEntry*, int) { return RS_ERROR_SUCCESS; }
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_setNewStatusMessage(const char*) { return RS_ERROR_SUCCESS; }
