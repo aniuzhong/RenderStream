@@ -53,25 +53,25 @@ private:
     Sender() = default;
     friend Sender& GetSender();
 
-    static constexpr int kConnCheckIntervalMs = 1000;
-    static constexpr int kConnCheckTimeoutMs  = 10;
-    static constexpr int64_t kGracePeriodMs   = 5000;
+    static constexpr int        kConnCheckIntervalMs = 1000;
+    static constexpr int        kConnCheckTimeoutMs  = 10;
+    static constexpr int64_t    kGracePeriodMs       = 5000;
 
     struct Layer {
-        NDIlib_send_instance_t instance = nullptr;
-        int     width      = 0;
-        int     height     = 0;
-        int     conn_count = -1;
-        int64_t last_conn_ms  = 0;
-        int64_t started_ms    = 0;
+        NDIlib_send_instance_t  instance        = nullptr;
+        int                     width           = 0;
+        int                     height          = 0;
+        int                     conn_count      = -1;
+        int64_t                 last_conn_ms    = 0;
+        int64_t                 started_ms      = 0;
     };
 
-    std::unordered_map<int, Layer> layers_;
-    mutable std::mutex mtx_;
-    std::string name_;
-    int     device_id_  = 0;
-    uint32_t row_pitch_  = 0;
-    bool    started_     = false;
+    std::unordered_map<int, Layer>  layers_;
+    mutable std::mutex              mtx_;
+    std::string                     name_;
+    int                             device_id_      = 0;
+    uint32_t                        row_pitch_      = 0;
+    bool                            started_        = false;
 };
 
 Sender& GetSender();
