@@ -3,7 +3,6 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
-#include <numbers>
 #include <nlohmann/json.hpp>
 
 namespace rs {
@@ -91,54 +90,22 @@ int PrevKey(const std::vector<CameraKey>& keys, double t) {
     return n - 1;
 }
 
-CameraPose LerpPose(const CameraPose& a, const CameraPose& b, double f) {
-    CameraPose out;
-    out.x     = a.x + f * (b.x - a.x);
-    out.y     = a.y + f * (b.y - a.y);
-    out.z     = a.z + f * (b.z - a.z);
-    out.rx    = a.rx + f * (b.rx - a.rx);
-    out.ry    = a.ry + f * (b.ry - a.ry);
-    out.rz    = a.rz + f * (b.rz - a.rz);
-    out.fov_h = a.fov_h + f * (b.fov_h - a.fov_h);
-    return out;
-}
+}  // namespace
 
-}
-
-CameraData PoseToCameraData(const CameraPose& pose, int stream_w, int stream_h) {
-    CameraData c = {};
-    c.x             = static_cast<float>(pose.x);
-    c.y             = static_cast<float>(pose.y);
-    c.z             = static_cast<float>(pose.z);
-    c.rx            = static_cast<float>(pose.rx);
-    c.ry            = static_cast<float>(pose.ry);
-    c.rz            = static_cast<float>(pose.rz);
-    c.cameraHandle  = 1;
-    c.nearZ         = 1.0f;
-    c.farZ          = 10000.0f;
-    c.sensorX       = static_cast<float>(stream_w);
-    c.sensorY       = static_cast<float>(stream_h);
-    c.orthoWidth    = -1;
-    c.id            = 1;
-    const float fov_rad = static_cast<float>(pose.fov_h * std::numbers::pi / 180.0);
-    c.focalLength = c.sensorX * 0.5f / std::tan(fov_rad * 0.5f);
-    return c;
-}
-
-void OrbitCameraFn(double t, int /*idx*/, CameraPose* out) {
-    out->x             = -0.3;
-    out->y             = 1.0 + 3.0 * std::cos(t * 0.5);
-    out->z             = -20.2 + 5.0 * std::sin(t * 0.5);
-    out->rx            = 0.0;
-    out->ry            = 0.0;
-    out->rz            = 0.0;
-    out->fov_h         = 60.0 + 20.0 * std::sin(t * 0.3);
+void OrbitCameraFn(double t, int /*idx*/, int sensor_w, int sensor_h, CameraData* out) {
+    *out = camera_data_from_fov(
+        -0.3,
+        1.0 + 3.0 * std::cos(t * 0.5),
+        -20.2 + 5.0 * std::sin(t * 0.5),
+        0.0, 0.0, 0.0,
+        60.0 + 20.0 * std::sin(t * 0.3),
+        sensor_w, sensor_h);
 }
 
 CameraFn MakeKeyframeCamera(const std::vector<KeyframeTrack>& tracks) {
     if (tracks.empty()) return OrbitCameraFn;
 
-    return [tracks](double t, int idx, CameraPose* out) {
+    return [tracks](double t, int idx, int sensor_w, int sensor_h, CameraData* out) {
         int ti = idx < static_cast<int>(tracks.size()) ? idx : 0;
         const auto& keys = tracks[ti].keys;
         int n = static_cast<int>(keys.size());
@@ -153,11 +120,23 @@ CameraFn MakeKeyframeCamera(const std::vector<KeyframeTrack>& tracks) {
         if (t >= keys.back().t && !tracks[ti].loop)
             i0 = i1 = n - 1;
 
-        if (i0 == i1 || keys[i1].t <= keys[i0].t) {
-            *out = keys[i0].pose;
+        const CameraKey& k0 = keys[i0];
+        if (i0 == i1 || keys[i1].t <= k0.t) {
+            *out = camera_data_from_fov(
+                k0.x, k0.y, k0.z, k0.rx, k0.ry, k0.rz, k0.fov_h,
+                sensor_w, sensor_h);
         } else {
-            double f = (t - keys[i0].t) / (keys[i1].t - keys[i0].t);
-            *out = LerpPose(keys[i0].pose, keys[i1].pose, f);
+            const CameraKey& k1 = keys[i1];
+            double f = (t - k0.t) / (k1.t - k0.t);
+            *out = camera_data_from_fov(
+                k0.x + f * (k1.x - k0.x),
+                k0.y + f * (k1.y - k0.y),
+                k0.z + f * (k1.z - k0.z),
+                k0.rx + f * (k1.rx - k0.rx),
+                k0.ry + f * (k1.ry - k0.ry),
+                k0.rz + f * (k1.rz - k0.rz),
+                k0.fov_h + f * (k1.fov_h - k0.fov_h),
+                sensor_w, sensor_h);
         }
     };
 }
@@ -176,14 +155,14 @@ CameraFn LoadKeyframePath(const std::string& path) {
         track.loop = loop;
         for (const auto& k : trk["keys"]) {
             CameraKey key;
-            key.t         = k.value("t", 0.0);
-            key.pose.x     = k.value("x", 0.0);
-            key.pose.y     = k.value("y", 0.0);
-            key.pose.z     = k.value("z", 0.0);
-            key.pose.rx    = k.value("rx", 0.0);
-            key.pose.ry    = k.value("ry", 0.0);
-            key.pose.rz    = k.value("rz", 0.0);
-            key.pose.fov_h = k.value("fov", 90.0);
+            key.t     = k.value("t", 0.0);
+            key.x     = k.value("x", 0.0);
+            key.y     = k.value("y", 0.0);
+            key.z     = k.value("z", 0.0);
+            key.rx    = k.value("rx", 0.0);
+            key.ry    = k.value("ry", 0.0);
+            key.rz    = k.value("rz", 0.0);
+            key.fov_h = k.value("fov", 90.0);
             track.keys.push_back(key);
         }
         if (!track.keys.empty())

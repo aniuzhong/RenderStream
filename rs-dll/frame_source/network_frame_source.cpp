@@ -1,4 +1,5 @@
 #include "network_frame_source.h"
+#include "d3renderstream.hpp"
 #include "logging.h"
 #include "topology.h"
 
@@ -81,26 +82,8 @@ void NetworkFrameSource::OnRead(std::shared_ptr<asio::ip::tcp::socket> socket,
                 inbox_->cameras.clear();
 
                 if (j.contains("cameras") && j["cameras"].is_array()) {
-                    for (const auto& cj : j["cameras"]) {
-                        CameraData cd = {};
-                        cd.id           = cj.value("id", 0ull);
-                        cd.cameraHandle = cj.value("cameraHandle", 0ull);
-                        cd.x            = cj.value("x", 0.0f);
-                        cd.y            = cj.value("y", 0.0f);
-                        cd.z            = cj.value("z", 0.0f);
-                        cd.rx           = cj.value("rx", 0.0f);
-                        cd.ry           = cj.value("ry", 0.0f);
-                        cd.rz           = cj.value("rz", 0.0f);
-                        cd.focalLength  = cj.value("focalLength", 50.0f);
-                        cd.sensorX      = cj.value("sensorX", 36.0f);
-                        cd.sensorY      = cj.value("sensorY", 24.0f);
-                        cd.cx           = cj.value("cx", 0.0f);
-                        cd.cy           = cj.value("cy", 0.0f);
-                        cd.nearZ        = cj.value("nearZ", 1.0f);
-                        cd.farZ         = cj.value("farZ", 10000.0f);
-                        cd.orthoWidth   = cj.value("orthoWidth", 0.0f);
-                        inbox_->cameras.push_back(cd);
-                    }
+                    for (const auto& cj : j["cameras"])
+                        inbox_->cameras.push_back(cj.get<CameraData>());
                 }
                 tickT = inbox_->t_tracked;
                 tickCameras = inbox_->cameras.size();

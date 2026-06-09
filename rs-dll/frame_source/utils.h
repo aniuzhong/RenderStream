@@ -1,6 +1,6 @@
 #pragma once
 
-#include "d3renderstream.h"
+#include "d3renderstream.hpp"
 
 #include <functional>
 #include <string>
@@ -8,27 +8,10 @@
 
 namespace rs {
 
-struct CameraPose {
-    double x;
-    double y;
-    double z;
-    double rx;
-    double ry;
-    double rz;
-    double fov_h;
-};
-
-using CameraFn = std::function<void(double t, int stream_idx, CameraPose* out)>;
-
-// CameraPose -> CameraData (computes focalLength from fov_h).
-CameraData PoseToCameraData(const CameraPose& pose, int stream_w, int stream_h);
-
-// Default orbit camera.
-void OrbitCameraFn(double t, int idx, CameraPose* out);
-
 struct CameraKey {
     double t;
-    CameraPose pose;
+    double x, y, z, rx, ry, rz;
+    double fov_h;
 };
 
 struct KeyframeTrack {
@@ -36,12 +19,18 @@ struct KeyframeTrack {
     std::vector<CameraKey> keys;
 };
 
-// Parse a keyframe JSON file (same format as rs-conductor camera.json).
-// Returns a CameraFn that does linear interpolation between keys.
-CameraFn LoadKeyframePath(const std::string& path);
+// CameraFn outputs CameraData directly.
+// sensor_w / sensor_h provide stream dimensions for fov_h -> focalLength conversion.
+using CameraFn = std::function<void(double t, int idx, int sensor_w, int sensor_h, CameraData* out)>;
+
+// Default orbit camera.
+void OrbitCameraFn(double t, int idx, int sensor_w, int sensor_h, CameraData* out);
 
 // Build a CameraFn from hardcoded keyframe tracks (no file I/O).
 CameraFn MakeKeyframeCamera(const std::vector<KeyframeTrack>& tracks);
+
+// Parse a keyframe JSON file (same format as rs-conductor camera.json).
+CameraFn LoadKeyframePath(const std::string& path);
 
 // -- Skeleton helpers --------------------------------------------------
 

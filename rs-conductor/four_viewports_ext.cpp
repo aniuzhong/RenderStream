@@ -8,6 +8,11 @@
 //   four_viewports_ext.exe [timeout_ms]
 //   four_viewports_ext.exe 500
 
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+
 #include <cstdio>
 #include <cstdlib>
 
@@ -29,7 +34,8 @@ static constexpr double kFps = 60.0;
 static constexpr double kDt = 1.0 / kFps;
 
 const char* kEngineExe =
-    "D:/Epic Games/UE_5.5/Engine/Binaries/Win64/UnrealEditor.exe";
+    "C:/Program Files/Epic Games/UE_5.5/Engine/Binaries/Win64/UnrealEditor.exe";
+    // "D:/Epic Games/UE_5.5/Engine/Binaries/Win64/UnrealEditor.exe";
 const char* kProjectPath =
     "E:/Assets/Unreal Projects/nDisplay_Demo_55/nDisplay_Demo.uproject";
 const char* kNodeName = "node0";
@@ -131,6 +137,12 @@ static std::string SchemaProject(const char* node_ip, int node_port) {
 //  Main
 
 int main(int argc, char* argv[]) {
+    WSADATA wsa_data;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0) {
+        fprintf(stderr, "WSAStartup failed\n");
+        return 1;
+    }
+
     int timeout_ms = (argc > 1) ? atoi(argv[1]) : 500;
 
     fprintf(stderr, "=== nDisplay Launcher (external tick) ===\n");
@@ -144,6 +156,7 @@ int main(int argc, char* argv[]) {
 
     if (node_count == 0) {
         fprintf(stderr, "No nodes found.\n");
+        WSACleanup();
         return 1;
     }
 
@@ -247,6 +260,7 @@ int main(int argc, char* argv[]) {
     }
 
     RS_FreeNodeList(&list);
+    WSACleanup();
     fprintf(stderr, "\nDone.\n");
     return 0;
 }

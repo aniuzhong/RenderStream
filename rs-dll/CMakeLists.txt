@@ -38,6 +38,7 @@ target_compile_definitions(renderstream PRIVATE
 
 target_include_directories(renderstream PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_SOURCE_DIR}/common"
     "${NDI_ROOT}/Include"
 )
 
@@ -66,6 +67,7 @@ add_executable(schema_serializer_test
 )
 target_include_directories(schema_serializer_test PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_SOURCE_DIR}/common"
     "${CMAKE_CURRENT_SOURCE_DIR}/schema"
     ${nlohmann_json_SOURCE_DIR}/single_include
 )

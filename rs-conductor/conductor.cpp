@@ -9,54 +9,42 @@
 
 namespace {
 
-//  Keyframe interpolation
+//  Keyframe system
 
-struct CamKey  { double t; CamPose pose; };
-struct CamTrack { bool loop; std::vector<CamKey> keys; };
+struct Keyframe { double t; double x, y, z, rx, ry, rz; double fov_h; };
+struct Track    { bool loop; std::vector<Keyframe> keys; };
 
-static int PrevKey(const std::vector<CamKey>& keys, double t) {
+static const std::vector<Track>& CameraTracks() {
+    static std::vector<Track> tracks = {
+        {true, { // camera0 - left-top
+            {0.0, -2.94, 1.50, -7.69, 0.0, 0.0, 0.0, 90.0},
+            {3.0,  2.00, 1.50, -7.69, 0.0, 0.0, 0.0, 90.0},
+            {6.0, -2.94, 1.50, -7.69, 0.0, 0.0, 0.0, 90.0},
+        }},
+        {true, { // camera1 - right-top
+            {0.0,  5.71, 1.36,  6.50, 0.0, 179.71, 0.0, 90.0},
+            {3.0, -5.59, 1.36,  6.50, 0.0, 179.71, 0.0, 90.0},
+            {6.0,  5.71, 1.36,  6.50, 0.0, 179.71, 0.0, 90.0},
+        }},
+        {true, { // camera2 - left-bottom
+            {0.0, -11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0},
+            {3.0, -11.395, 8.30, -5.00, -20.0, 84.1, 0.0, 90.0},
+            {6.0, -11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0},
+        }},
+        {true, { // camera3 - right-bottom
+            {0.0, 12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0},
+            {3.0, 12.40, 7.70,  7.00, -30.0, -90.0, 0.0, 90.0},
+            {6.0, 12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0},
+        }},
+    };
+    return tracks;
+}
+
+static int PrevKey(const std::vector<Keyframe>& keys, double t) {
     int n = static_cast<int>(keys.size());
     for (int i = 0; i < n; ++i)
         if (keys[i].t > t) return i - 1;
     return n - 1;
-}
-
-static CamPose LerpPose(const CamPose& a, const CamPose& b, double f) {
-    CamPose out;
-    out.x = a.x + f * (b.x - a.x);
-    out.y = a.y + f * (b.y - a.y);
-    out.z = a.z + f * (b.z - a.z);
-    out.rx = a.rx + f * (b.rx - a.rx);
-    out.ry = a.ry + f * (b.ry - a.ry);
-    out.rz = a.rz + f * (b.rz - a.rz);
-    out.fov_h = a.fov_h + f * (b.fov_h - a.fov_h);
-    return out;
-}
-
-static const std::vector<CamTrack>& CameraTracks() {
-    static std::vector<CamTrack> tracks = {
-        {true, { // camera0 - left-top
-            {0.0, {-2.94, 1.50, -7.69, 0.0, 0.0, 0.0, 90.0}},
-            {3.0, { 2.00, 1.50, -7.69, 0.0, 0.0, 0.0, 90.0}},
-            {6.0, {-2.94, 1.50, -7.69, 0.0, 0.0, 0.0, 90.0}},
-        }},
-        {true, { // camera1 - right-top
-            {0.0, { 5.71, 1.36,  6.50, 0.0, 179.71, 0.0, 90.0}},
-            {3.0, {-5.59, 1.36,  6.50, 0.0, 179.71, 0.0, 90.0}},
-            {6.0, { 5.71, 1.36,  6.50, 0.0, 179.71, 0.0, 90.0}},
-        }},
-        {true, { // camera2 - left-bottom
-            {0.0, {-11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0}},
-            {3.0, {-11.395, 8.30, -5.00, -20.0, 84.1, 0.0, 90.0}},
-            {6.0, {-11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0}},
-        }},
-        {true, { // camera3 - right-bottom
-            {0.0, {12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0}},
-            {3.0, {12.40, 7.70,  7.00, -30.0, -90.0, 0.0, 90.0}},
-            {6.0, {12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0}},
-        }},
-    };
-    return tracks;
 }
 
 }  // anonymous namespace
@@ -104,39 +92,49 @@ void Conductor::Disconnect() {
 
 void Conductor::GenerateCameras(double t) {
     last_cameras_.clear();
-    for (const auto& track : CameraTracks()) {
+    for (size_t tr = 0; tr < CameraTracks().size(); ++tr) {
+        const auto& track = CameraTracks()[tr];
         const auto& keys = track.keys;
-        if (keys.empty()) continue;
+        if (keys.empty()) { last_cameras_.push_back(CameraData{}); continue; }
+
         double total = keys.back().t;
         double ti = track.loop && total > 0.0 ? std::fmod(t, total) : t;
         int i0 = PrevKey(keys, ti);
         int i1 = (i0 + 1) % static_cast<int>(keys.size());
         if (ti >= total && !track.loop) i0 = i1 = static_cast<int>(keys.size()) - 1;
-        last_cameras_.push_back(i0 == i1 ? keys[i0].pose
-            : LerpPose(keys[i0].pose, keys[i1].pose,
-                       (ti - keys[i0].t) / (keys[i1].t - keys[i0].t)));
-    }
-}
 
-std::string Conductor::CameraToJson(const CamPose& p, int stream_w, int stream_h, int idx) {
-    char buf[1200];
-    float fov_rad = static_cast<float>(p.fov_h * 3.1415926535 / 180.0);
-    float fl = (stream_w > 0 ? static_cast<float>(stream_w) : 36.0f) * 0.5f / std::tan(fov_rad * 0.5f);
-    snprintf(buf, sizeof(buf),
-        R"({"id":%d,"cameraHandle":1,"x":%.3f,"y":%.3f,"z":%.3f,"rx":%.3f,"ry":%.3f,"rz":%.3f,"focalLength":%.3f,"sensorX":%d,"sensorY":%d,"cx":0,"cy":0,"nearZ":1,"farZ":10000,"orthoWidth":-1})",
-        idx + 1,
-        p.x, p.y, p.z, p.rx, p.ry, p.rz, fl,
-        stream_w, stream_h);
-    return buf;
+        const Keyframe& k0 = keys[i0];
+        if (i0 == i1) {
+            last_cameras_.push_back(camera_data_from_fov(
+                k0.x, k0.y, k0.z, k0.rx, k0.ry, k0.rz, k0.fov_h,
+                stream_w_, stream_h_));
+        } else {
+            const Keyframe& k1 = keys[i1];
+            double f = (ti - k0.t) / (k1.t - k0.t);
+            last_cameras_.push_back(camera_data_from_fov(
+                k0.x + f * (k1.x - k0.x),
+                k0.y + f * (k1.y - k0.y),
+                k0.z + f * (k1.z - k0.z),
+                k0.rx + f * (k1.rx - k0.rx),
+                k0.ry + f * (k1.ry - k0.ry),
+                k0.rz + f * (k1.rz - k0.rz),
+                k0.fov_h + f * (k1.fov_h - k0.fov_h),
+                stream_w_, stream_h_));
+        }
+    }
+
+    // Set id for each camera
+    for (size_t i = 0; i < last_cameras_.size(); ++i)
+        last_cameras_[i].id = static_cast<uint64_t>(i + 1);
 }
 
 std::string Conductor::BuildMessage(double t) const {
-    std::string json = "{\"t\":" + std::to_string(t) + ",\"cameras\":[";
-    for (size_t i = 0; i < last_cameras_.size(); ++i) {
-        if (i > 0) json += ",";
-        json += CameraToJson(last_cameras_[i], stream_w_, stream_h_, static_cast<int>(i));
-    }
-    json += "]}\n";
+    nlohmann::json msg;
+    msg["t"] = t;
+    msg["cameras"] = last_cameras_;
+
+    std::string json = msg.dump();
+    json += "\n";
 
     // Diagnostic: check for embedded newlines in the JSON body
     static int s_send_seq = 0;

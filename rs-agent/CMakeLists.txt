@@ -35,7 +35,7 @@ add_executable(rs-agent WIN32
     server/utils/lan_net.cpp
     ${RS_AGENT_ICON_RC}
 )
-target_include_directories(rs-agent PRIVATE . ${RS_AGENT_GEN_DIR})
+target_include_directories(rs-agent PRIVATE . ${RS_AGENT_GEN_DIR} ${CMAKE_SOURCE_DIR}/common)
 target_link_options(rs-agent PRIVATE "/ENTRY:wmainCRTStartup")
 target_compile_definitions(rs-agent PRIVATE NOMINMAX)
 target_link_libraries(rs-agent PRIVATE

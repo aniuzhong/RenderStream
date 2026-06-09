@@ -63,10 +63,8 @@ RS_ERROR LocalFrameSource::AwaitFrame(int timeoutMs, FrameData* data) {
         next.frame_id = frame_;
         next.cameras.resize(n > 0 ? n : 1);
         for (int i = 0; i < (n > 0 ? n : 1); ++i) {
-            CameraPose pose;
             int cam_idx = (topo && topo->IsLoaded()) ? topo->At(i).viewpoint : i;
-            fn_(t, cam_idx, &pose);
-            next.cameras[i] = PoseToCameraData(pose, w, h);
+            fn_(t, cam_idx, w, h, &next.cameras[i]);
         }
         // Diagnostic hex dump for comparison with Network mode
         static int s_data_log = 0;

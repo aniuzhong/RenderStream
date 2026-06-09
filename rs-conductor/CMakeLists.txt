@@ -15,5 +15,8 @@ add_executable(four_viewports_ext
     four_viewports_ext.cpp
     conductor.cpp
 )
-target_include_directories(four_viewports_ext PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(four_viewports_ext PRIVATE ndisplay_gen rs_client ws2_32)
+target_include_directories(four_viewports_ext PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/common
+)
+target_link_libraries(four_viewports_ext PRIVATE ndisplay_gen rs_client nlohmann_json::nlohmann_json ws2_32)
