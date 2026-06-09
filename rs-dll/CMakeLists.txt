@@ -20,7 +20,7 @@ add_library(renderstream SHARED
     frame_source/local_frame_source.cpp
     frame_source/network_frame_source.cpp
     frame_source/frame_source.cpp
-    frame_source/utils.cpp
+    ${CMAKE_SOURCE_DIR}/common/misc.cpp
 )
 
 set_target_properties(renderstream PROPERTIES

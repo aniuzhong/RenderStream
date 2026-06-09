@@ -1,6 +1,6 @@
 #pragma once
 
-#include "d3renderstream.hpp"
+#include "misc.h"
 
 #include <string>
 #include <vector>
@@ -47,5 +47,6 @@ private:
     int stream_w_, stream_h_;
     SOCKET sock_ = INVALID_SOCKET;
 
+    CameraFn camera_fn_;
     std::vector<CameraData> last_cameras_;
 };

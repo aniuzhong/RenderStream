@@ -1,58 +1,52 @@
 #include "conductor.h"
 
-#include <cmath>
 #include <cstdio>
 #include <cstring>
 
 #include <chrono>
 #include <thread>
 
+// ============================================================
+// Keyframe tracks — shared with renderstream.dll
+// ============================================================
+
 namespace {
 
-//  Keyframe system
-
-struct Keyframe { double t; double x, y, z, rx, ry, rz; double fov_h; };
-struct Track    { bool loop; std::vector<Keyframe> keys; };
-
-static const std::vector<Track>& CameraTracks() {
-    static std::vector<Track> tracks = {
+const std::vector<KeyframeTrack>& ConductorTracks() {
+    static const std::vector<KeyframeTrack> tracks = {
         {true, { // camera0 - left-top
-            {0.0, -2.94, 1.50, -7.69, 0.0, 0.0, 0.0, 90.0},
-            {3.0,  2.00, 1.50, -7.69, 0.0, 0.0, 0.0, 90.0},
-            {6.0, -2.94, 1.50, -7.69, 0.0, 0.0, 0.0, 90.0},
+            make_camera_key(0.0, -2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0),
+            make_camera_key(3.0,  2.00, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0),
+            make_camera_key(6.0, -2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0),
         }},
         {true, { // camera1 - right-top
-            {0.0,  5.71, 1.36,  6.50, 0.0, 179.71, 0.0, 90.0},
-            {3.0, -5.59, 1.36,  6.50, 0.0, 179.71, 0.0, 90.0},
-            {6.0,  5.71, 1.36,  6.50, 0.0, 179.71, 0.0, 90.0},
+            make_camera_key(0.0,  5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0),
+            make_camera_key(3.0, -5.59, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0),
+            make_camera_key(6.0,  5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0),
         }},
         {true, { // camera2 - left-bottom
-            {0.0, -11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0},
-            {3.0, -11.395, 8.30, -5.00, -20.0, 84.1, 0.0, 90.0},
-            {6.0, -11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0},
+            make_camera_key(0.0, -11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0),
+            make_camera_key(3.0, -11.395, 8.30, -5.00, -20.0, 84.1, 0.0, 90.0),
+            make_camera_key(6.0, -11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0),
         }},
         {true, { // camera3 - right-bottom
-            {0.0, 12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0},
-            {3.0, 12.40, 7.70,  7.00, -30.0, -90.0, 0.0, 90.0},
-            {6.0, 12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0},
+            make_camera_key(0.0, 12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0),
+            make_camera_key(3.0, 12.40, 7.70,  7.00, -30.0, -90.0, 0.0, 90.0),
+            make_camera_key(6.0, 12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0),
         }},
     };
     return tracks;
 }
 
-static int PrevKey(const std::vector<Keyframe>& keys, double t) {
-    int n = static_cast<int>(keys.size());
-    for (int i = 0; i < n; ++i)
-        if (keys[i].t > t) return i - 1;
-    return n - 1;
-}
-
 }  // anonymous namespace
 
-//  Conductor
+// ============================================================
+// Conductor
+// ============================================================
 
 Conductor::Conductor(const char* node_ip, int tick_port, int stream_w, int stream_h)
-    : node_ip_(node_ip), tick_port_(tick_port), stream_w_(stream_w), stream_h_(stream_h) {}
+    : node_ip_(node_ip), tick_port_(tick_port), stream_w_(stream_w), stream_h_(stream_h),
+      camera_fn_(MakeKeyframeCamera(ConductorTracks())) {}
 
 Conductor::~Conductor() {
     Disconnect();
@@ -91,41 +85,11 @@ void Conductor::Disconnect() {
 }
 
 void Conductor::GenerateCameras(double t) {
-    last_cameras_.clear();
-    for (size_t tr = 0; tr < CameraTracks().size(); ++tr) {
-        const auto& track = CameraTracks()[tr];
-        const auto& keys = track.keys;
-        if (keys.empty()) { last_cameras_.push_back(CameraData{}); continue; }
-
-        double total = keys.back().t;
-        double ti = track.loop && total > 0.0 ? std::fmod(t, total) : t;
-        int i0 = PrevKey(keys, ti);
-        int i1 = (i0 + 1) % static_cast<int>(keys.size());
-        if (ti >= total && !track.loop) i0 = i1 = static_cast<int>(keys.size()) - 1;
-
-        const Keyframe& k0 = keys[i0];
-        if (i0 == i1) {
-            last_cameras_.push_back(camera_data_from_fov(
-                k0.x, k0.y, k0.z, k0.rx, k0.ry, k0.rz, k0.fov_h,
-                stream_w_, stream_h_));
-        } else {
-            const Keyframe& k1 = keys[i1];
-            double f = (ti - k0.t) / (k1.t - k0.t);
-            last_cameras_.push_back(camera_data_from_fov(
-                k0.x + f * (k1.x - k0.x),
-                k0.y + f * (k1.y - k0.y),
-                k0.z + f * (k1.z - k0.z),
-                k0.rx + f * (k1.rx - k0.rx),
-                k0.ry + f * (k1.ry - k0.ry),
-                k0.rz + f * (k1.rz - k0.rz),
-                k0.fov_h + f * (k1.fov_h - k0.fov_h),
-                stream_w_, stream_h_));
-        }
-    }
-
-    // Set id for each camera
-    for (size_t i = 0; i < last_cameras_.size(); ++i)
+    last_cameras_.resize(4);
+    for (int i = 0; i < 4; ++i) {
+        camera_fn_(t, i, stream_w_, stream_h_, &last_cameras_[i]);
         last_cameras_[i].id = static_cast<uint64_t>(i + 1);
+    }
 }
 
 std::string Conductor::BuildMessage(double t) const {

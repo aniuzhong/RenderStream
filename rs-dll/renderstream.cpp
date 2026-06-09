@@ -16,7 +16,7 @@
 #include "frame_source/frame_source.h"
 #include "frame_source/local_frame_source.h"
 #include "frame_source/network_frame_source.h"
-#include "frame_source/utils.h"
+#include "misc.h"
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor, int expectedVersionMinor) {
     (void)expectedVersionMajor;
@@ -31,30 +31,30 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor,
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
                        reinterpret_cast<LPCWSTR>(&rs_initialise), &self);
 
-    auto camera_fn = rs::MakeKeyframeCamera({
+    auto camera_fn = MakeKeyframeCamera({
         // camera0 - left-top
         {true, {
-            {0.0, -2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0},
-            {3.0,  2.00, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0},
-            {6.0, -2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0},
+            make_camera_key(0.0, -2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0),
+            make_camera_key(3.0,  2.00, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0),
+            make_camera_key(6.0, -2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0),
         }},
         // camera1 - right-top
         {true, {
-            {0.0,  5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0},
-            {3.0, -5.59, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0},
-            {6.0,  5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0},
+            make_camera_key(0.0,  5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0),
+            make_camera_key(3.0, -5.59, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0),
+            make_camera_key(6.0,  5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0),
         }},
         // camera2 - left-bottom
         {true, {
-            {0.0, -11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0},
-            {3.0, -11.395, 8.30, -5.00, -20.0, 84.1, 0.0, 90.0},
-            {6.0, -11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0},
+            make_camera_key(0.0, -11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0),
+            make_camera_key(3.0, -11.395, 8.30, -5.00, -20.0, 84.1, 0.0, 90.0),
+            make_camera_key(6.0, -11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0),
         }},
         // camera3 - right-bottom
         {true, {
-            {0.0, 12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0},
-            {3.0, 12.40, 7.70,  7.00, -30.0, -90.0, 0.0, 90.0},
-            {6.0, 12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0},
+            make_camera_key(0.0, 12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0),
+            make_camera_key(3.0, 12.40, 7.70,  7.00, -30.0, -90.0, 0.0, 90.0),
+            make_camera_key(6.0, 12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0),
         }},
     });
 #ifdef RS_NETWORK_TICK_PORT
