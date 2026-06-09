@@ -7,18 +7,18 @@ namespace rs {
 
 // Singleton
 
-static std::unique_ptr<IFrameSource> g_frameSource;
+static std::unique_ptr<IFrameSource> g_frame_source;
 
 void SetFrameSource(std::unique_ptr<IFrameSource> s) {
-    g_frameSource = std::move(s);
-    rs::log::Info("[FrameSource] set: %p", static_cast<void*>(g_frameSource.get()));
+    g_frame_source = std::move(s);
+    rs::log::Info("[FrameSource] set: %p", static_cast<void*>(g_frame_source.get()));
 }
 
 IFrameSource* GetFrameSource() {
-    return g_frameSource.get();
+    return g_frame_source.get();
 }
 
-// ── Default implementations for optional methods ──
+// Default implementations for optional methods
 
 RS_ERROR IFrameSource::GetFrameParameters(uint64_t, void*, uint64_t) {
     return RS_ERROR_SUCCESS;
@@ -56,18 +56,10 @@ RS_ERROR IFrameSource::GetSkeletonJointNames(uint64_t, uint64_t, const char**, i
 // Frame pacing
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_awaitFrameData(int timeoutMs, FrameData* data) {
-    (void)timeoutMs;
     auto* s = rs::GetFrameSource();
     if (!data || !s)
         return RS_ERROR_INVALID_PARAMETERS;
-
-    RS_ERROR err = s->AwaitFrame(data);
-
-    // static int s_await = 0;
-    // if (++s_await <= 3 || s_await % 120 == 0)
-    //     rs::log::Info("[rs_awaitFrameData] #%d: tTracked=%.3f ret=%d", s_await, data->tTracked, static_cast<int>(err));
-
-    return err;
+    return s->AwaitFrame(timeoutMs, data);
 }
 
 // Cameras

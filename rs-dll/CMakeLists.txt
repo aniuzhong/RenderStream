@@ -17,7 +17,7 @@ add_library(renderstream SHARED
     schema/schema.cpp
     schema/schema_serializer.cpp
     topology.cpp
-    frame_source/hosting.cpp
+    frame_source/local_frame_source.cpp
     frame_source/network_frame_source.cpp
     frame_source/frame_source.cpp
     frame_source/utils.cpp

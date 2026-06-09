@@ -25,7 +25,7 @@ public:
     explicit LocalFrameSource(Config cfg);
 
     // IFrameSource
-    RS_ERROR AwaitFrame(FrameData* data) override;
+    RS_ERROR AwaitFrame(int timeoutMs, FrameData* data) override;
     RS_ERROR GetCamera(StreamHandle handle, CameraData* out) override;
 
 private:

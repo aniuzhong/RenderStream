@@ -1,4 +1,4 @@
-// Compile-time mode switch: comment out to use Hosting (self-clocked 60fps).
+// Compile-time mode switch: comment out to use LocalFrameSource (self-clocked 60fps).
 #define RS_NETWORK_TICK_PORT 9581
 
 #include "d3renderstream.h"
@@ -14,7 +14,7 @@
 #include "sender.h"
 #include "topology.h"
 #include "frame_source/frame_source.h"
-#include "frame_source/hosting.h"
+#include "frame_source/local_frame_source.h"
 #include "frame_source/network_frame_source.h"
 #include "frame_source/utils.h"
 
@@ -66,19 +66,19 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor,
         rs::SetFrameSource(std::make_unique<rs::NetworkFrameSource>(std::move(cfg)));
     } catch (const std::exception& e) {
         rs::log::Error("[rs_initialise] network listener failed: %s - falling back to hosting", e.what());
-        rs::Hosting::Config cfg;
+        rs::LocalFrameSource::Config cfg;
         cfg.topology = &rs::Topology::Instance();
         cfg.camera   = camera_fn;
         cfg.fps      = 60.0;
-        rs::SetFrameSource(std::make_unique<rs::Hosting>(std::move(cfg)));
+        rs::SetFrameSource(std::make_unique<rs::LocalFrameSource>(std::move(cfg)));
     }
 #else
     rs::log::Info("[rs_initialise] hosting mode (self-clocked 60fps)");
-    rs::Hosting::Config cfg;
+    rs::LocalFrameSource::Config cfg;
     cfg.topology = &rs::Topology::Instance();
     cfg.camera   = camera_fn;
     cfg.fps      = 60.0;
-    rs::SetFrameSource(std::make_unique<rs::Hosting>(std::move(cfg)));
+    rs::SetFrameSource(std::make_unique<rs::LocalFrameSource>(std::move(cfg)));
 #endif
 
     rs::log::Info("[rs_initialise] done");

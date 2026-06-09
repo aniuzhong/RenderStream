@@ -17,7 +17,8 @@ LocalFrameSource::LocalFrameSource(Config cfg)
 
 //  Frame pacing 
 
-RS_ERROR LocalFrameSource::AwaitFrame(FrameData* data) {
+RS_ERROR LocalFrameSource::AwaitFrame(int timeoutMs, FrameData* data) {
+    (void)timeoutMs;
     auto now = chrono::steady_clock::now();
     if (!t0_set_) {
         t0_ = now;
