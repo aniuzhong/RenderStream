@@ -28,6 +28,7 @@ void        RS_FreeNodeList(RS_NodeList* list);
 #define RS_STATE_IDLE      "idle"
 #define RS_STATE_LAUNCHING "launching"
 #define RS_STATE_RUNNING   "running"
+#define RS_STATE_STOPPING  "stopping"
 
 typedef struct {
     char    state[32];         // "idle", "launching", or "running"
