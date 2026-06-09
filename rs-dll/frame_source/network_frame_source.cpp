@@ -235,37 +235,4 @@ RS_ERROR NetworkFrameSource::GetCamera(StreamHandle handle, CameraData* out) {
     return RS_ERROR_SUCCESS;
 }
 
-RS_ERROR NetworkFrameSource::GetFrameParameters(uint64_t, void*, uint64_t) {
-    if (!snapshot_ready_) return RS_NOT_INITIALISED;
-    return RS_ERROR_SUCCESS;
-}
-
-RS_ERROR NetworkFrameSource::GetFrameImageData(uint64_t, ImageFrameData*, uint64_t) {
-    if (!snapshot_ready_) return RS_NOT_INITIALISED;
-    return RS_ERROR_SUCCESS;
-}
-
-RS_ERROR NetworkFrameSource::GetFrameImage(int64_t, const SenderFrame*) {
-    return RS_ERROR_NOTFOUND;
-}
-
-RS_ERROR NetworkFrameSource::GetFrameText(uint64_t, uint32_t, const char**) {
-    return RS_ERROR_NOTFOUND;
-}
-
-RS_ERROR NetworkFrameSource::GetSkeletonJointPoses(uint64_t, uint32_t, SkeletonPose*, int* numJoints) {
-    if (numJoints) *numJoints = 0;
-    return RS_ERROR_NOTFOUND;
-}
-
-RS_ERROR NetworkFrameSource::GetSkeletonLayout(uint64_t, uint64_t, SkeletonLayout*, int* numJoints) {
-    if (numJoints) *numJoints = 0;
-    return RS_ERROR_NOTFOUND;
-}
-
-RS_ERROR NetworkFrameSource::GetSkeletonJointNames(uint64_t, uint64_t, const char**, int**, int* numJoints) {
-    if (numJoints) *numJoints = 0;
-    return RS_ERROR_NOTFOUND;
-}
-
 }  // namespace rs

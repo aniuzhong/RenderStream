@@ -18,6 +18,39 @@ IFrameSource* GetFrameSource() {
     return g_frameSource.get();
 }
 
+// ── Default implementations for optional methods ──
+
+RS_ERROR IFrameSource::GetFrameParameters(uint64_t, void*, uint64_t) {
+    return RS_ERROR_SUCCESS;
+}
+
+RS_ERROR IFrameSource::GetFrameImageData(uint64_t, ImageFrameData*, uint64_t) {
+    return RS_ERROR_SUCCESS;
+}
+
+RS_ERROR IFrameSource::GetFrameImage(int64_t, const SenderFrame*) {
+    return RS_ERROR_NOTFOUND;
+}
+
+RS_ERROR IFrameSource::GetFrameText(uint64_t, uint32_t, const char**) {
+    return RS_ERROR_NOTFOUND;
+}
+
+RS_ERROR IFrameSource::GetSkeletonJointPoses(uint64_t, uint32_t, SkeletonPose*, int* numJoints) {
+    if (numJoints) *numJoints = 0;
+    return RS_ERROR_NOTFOUND;
+}
+
+RS_ERROR IFrameSource::GetSkeletonLayout(uint64_t, uint64_t, SkeletonLayout*, int* numJoints) {
+    if (numJoints) *numJoints = 0;
+    return RS_ERROR_NOTFOUND;
+}
+
+RS_ERROR IFrameSource::GetSkeletonJointNames(uint64_t, uint64_t, const char**, int**, int* numJoints) {
+    if (numJoints) *numJoints = 0;
+    return RS_ERROR_NOTFOUND;
+}
+
 }  // namespace rs
 
 // Frame pacing

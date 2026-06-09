@@ -38,13 +38,6 @@ public:
 
     RS_ERROR AwaitFrame(FrameData* data) override;
     RS_ERROR GetCamera(StreamHandle handle, CameraData* out) override;
-    RS_ERROR GetFrameParameters(uint64_t, void*, uint64_t) override;
-    RS_ERROR GetFrameImageData(uint64_t, ImageFrameData*, uint64_t) override;
-    RS_ERROR GetFrameImage(int64_t, const SenderFrame*) override;
-    RS_ERROR GetFrameText(uint64_t, uint32_t, const char**) override;
-    RS_ERROR GetSkeletonJointPoses(uint64_t, uint32_t, SkeletonPose*, int*) override;
-    RS_ERROR GetSkeletonLayout(uint64_t, uint64_t, SkeletonLayout*, int*) override;
-    RS_ERROR GetSkeletonJointNames(uint64_t, uint64_t, const char**, int**, int*) override;
 
 private:
     void IoLoop();

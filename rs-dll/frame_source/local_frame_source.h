@@ -14,7 +14,7 @@ class Topology;
 // Self-contained frame source: FixedRatePacer + TrackCamera + empty parameters.
 // Reads stream topology from the Topology singleton.
 //
-class Hosting : public IFrameSource {
+class LocalFrameSource : public IFrameSource {
 public:
     struct Config {
         const Topology* topology = nullptr;
@@ -22,18 +22,11 @@ public:
         double fps = 60.0;
     };
 
-    explicit Hosting(Config cfg);
+    explicit LocalFrameSource(Config cfg);
 
     // IFrameSource
     RS_ERROR AwaitFrame(FrameData* data) override;
     RS_ERROR GetCamera(StreamHandle handle, CameraData* out) override;
-    RS_ERROR GetFrameParameters(uint64_t schemaHash, void* outData, uint64_t size) override;
-    RS_ERROR GetFrameImageData(uint64_t schemaHash, ImageFrameData* out, uint64_t count) override;
-    RS_ERROR GetFrameImage(int64_t imageId, const SenderFrame* frame) override;
-    RS_ERROR GetFrameText(uint64_t schemaHash, uint32_t index, const char** outText) override;
-    RS_ERROR GetSkeletonJointPoses(uint64_t schemaHash, uint32_t poseParamIndex, SkeletonPose* pose, int* numJoints) override;
-    RS_ERROR GetSkeletonLayout(uint64_t schemaHash, uint64_t layoutId, SkeletonLayout* layout, int* numJoints) override;
-    RS_ERROR GetSkeletonJointNames(uint64_t schemaHash, uint64_t layoutId, const char** names, int** nameByteLengths, int* numJoints) override;
 
 private:
     Config cfg_;

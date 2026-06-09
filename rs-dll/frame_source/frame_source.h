@@ -40,14 +40,18 @@ public:
     // —— snapshot queries (valid only after AwaitFrame) —-
 
     virtual RS_ERROR GetCamera(StreamHandle handle, CameraData* out) = 0;
-    virtual RS_ERROR GetFrameParameters(uint64_t schemaHash, void* outData, uint64_t size) = 0;
-    virtual RS_ERROR GetFrameImageData(uint64_t schemaHash, ImageFrameData* out, uint64_t count) = 0;
-    virtual RS_ERROR GetFrameImage(int64_t imageId, const SenderFrame* frame) = 0;
-    virtual RS_ERROR GetFrameText(uint64_t schemaHash, uint32_t index, const char** outText) = 0;
 
-    virtual RS_ERROR GetSkeletonJointPoses(uint64_t schemaHash, uint32_t poseParamIndex, SkeletonPose* pose, int* numJoints) = 0;
-    virtual RS_ERROR GetSkeletonLayout(uint64_t schemaHash, uint64_t layoutId, SkeletonLayout* layout, int* numJoints) = 0;
-    virtual RS_ERROR GetSkeletonJointNames(uint64_t schemaHash, uint64_t layoutId, const char** names, int** nameByteLengths, int* numJoints) = 0;
+    // Optional methods — override only if the source provides this data.
+    // Default returns RS_ERROR_NOTFOUND (or RS_ERROR_SUCCESS for parameters
+    // and image-data, matching the convention that "no data" is not an error).
+
+    virtual RS_ERROR GetFrameParameters(uint64_t schemaHash, void* outData, uint64_t size);
+    virtual RS_ERROR GetFrameImageData(uint64_t schemaHash, ImageFrameData* out, uint64_t count);
+    virtual RS_ERROR GetFrameImage(int64_t imageId, const SenderFrame* frame);
+    virtual RS_ERROR GetFrameText(uint64_t schemaHash, uint32_t index, const char** outText);
+    virtual RS_ERROR GetSkeletonJointPoses(uint64_t schemaHash, uint32_t poseParamIndex, SkeletonPose* pose, int* numJoints);
+    virtual RS_ERROR GetSkeletonLayout(uint64_t schemaHash, uint64_t layoutId, SkeletonLayout* layout, int* numJoints);
+    virtual RS_ERROR GetSkeletonJointNames(uint64_t schemaHash, uint64_t layoutId, const char** names, int** nameByteLengths, int* numJoints);
 };
 
 //
