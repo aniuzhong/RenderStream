@@ -10,6 +10,11 @@ namespace rs {
 
 class Topology;
 
+struct FrameSnapshot {
+    int frame_id = 0;
+    std::vector<CameraData> cameras;
+};
+
 //
 // Self-contained frame source: FixedRatePacer + TrackCamera + empty parameters.
 // Reads stream topology from the Topology singleton.

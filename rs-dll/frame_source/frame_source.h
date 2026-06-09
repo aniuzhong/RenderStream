@@ -21,11 +21,6 @@ public:
     virtual RS_ERROR GetSkeletonJointNames(uint64_t schemaHash, uint64_t layoutId, const char** names, int** nameByteLengths, int* numJoints);
 };
 
-struct FrameSnapshot {
-    int frame_id = 0;
-    std::vector<CameraData> cameras;
-};
-
 void SetFrameSource(std::unique_ptr<IFrameSource> s);
 IFrameSource* GetFrameSource();
 

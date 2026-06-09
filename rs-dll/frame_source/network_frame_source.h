@@ -14,7 +14,10 @@ namespace rs {
 class Topology;
 
 struct TickData {
-    double                  tTracked = 0.0;
+    double                  t_tracked   = 0.0;
+    uint32_t                scene       = 0;
+    uint32_t                flags       = 0;
+    uint64_t                schema_hash = 0;
     std::vector<CameraData> cameras;
 };
 
@@ -49,8 +52,8 @@ private:
     TickData* inbox_      = &buf_[0];
     TickData* published_  = &buf_[1];
 
-    int      tick_version_  = 0;
-    double   last_tTracked_ = 0.0;
+    int      tick_version_   = 0;
+    double   last_t_tracked_ = 0.0;
 };
 
 }  // namespace rs

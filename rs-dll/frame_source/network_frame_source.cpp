@@ -74,7 +74,10 @@ void NetworkFrameSource::OnRead(std::shared_ptr<asio::ip::tcp::socket> socket,
             size_t tickCameras = 0;
             {
                 std::lock_guard lock(mutex_);
-                inbox_->tTracked = j.value("t", 0.0);
+                inbox_->t_tracked   = j.value("t", 0.0);
+                inbox_->scene       = j.value("scene", 0u);
+                inbox_->flags       = j.value("flags", 0u);
+                inbox_->schema_hash = j.value("schemaHash", 0ull);
                 inbox_->cameras.clear();
 
                 if (j.contains("cameras") && j["cameras"].is_array()) {
@@ -99,7 +102,7 @@ void NetworkFrameSource::OnRead(std::shared_ptr<asio::ip::tcp::socket> socket,
                         inbox_->cameras.push_back(cd);
                     }
                 }
-                tickT = inbox_->tTracked;
+                tickT = inbox_->t_tracked;
                 tickCameras = inbox_->cameras.size();
                 ++tick_version_;
             }
@@ -145,17 +148,17 @@ RS_ERROR NetworkFrameSource::AwaitFrame(int timeoutMs, FrameData* data) {
         std::swap(inbox_, published_);
     }
 
-    double t  = published_->tTracked;
-    double dt = (last_tTracked_ > 0.0) ? (t - last_tTracked_) : (1.0 / 60.0);
-    last_tTracked_ = t;
+    double t = published_->t_tracked;
+    double dt = (last_t_tracked_ > 0.0) ? (t - last_t_tracked_) : (1.0 / 60.0);
+    last_t_tracked_ = t;
 
     data->tTracked             = t;
     data->localTime            = t;
     data->localTimeDelta       = dt;
     data->frameRateNumerator   = static_cast<unsigned int>(1.0 / dt);
     data->frameRateDenominator = 1;
-    data->flags                = 0;
-    data->scene                = 0;
+    data->flags                = published_->flags;
+    data->scene                = published_->scene;
 
     static int s_frame_log = 0;
     ++s_frame_log;
