@@ -18,6 +18,7 @@ add_library(renderstream SHARED
     schema/schema_serializer.cpp
     topology.cpp
     frame_source/hosting.cpp
+    frame_source/network_frame_source.cpp
     frame_source/frame_source.cpp
     frame_source/utils.cpp
 )
@@ -42,6 +43,7 @@ target_include_directories(renderstream PRIVATE
 
 target_link_libraries(renderstream PRIVATE
     "${NDI_LIB}"
+    asio::asio
     d3d11
     d3d12
     dxgi
@@ -55,21 +57,9 @@ if(MSVC)
     target_compile_options(renderstream PRIVATE /W3 /sdl /permissive- /utf-8)
 endif()
 
-FetchContent_Declare(nlohmann_json
-    URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-)
-FetchContent_MakeAvailable(nlohmann_json)
 target_include_directories(renderstream PRIVATE "${nlohmann_json_SOURCE_DIR}/single_include")
 
-# if(BUILD_TESTING)
-FetchContent_Declare(
-    Catch2
-    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-    GIT_TAG v3.7.1
-)
-FetchContent_MakeAvailable(Catch2)
-
+if(BUILD_TESTING)
 add_executable(schema_serializer_test
     schema/test_schema_serializer.cpp
     schema/schema_serializer.cpp
@@ -84,8 +74,5 @@ target_link_libraries(schema_serializer_test PRIVATE Catch2::Catch2WithMain)
 if(MSVC)
     target_compile_options(schema_serializer_test PRIVATE /W3 /sdl /permissive- /utf-8)
 endif()
-
-include(CTest)
-list(APPEND CMAKE_MODULE_PATH "${Catch2_SOURCE_DIR}/extras")
-include(Catch)
 catch_discover_tests(schema_serializer_test)
+endif()
