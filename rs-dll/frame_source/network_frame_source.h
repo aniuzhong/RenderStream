@@ -14,18 +14,15 @@ namespace rs {
 class Topology;
 
 struct TickData {
-    double tTracked = 0.0;
+    double                  tTracked = 0.0;
     std::vector<CameraData> cameras;
 };
 
 class NetworkFrameSource : public IFrameSource {
 public:
-    struct Config {
-        uint16_t        port     = 9581;
-        const Topology* topology = nullptr;
-    };
+    static constexpr uint16_t kPort = 9581;
 
-    explicit NetworkFrameSource(Config cfg);
+    explicit NetworkFrameSource(const Topology& topology);
     ~NetworkFrameSource();
 
     RS_ERROR AwaitFrame(int timeoutMs, FrameData* data) override;
@@ -38,7 +35,8 @@ private:
     void BeginRead(std::shared_ptr<asio::ip::tcp::socket> socket, std::shared_ptr<asio::streambuf> buf);
     void OnRead(std::shared_ptr<asio::ip::tcp::socket> socket, std::shared_ptr<asio::streambuf> buf, const std::error_code& ec, size_t n);
 
-    Config cfg_;
+    const Topology& topology_;
+    uint32_t        last_topology_version_ = 0;
 
     asio::io_context         io_;
     asio::ip::tcp::acceptor  acceptor_;
@@ -46,15 +44,13 @@ private:
 
     std::mutex              mutex_;
     std::condition_variable cv_;
-    int                     tick_version_ = 0;
 
     TickData  buf_[2];
     TickData* inbox_      = &buf_[0];
     TickData* published_  = &buf_[1];
 
+    int      tick_version_  = 0;
     double   last_tTracked_ = 0.0;
-    int      frame_ = 0;
-    uint32_t last_topology_version_ = 0;
 };
 
 }  // namespace rs

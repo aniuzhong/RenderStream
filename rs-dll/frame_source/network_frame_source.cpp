@@ -6,17 +6,17 @@
 
 namespace rs {
 
-NetworkFrameSource::NetworkFrameSource(Config cfg)
-    : cfg_(std::move(cfg))
-    , acceptor_(io_, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), cfg_.port))
+NetworkFrameSource::NetworkFrameSource(const Topology& topology)
+    : topology_(topology)
+    , acceptor_(io_, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), kPort))
 {
-    rs::log::Info("[Network] listening on port %u", cfg_.port);
+    rs::log::Info("[Network] listening on port %u", kPort);
     BeginAccept();
     io_thread_ = std::thread([this] { IoLoop(); });
 }
 
 NetworkFrameSource::~NetworkFrameSource() {
-    rs::log::Info("[Network] shutting down (frame=%d)", frame_);
+    rs::log::Info("[Network] shutting down");
     io_.stop();
     if (io_thread_.joinable())
         io_thread_.join();
@@ -117,10 +117,8 @@ void NetworkFrameSource::OnRead(std::shared_ptr<asio::ip::tcp::socket> socket,
 }
 
 RS_ERROR NetworkFrameSource::AwaitFrame(int timeoutMs, FrameData* data) {
-    const auto* topo = cfg_.topology;
-    const uint32_t current_version = topo ? topo->Version() : 0;
-    const bool topology_changed =
-        (current_version == 0 || current_version != last_topology_version_);
+    const uint32_t current_version = topology_.Version();
+    const bool topology_changed = (current_version == 0 || current_version != last_topology_version_);
 
     if (topology_changed) {
         if (current_version > 0)
@@ -147,10 +145,8 @@ RS_ERROR NetworkFrameSource::AwaitFrame(int timeoutMs, FrameData* data) {
         std::swap(inbox_, published_);
     }
 
-    ++frame_;
-
     double t  = published_->tTracked;
-    double dt = (frame_ > 1) ? (t - last_tTracked_) : (1.0 / 60.0);
+    double dt = (last_tTracked_ > 0.0) ? (t - last_tTracked_) : (1.0 / 60.0);
     last_tTracked_ = t;
 
     data->tTracked             = t;
@@ -162,8 +158,9 @@ RS_ERROR NetworkFrameSource::AwaitFrame(int timeoutMs, FrameData* data) {
     data->scene                = 0;
 
     static int s_frame_log = 0;
-    if (++s_frame_log <= 3 || s_frame_log % 120 == 0)
-        rs::log::Info("[Network] frame #%d t=%.3f dt=%.4f cameras=%zu", frame_, data->tTracked, dt, published_->cameras.size());
+    ++s_frame_log;
+    if (s_frame_log <= 3 || s_frame_log % 120 == 0)
+        rs::log::Info("[Network] frame #%d t=%.3f dt=%.4f cameras=%zu", s_frame_log, t, dt, published_->cameras.size());
 
     return RS_ERROR_SUCCESS;
 }

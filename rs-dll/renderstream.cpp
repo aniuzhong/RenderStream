@@ -58,12 +58,9 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor,
         }},
     });
 #ifdef RS_NETWORK_TICK_PORT
-    rs::log::Info("[rs_initialise] network tick mode on port %d", RS_NETWORK_TICK_PORT);
+    rs::log::Info("[rs_initialise] network tick mode");
     try {
-        rs::NetworkFrameSource::Config cfg;
-        cfg.port     = RS_NETWORK_TICK_PORT;
-        cfg.topology = &rs::Topology::Instance();
-        rs::SetFrameSource(std::make_unique<rs::NetworkFrameSource>(std::move(cfg)));
+        rs::SetFrameSource(std::make_unique<rs::NetworkFrameSource>(rs::Topology::Instance()));
     } catch (const std::exception& e) {
         rs::log::Error("[rs_initialise] network listener failed: %s - falling back to hosting", e.what());
         rs::LocalFrameSource::Config cfg;
