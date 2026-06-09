@@ -71,11 +71,13 @@ void NetworkFrameSource::OnRead(std::shared_ptr<asio::ip::tcp::socket> socket,
         try {
             auto j = nlohmann::json::parse(line);
 
+            double tickT = 0.0;
+            size_t tickCameras = 0;
             {
                 std::lock_guard lock(mutex_);
-                latest_tTracked_ = j.value("t", 0.0);
+                inbox_->tTracked = j.value("t", 0.0);
+                inbox_->cameras.clear();
 
-                latest_cameras_.clear();
                 if (j.contains("cameras") && j["cameras"].is_array()) {
                     for (const auto& cj : j["cameras"]) {
                         CameraData cd = {};
@@ -95,17 +97,18 @@ void NetworkFrameSource::OnRead(std::shared_ptr<asio::ip::tcp::socket> socket,
                         cd.nearZ        = cj.value("nearZ", 1.0f);
                         cd.farZ         = cj.value("farZ", 10000.0f);
                         cd.orthoWidth   = cj.value("orthoWidth", 0.0f);
-                        latest_cameras_.push_back(cd);
+                        inbox_->cameras.push_back(cd);
                     }
                 }
+                tickT = inbox_->tTracked;
+                tickCameras = inbox_->cameras.size();
                 ++tick_version_;
             }
             cv_.notify_one();
 
             static int s_tick_log = 0;
             if (++s_tick_log <= 3)
-                rs::log::Info("[Network] tick t=%.3f cameras=%zu",
-                              latest_tTracked_, latest_cameras_.size());
+                rs::log::Info("[Network] tick t=%.3f cameras=%zu", tickT, tickCameras);
         } catch (const std::exception& e) {
             rs::log::Error("[Network] parse error: %s", e.what());
         }
@@ -117,7 +120,8 @@ void NetworkFrameSource::OnRead(std::shared_ptr<asio::ip::tcp::socket> socket,
 RS_ERROR NetworkFrameSource::AwaitFrame(int timeoutMs, FrameData* data) {
     const auto* topo = cfg_.topology;
     const uint32_t current_version = topo ? topo->Version() : 0;
-    const bool topology_changed = (current_version == 0 || current_version != last_topology_version_);
+    const bool topology_changed =
+        (current_version == 0 || current_version != last_topology_version_);
 
     if (topology_changed) {
         if (current_version > 0)
@@ -141,8 +145,7 @@ RS_ERROR NetworkFrameSource::AwaitFrame(int timeoutMs, FrameData* data) {
         if (!got)
             return RS_ERROR_TIMEOUT;
 
-        data->tTracked  = latest_tTracked_;
-        published_cameras_ = latest_cameras_;
+        std::swap(inbox_, published_);
     }
 
     ++frame_;
@@ -153,22 +156,23 @@ RS_ERROR NetworkFrameSource::AwaitFrame(int timeoutMs, FrameData* data) {
         t0_set_ = true;
     }
     double localTime = std::chrono::duration<double>(now - t0_).count();
-    double dt = data->tTracked - last_tTracked_;
+    double dt = published_->tTracked - last_tTracked_;
     if (dt <= 0.0)
         dt = 1.0 / 60.0;
-    last_tTracked_ = data->tTracked;
+    last_tTracked_ = published_->tTracked;
 
-    data->localTime             = localTime;
-    data->localTimeDelta        = dt;
-    data->frameRateNumerator    = static_cast<unsigned int>(1.0 / dt);
-    data->frameRateDenominator  = 1;
-    data->flags                 = 0;
-    data->scene                 = 0;
+    data->tTracked             = published_->tTracked;
+    data->localTime            = localTime;
+    data->localTimeDelta       = dt;
+    data->frameRateNumerator   = static_cast<unsigned int>(1.0 / dt);
+    data->frameRateDenominator = 1;
+    data->flags                = 0;
+    data->scene                = 0;
 
     static int s_frame_log = 0;
     if (++s_frame_log <= 3 || s_frame_log % 120 == 0)
         rs::log::Info("[Network] frame #%d t=%.3f dt=%.4f cameras=%zu",
-                      frame_, data->tTracked, dt, published_cameras_.size());
+                      frame_, data->tTracked, dt, published_->cameras.size());
 
     return RS_ERROR_SUCCESS;
 }
@@ -179,9 +183,9 @@ RS_ERROR NetworkFrameSource::GetCamera(StreamHandle handle, CameraData* out) {
     int idx = static_cast<int>(handle) - 1;
     if (idx < 0)
         idx = 0;
-    if (static_cast<size_t>(idx) >= published_cameras_.size())
+    if (static_cast<size_t>(idx) >= published_->cameras.size())
         idx = 0;
-    *out = published_cameras_.empty() ? CameraData{} : published_cameras_[idx];
+    *out = published_->cameras.empty() ? CameraData{} : published_->cameras[idx];
     return RS_ERROR_SUCCESS;
 }
 

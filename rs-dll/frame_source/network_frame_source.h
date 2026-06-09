@@ -14,6 +14,11 @@ namespace rs {
 
 class Topology;
 
+struct TickData {
+    double tTracked = 0.0;
+    std::vector<CameraData> cameras;
+};
+
 class NetworkFrameSource : public IFrameSource {
 public:
     struct Config {
@@ -36,19 +41,22 @@ private:
 
     Config cfg_;
 
-    asio::io_context            io_;
-    std::thread                 io_thread_;
-    asio::ip::tcp::acceptor     acceptor_;
-    std::mutex                  mutex_;
-    std::condition_variable     cv_;
-    double                      latest_tTracked_ = 0.0;
-    std::vector<CameraData>     latest_cameras_;
-    std::vector<CameraData>     published_cameras_;
-    int                         tick_version_ = 0;
+    asio::io_context         io_;
+    asio::ip::tcp::acceptor  acceptor_;
+    std::thread              io_thread_;
+
+    std::mutex              mutex_;
+    std::condition_variable cv_;
+    int                     tick_version_ = 0;
+
+    TickData  buf_[2];
+    TickData* inbox_      = &buf_[0];
+    TickData* published_  = &buf_[1];
+
     std::chrono::steady_clock::time_point t0_;
-    int      frame_ = 0;
     bool     t0_set_ = false;
     double   last_tTracked_ = 0.0;
+    int      frame_ = 0;
     uint32_t last_topology_version_ = 0;
 };
 
