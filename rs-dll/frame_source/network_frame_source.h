@@ -4,7 +4,6 @@
 
 #include <asio.hpp>
 
-#include <chrono>
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -53,8 +52,6 @@ private:
     TickData* inbox_      = &buf_[0];
     TickData* published_  = &buf_[1];
 
-    std::chrono::steady_clock::time_point t0_;
-    bool     t0_set_ = false;
     double   last_tTracked_ = 0.0;
     int      frame_ = 0;
     uint32_t last_topology_version_ = 0;

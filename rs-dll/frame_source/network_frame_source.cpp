@@ -39,8 +39,7 @@ void NetworkFrameSource::OnAccept(const std::error_code& ec, asio::ip::tcp::sock
         return;
     }
     auto remote = socket.remote_endpoint();
-    rs::log::Info("[Network] connected: %s:%u",
-                  remote.address().to_string().c_str(), remote.port());
+    rs::log::Info("[Network] connected: %s:%u", remote.address().to_string().c_str(), remote.port());
     auto sock = std::make_shared<asio::ip::tcp::socket>(std::move(socket));
     auto buf  = std::make_shared<asio::streambuf>();
     BeginRead(std::move(sock), std::move(buf));
@@ -150,19 +149,12 @@ RS_ERROR NetworkFrameSource::AwaitFrame(int timeoutMs, FrameData* data) {
 
     ++frame_;
 
-    auto now = std::chrono::steady_clock::now();
-    if (!t0_set_) {
-        t0_ = now;
-        t0_set_ = true;
-    }
-    double localTime = std::chrono::duration<double>(now - t0_).count();
-    double dt = published_->tTracked - last_tTracked_;
-    if (dt <= 0.0)
-        dt = 1.0 / 60.0;
-    last_tTracked_ = published_->tTracked;
+    double t  = published_->tTracked;
+    double dt = (frame_ > 1) ? (t - last_tTracked_) : (1.0 / 60.0);
+    last_tTracked_ = t;
 
-    data->tTracked             = published_->tTracked;
-    data->localTime            = localTime;
+    data->tTracked             = t;
+    data->localTime            = t;
     data->localTimeDelta       = dt;
     data->frameRateNumerator   = static_cast<unsigned int>(1.0 / dt);
     data->frameRateDenominator = 1;
@@ -171,8 +163,7 @@ RS_ERROR NetworkFrameSource::AwaitFrame(int timeoutMs, FrameData* data) {
 
     static int s_frame_log = 0;
     if (++s_frame_log <= 3 || s_frame_log % 120 == 0)
-        rs::log::Info("[Network] frame #%d t=%.3f dt=%.4f cameras=%zu",
-                      frame_, data->tTracked, dt, published_->cameras.size());
+        rs::log::Info("[Network] frame #%d t=%.3f dt=%.4f cameras=%zu", frame_, data->tTracked, dt, published_->cameras.size());
 
     return RS_ERROR_SUCCESS;
 }
