@@ -49,28 +49,7 @@ bool Topology::LoadFromRemote() {
 
     try {
         auto j = nlohmann::json::parse(json_str);
-        std::vector<StreamDescription> parsed;
-        for (const auto& js : j["streams"]) {
-            StreamDescription sd;
-            sd.name         = js.value("name", "");
-            sd.channel      = js.value("channel", "");
-            sd.width        = js.value("width", 0);
-            sd.height       = js.value("height", 0);
-            sd.format       = static_cast<PixelFormat>(js.value("format", 1));
-            sd.handle       = js.value("handle", 0u);
-            sd.mapping_id   = js.value("mappingId", 0ull);
-            sd.viewpoint    = js.value("viewpoint", 0);
-            sd.mapping_name = js.value("mappingName", "");
-            sd.fragment     = js.value("fragment", 0);
-            if (js.contains("clipping")) {
-                const auto& c = js["clipping"];
-                sd.clipping.left   = c.value("left", 0.0f);
-                sd.clipping.right  = c.value("right", 1.0f);
-                sd.clipping.top    = c.value("top", 0.0f);
-                sd.clipping.bottom = c.value("bottom", 1.0f);
-            }
-            parsed.push_back(std::move(sd));
-        }
+        std::vector<stream_description> parsed = j["streams"].get<std::vector<stream_description>>();
 
         if (parsed.empty()) {
             rs::log::Error("[Topology] LoadFromRemote: no streams in pipe data");
@@ -83,9 +62,10 @@ bool Topology::LoadFromRemote() {
         rs::log::Info("[Topology] LoadFromRemote: %zu streams, version=%u", streams_.size(), version_);
         for (size_t i = 0; i < streams_.size(); ++i) {
             const auto& s = streams_[i];
-            rs::log::Info("[Topology]   stream[%zu] '%s' chan='%s' %dx%d fmt=%d handle=%u clip=[%.2f,%.2f,%.2f,%.2f]",
+            rs::log::Info("[Topology]   stream[%zu] '%s' chan='%s' %dx%d fmt=%d handle=%llu clip=[%.2f,%.2f,%.2f,%.2f]",
                           i, s.name.c_str(), s.channel.c_str(),
-                          s.width, s.height, static_cast<int>(s.format), s.handle,
+                          s.width, s.height, static_cast<int>(s.format),
+                          static_cast<unsigned long long>(s.handle),
                           s.clipping.left, s.clipping.right, s.clipping.top, s.clipping.bottom);
         }
         return true;
@@ -96,7 +76,7 @@ bool Topology::LoadFromRemote() {
     }
 }
 
-void Topology::LoadFromCache(const std::vector<StreamDescription>& streams) {
+void Topology::LoadFromCache(const std::vector<stream_description>& streams) {
     streams_ = streams;
     ++version_;
     rs::log::Info("[Topology] LoadFromCache: %zu streams, version=%u", streams_.size(), version_);
@@ -105,8 +85,8 @@ void Topology::LoadFromCache(const std::vector<StreamDescription>& streams) {
 void Topology::MaxResolution(int* w, int* h) const {
     int mw = 0, mh = 0;
     for (const auto& s : streams_) {
-        mw = (std::max)(mw, s.width);
-        mh = (std::max)(mh, s.height);
+        mw = (std::max)(mw, static_cast<int>(s.width));
+        mh = (std::max)(mh, static_cast<int>(s.height));
     }
     *w = mw;
     *h = mh;
@@ -130,7 +110,6 @@ static void InitPipelineFromTopology() {
 //
 // The first call lazily loads Topology from the rs-agent pipe and
 // initialises GPU/NDI. Subsequent calls are pure memory reads.
-// All fields are forwarded transparently from the pipe data.
 RS_ERROR rs_getStreams(StreamDescriptions* out, uint32_t* nBytes) {
     auto& topo = rs::Topology::Instance();
 
@@ -146,17 +125,14 @@ RS_ERROR rs_getStreams(StreamDescriptions* out, uint32_t* nBytes) {
     const auto& streams = topo.All();
     const int n = static_cast<int>(streams.size());
 
-    uint32_t str_bytes = 0;
-    for (const auto& s : streams) {
-        str_bytes += static_cast<uint32_t>(s.channel.size() + 1);
-        str_bytes += static_cast<uint32_t>(s.name.size() + 1);
-        if (!s.mapping_name.empty())
-            str_bytes += static_cast<uint32_t>(s.mapping_name.size() + 1);
-    }
+    // Compute string pool size
+    size_t str_pool_total = 0;
+    for (const auto& s : streams)
+        str_pool_total += s.string_pool_size();
 
     const uint32_t header_size = static_cast<uint32_t>(sizeof(StreamDescriptions));
     const uint32_t array_size  = static_cast<uint32_t>(n * sizeof(StreamDescription));
-    const uint32_t required    = header_size + array_size + str_bytes;
+    const uint32_t required    = header_size + array_size + static_cast<uint32_t>(str_pool_total);
 
     if (out == nullptr) {
         *nBytes = required;
@@ -169,39 +145,14 @@ RS_ERROR rs_getStreams(StreamDescriptions* out, uint32_t* nBytes) {
     out->nStreams = n;
     StreamDescription* sd = reinterpret_cast<StreamDescription*>(reinterpret_cast<char*>(out) + header_size);
     out->streams = sd;
-
     char* str_pool = reinterpret_cast<char*>(sd + n);
 
     for (int i = 0; i < n; ++i) {
-        const auto& src = streams[i];
-
-        sd[i].handle      = src.handle != 0 ? static_cast<StreamHandle>(src.handle) : static_cast<StreamHandle>(i + 1);
-        sd[i].width       = src.width;
-        sd[i].height      = src.height;
-        sd[i].format      = static_cast<RSPixelFormat>(src.format);
-        sd[i].clipping    = {src.clipping.left, src.clipping.right, src.clipping.top, src.clipping.bottom};
-        sd[i].mappingId   = src.mapping_id;
-        sd[i].iViewpoint  = src.viewpoint;
-        sd[i].iFragment   = src.fragment;
-
-        size_t len = src.channel.size() + 1;
-        sd[i].channel = str_pool;
-        std::memcpy(str_pool, src.channel.c_str(), len);
-        str_pool += len;
-
-        len = src.name.size() + 1;
-        sd[i].name = str_pool;
-        std::memcpy(str_pool, src.name.c_str(), len);
-        str_pool += len;
-
-        if (!src.mapping_name.empty()) {
-            len = src.mapping_name.size() + 1;
-            sd[i].mappingName = str_pool;
-            std::memcpy(str_pool, src.mapping_name.c_str(), len);
-            str_pool += len;
-        } else {
-            sd[i].mappingName = nullptr;
-        }
+        stream_description src = streams[i];
+        if (src.handle == 0)
+            src.handle = static_cast<uint64_t>(i + 1);
+        size_t written = src.to_c(&sd[i], str_pool);
+        str_pool += written;
     }
 
     *nBytes = required;

@@ -16,7 +16,7 @@
 #include "process_manager.h"
 #include "pipe_server.h"
 #include "schema.h"
-#include "streams.h"
+
 #include "utils/encoding.h"
 
 using namespace std::chrono_literals;
@@ -276,22 +276,8 @@ void HttpServer::RegisterRoutes(router_t& router) {
                 }
 
                 // Atomically set pipe data BEFORE launching UE
-                if (j.contains("streams") && j["streams"].is_array()) {
-                    rs::StreamDescriptions descs;
-                    for (const auto& s : j["streams"]) {
-                        rs::StreamDescription sd;
-                        sd.name      = s.value("name", "");
-                        sd.channel   = s.value("channel", "");
-                        sd.width     = s.value("width", 0u);
-                        sd.height    = s.value("height", 0u);
-                        sd.viewpoint = s.value("viewpoint", 0);
-                        descs.streams.push_back(sd);
-                    }
-                    ps_.SetStreamData(rs::ToJson(descs).dump());
-                    spdlog::info("launch: pipe data set, {} streams", descs.streams.size());
-                } else {
-                    ps_.SetStreamData("{\"streams\":[]}");
-                }
+                ps_.SetStreamData(nlohmann::json{{"streams", j.value("streams", nlohmann::json::array())}}.dump());
+                spdlog::info("launch: pipe data set");
 
                 // Write ndisplay config
                 if (j.contains("ndisplay") && !j["ndisplay"].is_null()) {

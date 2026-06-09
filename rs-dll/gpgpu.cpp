@@ -118,7 +118,7 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
     if (layer_key >= kMaxLayers) layer_key = kMaxLayers - 1;
     assert(layer_key < topo.Count());
 
-    const Clipping& clip = topo.At(layer_key).clipping;
+    const ProjectionClipping& clip = topo.At(layer_key).clipping;
 
     // Reset command allocator + list if needed.
     if (reset_command_) {
