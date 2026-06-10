@@ -10,14 +10,14 @@ namespace chrono = std::chrono;
 
 namespace rs {
 
-LocalFrameSource::LocalFrameSource(Config cfg)
+SelfDriven::SelfDriven(Config cfg)
     : cfg_(std::move(cfg)),
       fn_(cfg_.camera ? cfg_.camera : OrbitCameraFn),
       dt_(1.0 / cfg_.fps) {}
 
 //  Frame pacing 
 
-RS_ERROR LocalFrameSource::AwaitFrame(int timeoutMs, FrameData* data) {
+RS_ERROR SelfDriven::AwaitFrame(int timeoutMs, FrameData* data) {
     (void)timeoutMs;
     auto now = chrono::steady_clock::now();
     if (!t0_set_) {
@@ -97,7 +97,7 @@ RS_ERROR LocalFrameSource::AwaitFrame(int timeoutMs, FrameData* data) {
 
 //  Cameras
 
-RS_ERROR LocalFrameSource::GetCamera(StreamHandle handle, CameraData* out) {
+RS_ERROR SelfDriven::GetCamera(StreamHandle handle, CameraData* out) {
     if (!out) return RS_ERROR_INVALID_PARAMETERS;
     if (!snapshot_ready_) return RS_NOT_INITIALISED;
     int idx = static_cast<int>(handle) - 1;

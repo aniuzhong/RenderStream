@@ -19,10 +19,10 @@ class Topology;
 
 class Session : public std::enable_shared_from_this<Session> {
 public:
-    using LineHandler       = std::function<void(const std::string& line)>;
+    using TickHandler       = std::function<void(const std::string& line)>;
     using DisconnectHandler = std::function<void()>;
 
-    Session(asio::ip::tcp::socket socket, LineHandler on_line, DisconnectHandler on_disconnect);
+    Session(asio::ip::tcp::socket socket, TickHandler on_tick, DisconnectHandler on_disconnect);
     ~Session();
 
     void Start();
@@ -36,27 +36,29 @@ private:
 
     asio::ip::tcp::socket socket_;
     asio::streambuf       read_buf_;
-    LineHandler           on_line_;
+    TickHandler           on_tick_;
     DisconnectHandler     on_disconnect_;
 };
 
-class NetworkFrameSource : public IFrameSource {
+class NetworkDriven : public IDriven {
 public:
     static constexpr uint16_t kPort = 9581;
 
-    explicit NetworkFrameSource(const Topology& topology);
-    ~NetworkFrameSource();
+    explicit NetworkDriven(const Topology& topology);
+    ~NetworkDriven();
 
     RS_ERROR AwaitFrame(int timeoutMs, FrameData* data) override;
     RS_ERROR GetCamera(StreamHandle handle, CameraData* out) override;
-    void SendAck(const CameraResponseData& data) override;
+
+    // Send a CameraResponseData ack back to the conductor.
+    void Response(const CameraResponseData& data);
 
 private:
     void IoLoop();
     void BeginAccept();
     void OnAccept(const std::error_code& ec, asio::ip::tcp::socket socket);
 
-    void OnLine(const std::string& line);
+    void OnTick(const std::string& line);
     void OnDisconnect();
 
     const Topology& topology_;

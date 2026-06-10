@@ -19,7 +19,7 @@ struct FrameSnapshot {
 // Self-contained frame source: FixedRatePacer + TrackCamera + empty parameters.
 // Reads stream topology from the Topology singleton.
 //
-class LocalFrameSource : public IFrameSource {
+class SelfDriven : public IDriven {
 public:
     struct Config {
         const Topology* topology = nullptr;
@@ -27,9 +27,9 @@ public:
         double fps = 60.0;
     };
 
-    explicit LocalFrameSource(Config cfg);
+    explicit SelfDriven(Config cfg);
 
-    // IFrameSource
+    // IDriven
     RS_ERROR AwaitFrame(int timeoutMs, FrameData* data) override;
     RS_ERROR GetCamera(StreamHandle handle, CameraData* out) override;
 

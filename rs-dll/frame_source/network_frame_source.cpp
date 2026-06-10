@@ -12,15 +12,14 @@ namespace rs {
 // ============================================================
 
 Session::Session(asio::ip::tcp::socket socket,
-                 LineHandler on_line,
+                 TickHandler on_tick,
                  DisconnectHandler on_disconnect)
     : socket_(std::move(socket))
-    , on_line_(std::move(on_line))
+    , on_tick_(std::move(on_tick))
     , on_disconnect_(std::move(on_disconnect))
 {
     auto remote = socket_.remote_endpoint();
-    rs::log::Info("[Session] created: %s:%u",
-        remote.address().to_string().c_str(), remote.port());
+    rs::log::Info("[Session] created: %s:%u", remote.address().to_string().c_str(), remote.port());
 }
 
 Session::~Session() {
@@ -51,8 +50,8 @@ void Session::OnRead(const std::error_code& ec, size_t n) {
     std::string line;
     std::getline(is, line);
 
-    if (!line.empty() && on_line_)
-        on_line_(line);
+    if (!line.empty() && on_tick_)
+        on_tick_(line);
 
     BeginRead();
 }
@@ -64,10 +63,10 @@ void Session::Write(std::shared_ptr<std::string> msg) {
 }
 
 // ============================================================
-// NetworkFrameSource
+// NetworkDriven
 // ============================================================
 
-NetworkFrameSource::NetworkFrameSource(const Topology& topology)
+NetworkDriven::NetworkDriven(const Topology& topology)
     : topology_(topology)
     , acceptor_(io_, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), kPort))
 {
@@ -76,25 +75,25 @@ NetworkFrameSource::NetworkFrameSource(const Topology& topology)
     io_thread_ = std::thread([this] { IoLoop(); });
 }
 
-NetworkFrameSource::~NetworkFrameSource() {
+NetworkDriven::~NetworkDriven() {
     rs::log::Info("[Network] shutting down");
     io_.stop();
     if (io_thread_.joinable())
         io_thread_.join();
 }
 
-void NetworkFrameSource::IoLoop() {
+void NetworkDriven::IoLoop() {
     io_.run();
 }
 
-void NetworkFrameSource::BeginAccept() {
+void NetworkDriven::BeginAccept() {
     acceptor_.async_accept(
         [this](const std::error_code& ec, asio::ip::tcp::socket socket) {
             OnAccept(ec, std::move(socket));
         });
 }
 
-void NetworkFrameSource::OnAccept(const std::error_code& ec, asio::ip::tcp::socket socket) {
+void NetworkDriven::OnAccept(const std::error_code& ec, asio::ip::tcp::socket socket) {
     if (ec) {
         rs::log::Info("[Network] accept stopped: %s", ec.message().c_str());
         return;
@@ -102,12 +101,12 @@ void NetworkFrameSource::OnAccept(const std::error_code& ec, asio::ip::tcp::sock
     rs::log::Info("[Network] new connection");
     session_ = std::make_shared<Session>(
         std::move(socket),
-        [this](const std::string& line) { OnLine(line); },
+        [this](const std::string& line) { OnTick(line); },
         [this]() { OnDisconnect(); });
     session_->Start();
 }
 
-void NetworkFrameSource::OnLine(const std::string& line) {
+void NetworkDriven::OnTick(const std::string& line) {
     try {
         auto j = nlohmann::json::parse(line);
         auto req = j.get<Request>();
@@ -139,20 +138,20 @@ void NetworkFrameSource::OnLine(const std::string& line) {
     }
 }
 
-void NetworkFrameSource::OnDisconnect() {
+void NetworkDriven::OnDisconnect() {
     rs::log::Info("[Network] session ended, re-entering accept");
     session_.reset();
     BeginAccept();
 }
 
-void NetworkFrameSource::SendAck(const CameraResponseData& data) {
+void NetworkDriven::Response(const CameraResponseData& data) {
     if (!session_) return;
     auto msg = std::make_shared<std::string>(
         nlohmann::json(data).dump() + "\n");
     session_->Write(std::move(msg));
 }
 
-RS_ERROR NetworkFrameSource::AwaitFrame(int timeoutMs, FrameData* data) {
+RS_ERROR NetworkDriven::AwaitFrame(int timeoutMs, FrameData* data) {
     const uint32_t current_version = topology_.Version();
     const bool topology_changed = (current_version == 0 || current_version != last_topology_version_);
 
@@ -204,7 +203,7 @@ RS_ERROR NetworkFrameSource::AwaitFrame(int timeoutMs, FrameData* data) {
     return RS_ERROR_SUCCESS;
 }
 
-RS_ERROR NetworkFrameSource::GetCamera(StreamHandle handle, CameraData* out) {
+RS_ERROR NetworkDriven::GetCamera(StreamHandle handle, CameraData* out) {
     if (!out)
         return RS_ERROR_INVALID_PARAMETERS;
     int idx = static_cast<int>(handle) - 1;

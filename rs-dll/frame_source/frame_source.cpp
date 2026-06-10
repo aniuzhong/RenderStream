@@ -7,46 +7,46 @@ namespace rs {
 
 // Singleton
 
-static std::unique_ptr<IFrameSource> g_frame_source;
+static std::unique_ptr<IDriven> g_driven;
 
-void SetFrameSource(std::unique_ptr<IFrameSource> s) {
-    g_frame_source = std::move(s);
-    rs::log::Info("[FrameSource] set: %p", static_cast<void*>(g_frame_source.get()));
+void SetDriven(std::unique_ptr<IDriven> s) {
+    g_driven = std::move(s);
+    rs::log::Info("[Driven] set: %p", static_cast<void*>(g_driven.get()));
 }
 
-IFrameSource* GetFrameSource() {
-    return g_frame_source.get();
+IDriven* GetDriven() {
+    return g_driven.get();
 }
 
 // Default implementations for optional methods
 
-RS_ERROR IFrameSource::GetFrameParameters(uint64_t, void*, uint64_t) {
+RS_ERROR IDriven::GetFrameParameters(uint64_t, void*, uint64_t) {
     return RS_ERROR_SUCCESS;
 }
 
-RS_ERROR IFrameSource::GetFrameImageData(uint64_t, ImageFrameData*, uint64_t) {
+RS_ERROR IDriven::GetFrameImageData(uint64_t, ImageFrameData*, uint64_t) {
     return RS_ERROR_SUCCESS;
 }
 
-RS_ERROR IFrameSource::GetFrameImage(int64_t, const SenderFrame*) {
+RS_ERROR IDriven::GetFrameImage(int64_t, const SenderFrame*) {
     return RS_ERROR_NOTFOUND;
 }
 
-RS_ERROR IFrameSource::GetFrameText(uint64_t, uint32_t, const char**) {
+RS_ERROR IDriven::GetFrameText(uint64_t, uint32_t, const char**) {
     return RS_ERROR_NOTFOUND;
 }
 
-RS_ERROR IFrameSource::GetSkeletonJointPoses(uint64_t, uint32_t, SkeletonPose*, int* numJoints) {
+RS_ERROR IDriven::GetSkeletonJointPoses(uint64_t, uint32_t, SkeletonPose*, int* numJoints) {
     if (numJoints) *numJoints = 0;
     return RS_ERROR_NOTFOUND;
 }
 
-RS_ERROR IFrameSource::GetSkeletonLayout(uint64_t, uint64_t, SkeletonLayout*, int* numJoints) {
+RS_ERROR IDriven::GetSkeletonLayout(uint64_t, uint64_t, SkeletonLayout*, int* numJoints) {
     if (numJoints) *numJoints = 0;
     return RS_ERROR_NOTFOUND;
 }
 
-RS_ERROR IFrameSource::GetSkeletonJointNames(uint64_t, uint64_t, const char**, int**, int* numJoints) {
+RS_ERROR IDriven::GetSkeletonJointNames(uint64_t, uint64_t, const char**, int**, int* numJoints) {
     if (numJoints) *numJoints = 0;
     return RS_ERROR_NOTFOUND;
 }
@@ -56,7 +56,7 @@ RS_ERROR IFrameSource::GetSkeletonJointNames(uint64_t, uint64_t, const char**, i
 // Frame pacing
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_awaitFrameData(int timeoutMs, FrameData* data) {
-    auto* s = rs::GetFrameSource();
+    auto* s = rs::GetDriven();
     if (!data || !s)
         return RS_ERROR_INVALID_PARAMETERS;
     return s->AwaitFrame(timeoutMs, data);
@@ -65,7 +65,7 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_awaitFrameData(int timeoutMs, FrameD
 // Cameras
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameCamera(StreamHandle streamHandle, CameraData* outCameraData) {
-    auto* s = rs::GetFrameSource();
+    auto* s = rs::GetDriven();
     if (!s)
         return RS_ERROR_NOTFOUND;
     return s->GetCamera(streamHandle, outCameraData);
@@ -74,21 +74,21 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameCamera(StreamHandle streamHa
 // Scene parameters
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameParameters(uint64_t schemaHash, void* outData, uint64_t size) {
-    auto* s = rs::GetFrameSource();
+    auto* s = rs::GetDriven();
     if (!s)
         return RS_ERROR_NOTFOUND;
     return s->GetFrameParameters(schemaHash, outData, size);
 }
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameImageData(uint64_t schemaHash, ImageFrameData* out, uint64_t count) {
-    auto* s = rs::GetFrameSource();
+    auto* s = rs::GetDriven();
     if (!s)
         return RS_ERROR_NOTFOUND;
     return s->GetFrameImageData(schemaHash, out, count);
 }
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameImage2(int64_t imageId, const SenderFrame* frame) {
-    auto* s = rs::GetFrameSource();
+    auto* s = rs::GetDriven();
     if (!s)
         return RS_ERROR_NOTFOUND;
     return s->GetFrameImage(imageId, frame);
@@ -99,7 +99,7 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_releaseImage2(const SenderFrame*) {
 }
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameText(uint64_t schemaHash, uint32_t index, const char** outText) {
-    auto* s = rs::GetFrameSource();
+    auto* s = rs::GetDriven();
     if (!s)
         return RS_ERROR_NOTFOUND;
     return s->GetFrameText(schemaHash, index, outText);
@@ -108,7 +108,7 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameText(uint64_t schemaHash, ui
 // Skeleton
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointPoses(uint64_t schemaHash, uint32_t poseParamIndex, SkeletonPose* pose, int* numJoints) {
-    auto* s = rs::GetFrameSource();
+    auto* s = rs::GetDriven();
     if (!s) {
         if (numJoints)
             *numJoints = 0;
@@ -118,7 +118,7 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointPoses(uint64_t schem
 }
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonLayout(uint64_t schemaHash, uint64_t id, SkeletonLayout* layout, int* numJoints) {
-    auto* s = rs::GetFrameSource();
+    auto* s = rs::GetDriven();
     if (!s) {
         if (numJoints)
             *numJoints = 0;
@@ -128,7 +128,7 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonLayout(uint64_t schemaHas
 }
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointNames(uint64_t schemaHash, uint64_t layoutId, const char** names, int** nameByteLengths, int* numJoints) {
-    auto* s = rs::GetFrameSource();
+    auto* s = rs::GetDriven();
     if (!s) {
         if (numJoints)
             *numJoints = 0;

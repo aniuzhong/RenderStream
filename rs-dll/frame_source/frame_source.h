@@ -7,9 +7,9 @@
 
 namespace rs {
 
-class IFrameSource {
+class IDriven {
 public:
-    virtual ~IFrameSource() = default;
+    virtual ~IDriven() = default;
     virtual RS_ERROR AwaitFrame(int timeoutMs, FrameData* data) = 0;
     virtual RS_ERROR GetCamera(StreamHandle handle, CameraData* out) = 0;
     virtual RS_ERROR GetFrameParameters(uint64_t schemaHash, void* outData, uint64_t size);
@@ -19,10 +19,9 @@ public:
     virtual RS_ERROR GetSkeletonJointPoses(uint64_t schemaHash, uint32_t poseParamIndex, SkeletonPose* pose, int* numJoints);
     virtual RS_ERROR GetSkeletonLayout(uint64_t schemaHash, uint64_t layoutId, SkeletonLayout* layout, int* numJoints);
     virtual RS_ERROR GetSkeletonJointNames(uint64_t schemaHash, uint64_t layoutId, const char** names, int** nameByteLengths, int* numJoints);
-    virtual void SendAck(const CameraResponseData&) {}
 };
 
-void SetFrameSource(std::unique_ptr<IFrameSource> s);
-IFrameSource* GetFrameSource();
+void SetDriven(std::unique_ptr<IDriven> s);
+IDriven* GetDriven();
 
 }  // namespace rs

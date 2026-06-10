@@ -1,4 +1,4 @@
-// Compile-time mode switch: comment out to use LocalFrameSource (self-clocked 60fps).
+// Compile-time mode switch: comment out to use SelfDriven (self-clocked 60fps).
 #define RS_NETWORK_TICK_PORT 9581
 
 #include "d3renderstream.h"
@@ -17,6 +17,8 @@
 #include "frame_source/local_frame_source.h"
 #include "frame_source/network_frame_source.h"
 #include "misc.h"
+
+static rs::NetworkDriven* g_network_driven = nullptr;
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor, int expectedVersionMinor) {
     (void)expectedVersionMajor;
@@ -60,22 +62,25 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor,
 #ifdef RS_NETWORK_TICK_PORT
     rs::log::Info("[rs_initialise] network tick mode");
     try {
-        rs::SetFrameSource(std::make_unique<rs::NetworkFrameSource>(rs::Topology::Instance()));
+        auto nd = std::make_unique<rs::NetworkDriven>(rs::Topology::Instance());
+        g_network_driven = nd.get();
+        rs::SetDriven(std::move(nd));
     } catch (const std::exception& e) {
         rs::log::Error("[rs_initialise] network listener failed: %s - falling back to hosting", e.what());
-        rs::LocalFrameSource::Config cfg;
+        g_network_driven = nullptr;
+        rs::SelfDriven::Config cfg;
         cfg.topology = &rs::Topology::Instance();
         cfg.camera   = camera_fn;
         cfg.fps      = 60.0;
-        rs::SetFrameSource(std::make_unique<rs::LocalFrameSource>(std::move(cfg)));
+        rs::SetDriven(std::make_unique<rs::SelfDriven>(std::move(cfg)));
     }
 #else
     rs::log::Info("[rs_initialise] hosting mode (self-clocked 60fps)");
-    rs::LocalFrameSource::Config cfg;
+    rs::SelfDriven::Config cfg;
     cfg.topology = &rs::Topology::Instance();
     cfg.camera   = camera_fn;
     cfg.fps      = 60.0;
-    rs::SetFrameSource(std::make_unique<rs::LocalFrameSource>(std::move(cfg)));
+    rs::SetDriven(std::make_unique<rs::SelfDriven>(std::move(cfg)));
 #endif
 
     rs::log::Info("[rs_initialise] done");
@@ -85,7 +90,8 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor,
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_shutdown() {
     rs::log::Info("[rs_shutdown] >>> shutting down...");
     rs::log::Info("[rs_shutdown] step 1/4: destroying frame source...");
-    rs::SetFrameSource(nullptr);
+    g_network_driven = nullptr;
+    rs::SetDriven(nullptr);
     rs::log::Info("[rs_shutdown] step 2/4: shutting down GPU...");
     rs::GetGpu().Shutdown();
     rs::log::Info("[rs_shutdown] step 3/4: stopping NDI senders...");
@@ -107,11 +113,8 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_sendFrame2(StreamHandle streamHandle
     if (!ready_pack.empty())
         rs::GetSender().SendPack(ready_pack);
 
-    if (frameData && frameData->cameraData) {
-        auto* fs = rs::GetFrameSource();
-        if (fs)
-            fs->SendAck(*frameData->cameraData);
-    }
+    if (frameData && frameData->cameraData && g_network_driven)
+        g_network_driven->Response(*frameData->cameraData);
 
     return RS_ERROR_SUCCESS;
 }
