@@ -2,9 +2,13 @@
 
 #include "d3renderstream.h"
 
+#include <cctype>
 #include <cstdint>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <functional>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -261,9 +265,9 @@ struct remote_parameter {
 };
 
 struct scene {
-    std::string                  name;
+    std::string                   name;
     std::vector<remote_parameter> parameters;
-    uint64_t                     hash = 0;
+    uint64_t                      hash = 0;
 
     bool operator==(const scene&) const = default;
 };
@@ -538,8 +542,7 @@ inline ::Schema* schema::to_c(void* buffer, size_t buffer_size) const {
                     write_c_str(base, off, cpp_p.display_name, &c_p.displayName);
                     write_c_str(base, off, cpp_p.key,          &c_p.key);
 
-                    c_p.type = static_cast<::RemoteParameterType>(
-                        static_cast<uint32_t>(cpp_p.type));
+                    c_p.type = static_cast<::RemoteParameterType>(static_cast<uint32_t>(cpp_p.type));
 
                     if (cpp_p.type == param_type::number || cpp_p.type == param_type::event) {
                         if (auto* nd = std::get_if<number_defaults>(&cpp_p.defaults)) {
@@ -564,8 +567,7 @@ inline ::Schema* schema::to_c(void* buffer, size_t buffer_size) const {
                     }
 
                     c_p.dmxOffset = cpp_p.dmx_offset;
-                    c_p.dmxType   = static_cast<::RemoteParameterDmxType>(
-                        static_cast<uint32_t>(cpp_p.dmx));
+                    c_p.dmxType   = static_cast<::RemoteParameterDmxType>(static_cast<uint32_t>(cpp_p.dmx));
                     c_p.flags     = cpp_p.flags;
                 }
             }
@@ -641,6 +643,56 @@ inline schema schema::from_c(const ::Schema* s) {
         result.scenes.push_back(std::move(sc));
     }
     return result;
+}
+
+// ============================================================
+// Shared schema file I/O
+// ============================================================
+
+// Derive schema JSON path from project/asset path.
+// e.g. "E:/Proj/MyProject.uproject" -> "E:/Proj/rs_myproject.json"
+inline std::string schema_path(const std::filesystem::path& project_path) {
+    std::string dir = project_path.parent_path().string();
+    if (dir.empty())
+        dir = ".";
+    std::string stem = project_path.stem().string();
+    std::transform(stem.begin(), stem.end(), stem.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return dir + "/rs_" + stem + ".json";
+}
+
+// Load schema from JSON file. Returns nullopt on failure.
+inline std::optional<schema> load_schema_file(const std::filesystem::path& json_path) {
+    std::ifstream f(json_path);
+    if (!f)
+        return std::nullopt;
+
+    nlohmann::json j;
+    try {
+        f >> j;
+    } catch (...) {
+        return std::nullopt;
+    }
+
+    try {
+        return j.get<schema>();
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+// Save schema to JSON file. Returns true on success.
+inline bool save_schema_file(const std::filesystem::path& json_path, const schema& s) {
+    try {
+        std::ofstream out(json_path);
+        if (!out)
+            return false;
+        nlohmann::json j = s;
+        out << j.dump(2);
+        return true;
+    } catch (...) {
+        return false;
+    }
 }
 
 }  // namespace rs

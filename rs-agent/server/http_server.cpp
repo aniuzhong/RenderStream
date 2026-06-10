@@ -15,7 +15,7 @@
 
 #include "process_manager.h"
 #include "pipe_server.h"
-#include "schema.h"
+#include "d3renderstream.hpp"
 
 #include "utils/encoding.h"
 
@@ -236,8 +236,8 @@ void HttpServer::RegisterRoutes(router_t& router) {
 
             spdlog::info("schema: project={}", project);
 
-            auto schema_path = rs::SchemaPath(project);
-            auto schema = rs::LoadSchema(schema_path);
+            auto sp = rs::schema_path(project);
+            auto schema = rs::load_schema_file(sp);
             if (!schema) {
                 return json_response(req, nlohmann::json{{"error", "schema not found"}}.dump());
             }

@@ -30,7 +30,6 @@ add_executable(rs-agent WIN32
     server/pipe_server.cpp
     server/process_manager.cpp
     server/registry.cpp
-    server/schema.cpp
     server/utils/lan_net.cpp
     ${RS_AGENT_ICON_RC}
 )
@@ -108,7 +107,6 @@ if(BUILD_TESTING)
         server/http_server.cpp
         server/process_manager.cpp
         server/pipe_server.cpp
-        server/schema.cpp
     )
     target_link_libraries(http_server_test PRIVATE
         asio::asio restinio::restinio httplib::httplib
