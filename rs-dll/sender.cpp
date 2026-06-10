@@ -153,18 +153,3 @@ void Sender::SendPack(const std::vector<rs::FrameBuffer>& pack) {
 }
 
 }  // namespace rs
-
-RS_ERROR rs_sendFrame2(StreamHandle streamHandle, const SenderFrame* frame, const FrameResponseData* frameData) {
-    (void)frameData;
-
-    int layer_key = static_cast<int>(streamHandle) - 1;
-
-    if (!rs::GetGpu().SubmitFrame(frame, layer_key))
-        return RS_ERROR_UNSPECIFIED;
-
-    auto ready_pack = rs::GetGpu().ConsumeReadyPack();
-    if (!ready_pack.empty()) {
-        rs::GetSender().SendPack(ready_pack);
-    }
-    return RS_ERROR_SUCCESS;
-}

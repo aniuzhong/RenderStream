@@ -149,7 +149,19 @@ void Conductor::OnRecv(const std::error_code& ec, size_t n) {
     std::string line;
     std::getline(is, line);
 
-    fprintf(stderr, "[Conductor] recv: %s\n", line.c_str());
+    try {
+        auto j = nlohmann::json::parse(line);
+        CameraResponseData ack = j.get<CameraResponseData>();
+        static int s_ack_count = 0;
+        if (++s_ack_count <= 5 || s_ack_count % 240 == 0)
+            fprintf(stderr, "[Conductor] ack #%d t=%.3f camera(id=%llu x=%.2f y=%.2f z=%.2f)\n",
+                    s_ack_count, ack.tTracked,
+                    static_cast<unsigned long long>(ack.camera.id),
+                    ack.camera.x, ack.camera.y, ack.camera.z);
+    } catch (const std::exception& e) {
+        fprintf(stderr, "[Conductor] ack parse error: %s | raw: %s\n",
+                e.what(), line.c_str());
+    }
 
     BeginRecv();
 }

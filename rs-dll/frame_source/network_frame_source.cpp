@@ -145,6 +145,13 @@ void NetworkFrameSource::OnDisconnect() {
     BeginAccept();
 }
 
+void NetworkFrameSource::SendAck(const CameraResponseData& data) {
+    if (!session_) return;
+    auto msg = std::make_shared<std::string>(
+        nlohmann::json(data).dump() + "\n");
+    session_->Write(std::move(msg));
+}
+
 RS_ERROR NetworkFrameSource::AwaitFrame(int timeoutMs, FrameData* data) {
     const uint32_t current_version = topology_.Version();
     const bool topology_changed = (current_version == 0 || current_version != last_topology_version_);

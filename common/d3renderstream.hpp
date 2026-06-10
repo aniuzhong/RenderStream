@@ -81,6 +81,23 @@ inline void from_json(const nlohmann::json& j, ProjectionClipping& c) {
 }
 
 // ============================================================
+// CameraResponseData — JSON serialization
+// ============================================================
+
+inline void to_json(nlohmann::json& j, const CameraResponseData& crd) {
+    j = {
+        {"tTracked", crd.tTracked},
+        {"camera",   crd.camera},
+    };
+}
+
+inline void from_json(const nlohmann::json& j, CameraResponseData& crd) {
+    crd.tTracked = j.value("tTracked", 0.0);
+    if (j.contains("camera"))
+        from_json(j["camera"], crd.camera);
+}
+
+// ============================================================
 // Shared flat-buffer helpers
 // ============================================================
 

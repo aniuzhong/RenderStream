@@ -49,6 +49,7 @@ public:
 
     RS_ERROR AwaitFrame(int timeoutMs, FrameData* data) override;
     RS_ERROR GetCamera(StreamHandle handle, CameraData* out) override;
+    void SendAck(const CameraResponseData& data) override;
 
 private:
     void IoLoop();

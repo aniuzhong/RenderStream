@@ -19,6 +19,7 @@ public:
     virtual RS_ERROR GetSkeletonJointPoses(uint64_t schemaHash, uint32_t poseParamIndex, SkeletonPose* pose, int* numJoints);
     virtual RS_ERROR GetSkeletonLayout(uint64_t schemaHash, uint64_t layoutId, SkeletonLayout* layout, int* numJoints);
     virtual RS_ERROR GetSkeletonJointNames(uint64_t schemaHash, uint64_t layoutId, const char** names, int** nameByteLengths, int* numJoints);
+    virtual void SendAck(const CameraResponseData&) {}
 };
 
 void SetFrameSource(std::unique_ptr<IFrameSource> s);

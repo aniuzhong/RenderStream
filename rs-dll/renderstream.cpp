@@ -97,3 +97,22 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_shutdown() {
     return RS_ERROR_SUCCESS;
 }
 
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_sendFrame2(StreamHandle streamHandle, const SenderFrame* frame, const FrameResponseData* frameData) {
+    int layer_key = static_cast<int>(streamHandle) - 1;
+
+    if (!rs::GetGpu().SubmitFrame(frame, layer_key))
+        return RS_ERROR_UNSPECIFIED;
+
+    auto ready_pack = rs::GetGpu().ConsumeReadyPack();
+    if (!ready_pack.empty())
+        rs::GetSender().SendPack(ready_pack);
+
+    if (frameData && frameData->cameraData) {
+        auto* fs = rs::GetFrameSource();
+        if (fs)
+            fs->SendAck(*frameData->cameraData);
+    }
+
+    return RS_ERROR_SUCCESS;
+}
+
