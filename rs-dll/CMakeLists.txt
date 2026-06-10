@@ -16,9 +16,9 @@ add_library(renderstream SHARED
     renderstream.cpp
     schema.cpp
     topology.cpp
-    frame_source/local_frame_source.cpp
-    frame_source/network_frame_source.cpp
-    frame_source/frame_source.cpp
+    driven/self_driven.cpp
+    driven/network_driven.cpp
+    driven/driven.cpp
     ${CMAKE_SOURCE_DIR}/common/misc.cpp
 )
 

@@ -13,9 +13,9 @@
 #include "logging.h"
 #include "sender.h"
 #include "topology.h"
-#include "frame_source/frame_source.h"
-#include "frame_source/local_frame_source.h"
-#include "frame_source/network_frame_source.h"
+#include "driven/driven.h"
+#include "driven/self_driven.h"
+#include "driven/network_driven.h"
 #include "misc.h"
 
 static rs::NetworkDriven* g_network_driven = nullptr;
