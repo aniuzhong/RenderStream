@@ -140,9 +140,6 @@ struct stream_description {
     std::string        mapping_name;
     int32_t            fragment     = 0;
 
-    bool operator==(const stream_description&) const = default;
-
-    // Bytes needed for string storage in flat C representation.
     size_t bytes() const {
         size_t n = 0;
         if (!channel.empty())      n += channel.size() + 1;
@@ -151,8 +148,6 @@ struct stream_description {
         return n;
     }
 
-    // Write into C StreamDescription.  |str_pool| must be ≥ bytes().
-    // Returns bytes consumed from str_pool.
     size_t to_c(StreamDescription* dst, char* str_pool) const {
         dst->handle     = handle;
         dst->mappingId  = mapping_id;
@@ -240,12 +235,10 @@ struct number_defaults {
     float max           = 1.0f;
     float step          = 0.1f;
     float default_value = 0.0f;
-    bool operator==(const number_defaults&) const = default;
 };
 
 struct text_defaults {
     std::string default_value;
-    bool operator==(const text_defaults&) const = default;
 };
 
 using param_defaults = std::variant<std::monostate, number_defaults, text_defaults>;
@@ -260,16 +253,12 @@ struct remote_parameter {
     int32_t                  dmx_offset = -1;
     dmx_type                 dmx        = dmx_type::default_dmx;
     uint32_t                 flags      = 0;
-
-    bool operator==(const remote_parameter&) const = default;
 };
 
 struct scene {
     std::string                   name;
     std::vector<remote_parameter> parameters;
     uint64_t                      hash = 0;
-
-    bool operator==(const scene&) const = default;
 };
 
 struct schema {
@@ -279,8 +268,6 @@ struct schema {
     std::string              info;
     std::vector<std::string> channels;
     std::vector<scene>       scenes;
-
-    bool operator==(const schema&) const = default;
 
     size_t bytes() const;
     ::Schema* to_c(void* buffer, size_t buffer_size) const;
@@ -382,8 +369,7 @@ inline void from_json(const nlohmann::json& j, remote_parameter& p) {
 
 inline void to_json(nlohmann::json& j, const scene& s) {
     j["name"] = s.name;
-    j["hash"] = s.hash ? s.hash
-                : std::hash<std::string>{}(s.name.empty() ? "" : s.name);
+    j["hash"] = s.hash ? s.hash : std::hash<std::string>{}(s.name.empty() ? "" : s.name);
     j["parameters"] = s.parameters;
 }
 
@@ -579,7 +565,8 @@ inline ::Schema* schema::to_c(void* buffer, size_t buffer_size) const {
 
 inline schema schema::from_c(const ::Schema* s) {
     schema result;
-    if (!s) return result;
+    if (!s)
+        return result;
 
     if (s->engineName)    result.engine_name    = s->engineName;
     if (s->engineVersion) result.engine_version = s->engineVersion;
@@ -656,8 +643,7 @@ inline std::string schema_path(const std::filesystem::path& project_path) {
     if (dir.empty())
         dir = ".";
     std::string stem = project_path.stem().string();
-    std::transform(stem.begin(), stem.end(), stem.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    std::transform(stem.begin(), stem.end(), stem.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return dir + "/rs_" + stem + ".json";
 }
 
@@ -693,6 +679,128 @@ inline bool save_schema_file(const std::filesystem::path& json_path, const schem
     } catch (...) {
         return false;
     }
+}
+
+// ============================================================
+// Per-frame protocol — Request / Response
+// ============================================================
+
+struct StreamAck {
+    uint64_t   handle        = 0;
+    CameraData camera_used;               // echoed back for verification
+    bool       gpu_submit_ok = false;
+    bool       ndi_send_ok   = false;
+};
+
+struct Request {
+    double                      t            = 0.0;
+    uint32_t                    scene        = 0;
+    uint32_t                    flags        = 0;
+    uint64_t                    schema_hash  = 0;
+    std::vector<CameraData>     cameras;
+    std::vector<float>          param_values;
+    std::vector<std::string>    text_values;
+    std::vector<ImageFrameData> image_refs;
+};
+
+struct Response {
+    uint64_t                frame_counter = 0;
+    double                  t_tracked     = 0.0;
+    std::vector<StreamAck>  streams;
+};
+
+// --- Request JSON ---
+
+inline void to_json(nlohmann::json& j, const Request& r) {
+    j["t"]          = r.t;
+    j["scene"]      = r.scene;
+    j["flags"]      = r.flags;
+    j["schemaHash"] = r.schema_hash;
+    j["cameras"]    = r.cameras;
+    if (!r.param_values.empty())
+        j["params"] = r.param_values;
+    if (!r.text_values.empty())
+        j["texts"]  = r.text_values;
+    if (!r.image_refs.empty()) {
+        auto images = nlohmann::json::array();
+        for (const auto& im : r.image_refs) {
+            images.push_back({
+                {"imageId", im.imageId},
+                {"width",   im.width},
+                {"height",  im.height},
+                {"format",  static_cast<uint32_t>(im.format)},
+            });
+        }
+        j["images"] = std::move(images);
+    }
+}
+
+inline void from_json(const nlohmann::json& j, Request& r) {
+    r.t           = j.value("t",          0.0);
+    r.scene       = j.value("scene",      0u);
+    r.flags       = j.value("flags",      0u);
+    r.schema_hash = j.value("schemaHash", 0ull);
+
+    r.cameras.clear();
+    if (j.contains("cameras") && j["cameras"].is_array())
+        for (const auto& cj : j["cameras"])
+            r.cameras.push_back(cj.get<CameraData>());
+
+    r.param_values.clear();
+    if (j.contains("params") && j["params"].is_array())
+        for (const auto& v : j["params"])
+            r.param_values.push_back(v.get<float>());
+
+    r.text_values.clear();
+    if (j.contains("texts") && j["texts"].is_array())
+        for (const auto& t : j["texts"])
+            r.text_values.push_back(t.get<std::string>());
+
+    r.image_refs.clear();
+    if (j.contains("images") && j["images"].is_array()) {
+        for (const auto& im : j["images"]) {
+            ImageFrameData ifd = {};
+            ifd.imageId = im.value("imageId", int64_t(0));
+            ifd.width   = im.value("width",   0u);
+            ifd.height  = im.value("height",  0u);
+            ifd.format  = static_cast<RSPixelFormat>(im.value("format", 0u));
+            r.image_refs.push_back(ifd);
+        }
+    }
+}
+
+// --- StreamAck / Response JSON ---
+
+inline void to_json(nlohmann::json& j, const StreamAck& a) {
+    j = {
+        {"handle",      a.handle},
+        {"camera",      a.camera_used},
+        {"gpuOk",       a.gpu_submit_ok},
+        {"ndiOk",       a.ndi_send_ok},
+    };
+}
+
+inline void from_json(const nlohmann::json& j, StreamAck& a) {
+    a.handle        = j.value("handle", 0ull);
+    a.gpu_submit_ok = j.value("gpuOk",  false);
+    a.ndi_send_ok   = j.value("ndiOk",  false);
+    if (j.contains("camera"))
+        from_json(j["camera"], a.camera_used);
+}
+
+inline void to_json(nlohmann::json& j, const Response& r) {
+    j["frame"]   = r.frame_counter;
+    j["t"]       = r.t_tracked;
+    j["streams"] = r.streams;
+}
+
+inline void from_json(const nlohmann::json& j, Response& r) {
+    r.frame_counter = j.value("frame", 0ull);
+    r.t_tracked     = j.value("t",     0.0);
+    r.streams.clear();
+    if (j.contains("streams") && j["streams"].is_array())
+        for (const auto& sa : j["streams"])
+            r.streams.push_back(sa.get<StreamAck>());
 }
 
 }  // namespace rs

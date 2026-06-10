@@ -10,8 +10,10 @@ RS_ERROR rs_loadSchema(const char* assetPath, Schema* outSchema, uint32_t* nByte
     auto opt_s = rs::load_schema_file(json_path);
     if (!opt_s) {
         rs::log::Error("rs_loadSchema: failed to load %s", json_path.c_str());
-        if (outSchema) std::memset(outSchema, 0, sizeof(Schema));
-        if (!outSchema) *nBytes = sizeof(Schema);
+        if (outSchema)
+            std::memset(outSchema, 0, sizeof(Schema));
+        if (!outSchema)
+            *nBytes = sizeof(Schema);
         return RS_ERROR_NOTFOUND;
     }
 
@@ -42,7 +44,8 @@ RS_ERROR rs_loadSchema(const char* assetPath, Schema* outSchema, uint32_t* nByte
 }
 
 RS_ERROR rs_saveSchema(const char* assetPath, Schema* inSchema) {
-    if (!assetPath || !inSchema) return RS_ERROR_INVALID_PARAMETERS;
+    if (!assetPath || !inSchema)
+        return RS_ERROR_INVALID_PARAMETERS;
 
     std::string json_path = rs::schema_path(assetPath);
     rs::schema s = rs::schema::from_c(inSchema);

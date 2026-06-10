@@ -14,7 +14,7 @@ add_library(renderstream SHARED
     logging.cpp
     sender.cpp
     renderstream.cpp
-    schema/schema.cpp
+    schema.cpp
     topology.cpp
     frame_source/local_frame_source.cpp
     frame_source/network_frame_source.cpp

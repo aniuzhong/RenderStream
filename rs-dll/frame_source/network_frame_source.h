@@ -1,6 +1,7 @@
 #pragma once
 
 #include "frame_source.h"
+#include "d3renderstream.hpp"
 
 #include <asio.hpp>
 
@@ -12,14 +13,6 @@
 namespace rs {
 
 class Topology;
-
-struct TickData {
-    double                  t_tracked   = 0.0;
-    uint32_t                scene       = 0;
-    uint32_t                flags       = 0;
-    uint64_t                schema_hash = 0;
-    std::vector<CameraData> cameras;
-};
 
 class NetworkFrameSource : public IFrameSource {
 public:
@@ -48,9 +41,9 @@ private:
     std::mutex              mutex_;
     std::condition_variable cv_;
 
-    TickData  buf_[2];
-    TickData* inbox_      = &buf_[0];
-    TickData* published_  = &buf_[1];
+    Request  buf_[2];
+    Request* inbox_      = &buf_[0];
+    Request* published_  = &buf_[1];
 
     int      tick_version_   = 0;
     double   last_t_tracked_ = 0.0;

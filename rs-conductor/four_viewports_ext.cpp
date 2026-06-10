@@ -34,10 +34,11 @@ static constexpr double kFps = 60.0;
 static constexpr double kDt = 1.0 / kFps;
 
 const char* kEngineExe =
-    "C:/Program Files/Epic Games/UE_5.5/Engine/Binaries/Win64/UnrealEditor.exe";
-    // "D:/Epic Games/UE_5.5/Engine/Binaries/Win64/UnrealEditor.exe";
+    // "C:/Program Files/Epic Games/UE_5.5/Engine/Binaries/Win64/UnrealEditor.exe";
+    "D:/Epic Games/UE_5.5/Engine/Binaries/Win64/UnrealEditor.exe";
 const char* kProjectPath =
     "E:/Assets/Unreal Projects/nDisplay_Demo_55/nDisplay_Demo.uproject";
+    // "C:/Users/hido/Documents/Unreal Projects/nDisplay_Demo_55/nDisplay_Demo.uproject";
 const char* kNodeName = "node0";
 
 //  Viewport layout (2x2 grid)

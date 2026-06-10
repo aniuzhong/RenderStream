@@ -93,26 +93,29 @@ void Conductor::GenerateCameras(double t) {
 }
 
 std::string Conductor::BuildMessage(double t) const {
-    nlohmann::json msg;
-    msg["t"] = t;
-    msg["cameras"] = last_cameras_;
+    rs::Request req;
+    req.t       = t;
+    req.scene   = 0;
+    req.flags   = 0;
+    req.schema_hash = 0;
+    req.cameras = last_cameras_;
 
-    std::string json = msg.dump();
+    nlohmann::json j = req;
+    std::string json = j.dump();
     json += "\n";
 
-    // Diagnostic: check for embedded newlines in the JSON body
     static int s_send_seq = 0;
     ++s_send_seq;
     size_t nl_count = 0;
     for (size_t i = 0; i < json.size(); ++i)
         if (json[i] == '\n') ++nl_count;
-    if (s_send_seq <= 5 || nl_count != 1) {
-        fprintf(stderr, "[Conductor] #%d len=%zu newlines=%zu tail='%s'",
-                s_send_seq, json.size(), nl_count,
-                json.substr(json.size() > 30 ? json.size() - 30 : 0).c_str());
-        if (nl_count != 1) fprintf(stderr, " *** UNEXPECTED NEWLINES! ***");
-        fprintf(stderr, "\n");
-    }
+
+    fprintf(stderr, "[Conductor] #%d t=%.3f len=%zu newlines=%zu cameras=%zu params=%zu texts=%zu images=%zu\n",
+            s_send_seq, t, json.size(), nl_count,
+            req.cameras.size(), req.param_values.size(),
+            req.text_values.size(), req.image_refs.size());
+
+    if (nl_count != 1) fprintf(stderr, "[Conductor] *** UNEXPECTED NEWLINES! ***\n");
 
     return json;
 }

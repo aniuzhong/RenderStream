@@ -70,30 +70,30 @@ void NetworkFrameSource::OnRead(std::shared_ptr<asio::ip::tcp::socket> socket,
     if (!line.empty()) {
         try {
             auto j = nlohmann::json::parse(line);
+            auto req = j.get<Request>();
 
-            double tickT = 0.0;
-            size_t tickCameras = 0;
+            const double tickT = req.t;
+            const size_t tickCameras = req.cameras.size();
+            const uint32_t tickScene = req.scene;
+            const uint32_t tickFlags = req.flags;
+            const uint64_t tickSchemaHash = req.schema_hash;
+            const size_t tickParams = req.param_values.size();
+            const size_t tickTexts = req.text_values.size();
+            const size_t tickImages = req.image_refs.size();
+
             {
                 std::lock_guard lock(mutex_);
-                inbox_->t_tracked   = j.value("t", 0.0);
-                inbox_->scene       = j.value("scene", 0u);
-                inbox_->flags       = j.value("flags", 0u);
-                inbox_->schema_hash = j.value("schemaHash", 0ull);
-                inbox_->cameras.clear();
-
-                if (j.contains("cameras") && j["cameras"].is_array()) {
-                    for (const auto& cj : j["cameras"])
-                        inbox_->cameras.push_back(cj.get<CameraData>());
-                }
-                tickT = inbox_->t_tracked;
-                tickCameras = inbox_->cameras.size();
+                *inbox_ = std::move(req);
                 ++tick_version_;
             }
             cv_.notify_one();
 
             static int s_tick_log = 0;
-            if (++s_tick_log <= 3)
-                rs::log::Info("[Network] tick t=%.3f cameras=%zu", tickT, tickCameras);
+            if (++s_tick_log <= 5)
+                rs::log::Info("[Network] Rx t=%.3f scene=%u flags=%u schemaHash=%llu cameras=%zu params=%zu texts=%zu images=%zu",
+                    tickT, tickScene, tickFlags,
+                    static_cast<unsigned long long>(tickSchemaHash),
+                    tickCameras, tickParams, tickTexts, tickImages);
         } catch (const std::exception& e) {
             rs::log::Error("[Network] parse error: %s", e.what());
         }
@@ -131,7 +131,7 @@ RS_ERROR NetworkFrameSource::AwaitFrame(int timeoutMs, FrameData* data) {
         std::swap(inbox_, published_);
     }
 
-    double t = published_->t_tracked;
+    double t = published_->t;
     double dt = (last_t_tracked_ > 0.0) ? (t - last_t_tracked_) : (1.0 / 60.0);
     last_t_tracked_ = t;
 
@@ -145,8 +145,11 @@ RS_ERROR NetworkFrameSource::AwaitFrame(int timeoutMs, FrameData* data) {
 
     static int s_frame_log = 0;
     ++s_frame_log;
-    if (s_frame_log <= 3 || s_frame_log % 120 == 0)
-        rs::log::Info("[Network] frame #%d t=%.3f dt=%.4f cameras=%zu", s_frame_log, t, dt, published_->cameras.size());
+    if (s_frame_log <= 5 || s_frame_log % 120 == 0)
+        rs::log::Info("[Network] AwaitFrame #%d t=%.3f dt=%.4f scene=%u flags=%u cameras=%zu params=%zu texts=%zu images=%zu",
+            s_frame_log, t, dt, published_->scene, published_->flags,
+            published_->cameras.size(), published_->param_values.size(),
+            published_->text_values.size(), published_->image_refs.size());
 
     return RS_ERROR_SUCCESS;
 }
