@@ -8,11 +8,6 @@
 //   four_viewports_ext.exe [timeout_ms]
 //   four_viewports_ext.exe 500
 
-#define WIN32_LEAN_AND_MEAN
-#include <windows.h>
-#include <winsock2.h>
-#include <ws2tcpip.h>
-
 #include <cstdio>
 #include <cstdlib>
 
@@ -31,7 +26,6 @@
 
 static constexpr int kTickPort = 9581;
 static constexpr double kFps = 60.0;
-static constexpr double kDt = 1.0 / kFps;
 
 const char* kEngineExe =
     // "C:/Program Files/Epic Games/UE_5.5/Engine/Binaries/Win64/UnrealEditor.exe";
@@ -138,12 +132,6 @@ static std::string SchemaProject(const char* node_ip, int node_port) {
 //  Main
 
 int main(int argc, char* argv[]) {
-    WSADATA wsa_data;
-    if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0) {
-        fprintf(stderr, "WSAStartup failed\n");
-        return 1;
-    }
-
     int timeout_ms = (argc > 1) ? atoi(argv[1]) : 500;
 
     fprintf(stderr, "=== nDisplay Launcher (external tick) ===\n");
@@ -236,32 +224,11 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
-        // 7. Start tick loop.
-        fprintf(stderr, "[Conductor] starting loop at %.0f fps\n\n", kFps);
-        double t = 0.0;
-        auto start = std::chrono::steady_clock::now();
-        int tick_count = 0;
-
-        while (true) {
-            auto target = start + std::chrono::duration_cast<std::chrono::steady_clock::duration>(
-                                     std::chrono::duration<double>(tick_count * kDt));
-            std::this_thread::sleep_until(target);
-
-            if (!conductor.SendFrame(t)) {
-                fprintf(stderr, "[Conductor] send failed - UE may have exited\n");
-                break;
-            }
-
-            if (++tick_count <= 3 || tick_count % 120 == 0)
-                fprintf(stderr, "[Conductor] #%d t=%.3f cameras=%zu\n",
-                        tick_count, t, conductor.LastCameras().size());
-
-            t += kDt;
-        }
+        // 7. Run tick loop (blocks until UE exits or error).
+        conductor.Run();
     }
 
     RS_FreeNodeList(&list);
-    WSACleanup();
     fprintf(stderr, "\nDone.\n");
     return 0;
 }

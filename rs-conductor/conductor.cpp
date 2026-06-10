@@ -1,13 +1,11 @@
 #include "conductor.h"
 
 #include <cstdio>
-#include <cstring>
-
 #include <chrono>
 #include <thread>
 
 // ============================================================
-// Keyframe tracks — shared with renderstream.dll
+// Keyframe tracks
 // ============================================================
 
 namespace {
@@ -52,37 +50,111 @@ Conductor::~Conductor() {
     Disconnect();
 }
 
+// ── Connection ──────────────────────────────────────────────
+
 bool Conductor::Connect(int retries) {
+    using asio::ip::tcp;
+
     for (int i = 0; i < retries; ++i) {
-        sock_ = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-        if (sock_ == INVALID_SOCKET)
-            return false;
-
-        sockaddr_in addr{};
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(static_cast<u_short>(tick_port_));
-        inet_pton(AF_INET, node_ip_.c_str(), &addr.sin_addr);
-
-        if (connect(sock_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0) {
-            fprintf(stderr, "[Conductor] connected to %s:%d\n", node_ip_.c_str(), tick_port_);
+        try {
+            tcp::resolver resolver(io_);
+            auto endpoints = resolver.resolve(node_ip_, std::to_string(tick_port_));
+            asio::connect(sock_, endpoints);
+            fprintf(stderr, "[Conductor] connected to %s:%d\n",
+                    node_ip_.c_str(), tick_port_);
             return true;
+        } catch (const std::exception& e) {
+            sock_.close();
+            fprintf(stderr, "[Conductor] connect attempt %d/%d: %s\n",
+                    i + 1, retries, e.what());
+            std::this_thread::sleep_for(std::chrono::seconds(1));
         }
-
-        closesocket(sock_);
-        sock_ = INVALID_SOCKET;
-        fprintf(stderr, "[Conductor] connect attempt %d/%d...\r", i + 1, retries);
-        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
-    fprintf(stderr, "\n[Conductor] failed to connect after %d retries\n", retries);
+    fprintf(stderr, "[Conductor] failed to connect after %d retries\n", retries);
     return false;
 }
 
 void Conductor::Disconnect() {
-    if (sock_ != INVALID_SOCKET) {
-        closesocket(sock_);
-        sock_ = INVALID_SOCKET;
-    }
+    Stop();
+    if (sock_.is_open())
+        sock_.close();
 }
+
+// ── Run loop ────────────────────────────────────────────────
+
+void Conductor::Run() {
+    running_ = true;
+    t_ = 0.0;
+    frame_seq_ = 0;
+
+    // fire first tick immediately, then every tick_interval_
+    tick_timer_.expires_after(std::chrono::seconds(0));
+    BeginTick();
+    BeginRecv();
+
+    fprintf(stderr, "[Conductor] loop started at %.0f fps\n", 1.0 / tick_interval_);
+
+    try {
+        io_.run();
+    } catch (const std::exception& e) {
+        fprintf(stderr, "[Conductor] io loop exception: %s\n", e.what());
+    }
+
+    running_ = false;
+    fprintf(stderr, "[Conductor] loop ended (frames=%d)\n", frame_seq_);
+}
+
+void Conductor::Stop() {
+    if (!running_) return;
+    running_ = false;
+    tick_timer_.cancel();
+    io_.stop();
+}
+
+// ── Timer ───────────────────────────────────────────────────
+
+void Conductor::BeginTick() {
+    tick_timer_.async_wait([this](const std::error_code& ec) { OnTick(ec); });
+}
+
+void Conductor::OnTick(const std::error_code& ec) {
+    if (ec) return;          // cancelled
+
+    BuildAndSend(t_);
+    t_ += tick_interval_;
+    ++frame_seq_;
+
+    // re‑arm timer at absolute expiry: no cumulative drift
+    using namespace std::chrono;
+    auto interval = duration_cast<nanoseconds>(duration<double>(tick_interval_));
+    tick_timer_.expires_at(tick_timer_.expiry() + interval);
+    BeginTick();
+}
+
+// ── Recv ────────────────────────────────────────────────────
+
+void Conductor::BeginRecv() {
+    asio::async_read_until(sock_, recv_buf_, '\n',
+        [this](const std::error_code& ec, size_t n) { OnRecv(ec, n); });
+}
+
+void Conductor::OnRecv(const std::error_code& ec, size_t n) {
+    if (ec) {
+        fprintf(stderr, "[Conductor] recv disconnected: %s\n", ec.message().c_str());
+        Stop();
+        return;
+    }
+
+    std::istream is(&recv_buf_);
+    std::string line;
+    std::getline(is, line);
+
+    fprintf(stderr, "[Conductor] recv: %s\n", line.c_str());
+
+    BeginRecv();
+}
+
+// ── Camera generation ───────────────────────────────────────
 
 void Conductor::GenerateCameras(double t) {
     last_cameras_.resize(4);
@@ -92,43 +164,28 @@ void Conductor::GenerateCameras(double t) {
     }
 }
 
-std::string Conductor::BuildMessage(double t) const {
-    rs::Request req;
-    req.t       = t;
-    req.scene   = 0;
-    req.flags   = 0;
-    req.schema_hash = 0;
-    req.cameras = last_cameras_;
-
-    nlohmann::json j = req;
-    std::string json = j.dump();
-    json += "\n";
-
-    static int s_send_seq = 0;
-    ++s_send_seq;
-    size_t nl_count = 0;
-    for (size_t i = 0; i < json.size(); ++i)
-        if (json[i] == '\n') ++nl_count;
-
-    fprintf(stderr, "[Conductor] #%d t=%.3f len=%zu newlines=%zu cameras=%zu params=%zu texts=%zu images=%zu\n",
-            s_send_seq, t, json.size(), nl_count,
-            req.cameras.size(), req.param_values.size(),
-            req.text_values.size(), req.image_refs.size());
-
-    if (nl_count != 1) fprintf(stderr, "[Conductor] *** UNEXPECTED NEWLINES! ***\n");
-
-    return json;
-}
-
-bool Conductor::SendFrame(double t) {
-    if (sock_ == INVALID_SOCKET) return false;
-
+void Conductor::BuildAndSend(double t) {
     GenerateCameras(t);
-    std::string msg = BuildMessage(t);
-    int sent = send(sock_, msg.c_str(), static_cast<int>(msg.size()), 0);
-    if (sent != static_cast<int>(msg.size())) {
-        fprintf(stderr, "[Conductor] partial send: sent=%d expected=%d\n", sent, (int)msg.size());
-        return false;
-    }
-    return true;
+
+    rs::Request req;
+    req.t          = t;
+    req.scene      = 0;
+    req.flags      = 0;
+    req.schema_hash = 0;
+    req.cameras    = last_cameras_;
+
+    auto msg = std::make_shared<std::string>(
+        nlohmann::json(req).dump() + "\n");
+
+    if (frame_seq_ <= 3 || frame_seq_ % 120 == 0)
+        fprintf(stderr, "[Conductor] #%d t=%.3f len=%zu cameras=%zu\n",
+                frame_seq_, t, msg->size(), req.cameras.size());
+
+    asio::async_write(sock_, asio::buffer(*msg),
+        [this, msg](const std::error_code& err, size_t) {
+            if (err) {
+                fprintf(stderr, "[Conductor] send error: %s\n", err.message().c_str());
+                Stop();
+            }
+        });
 }
