@@ -146,8 +146,32 @@ void NetworkDriven::OnDisconnect() {
 
 void NetworkDriven::Response(const CameraResponseData& data) {
     if (!session_) return;
-    auto msg = std::make_shared<std::string>(
-        nlohmann::json(data).dump() + "\n");
+    auto j = nlohmann::json(data);
+    j["type"] = "FrameResponseData";
+    auto msg = std::make_shared<std::string>(j.dump() + "\n");
+    session_->Write(std::move(msg));
+}
+
+void NetworkDriven::SetNewStatusMessage(const std::string& text) {
+    if (!session_) return;
+    if (text == last_status_) return;
+    last_status_ = text;
+    nlohmann::json j;
+    j["type"] = "Status";
+    j["text"] = text;
+    auto msg = std::make_shared<std::string>(j.dump() + "\n");
+    session_->Write(std::move(msg));
+}
+
+void NetworkDriven::SendProfilingData(const ProfilingEntry* entries, int count) {
+    if (!session_ || !entries || count <= 0) return;
+    auto arr = nlohmann::json::array();
+    for (int i = 0; i < count; ++i)
+        arr.push_back(entries[i]);
+    nlohmann::json j;
+    j["type"]    = "ProfilingData";
+    j["entries"] = std::move(arr);
+    auto msg = std::make_shared<std::string>(j.dump() + "\n");
     session_->Write(std::move(msg));
 }
 

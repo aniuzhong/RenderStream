@@ -357,10 +357,14 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_logToD3(const char*) {
     return RS_ERROR_SUCCESS;  // ⚠️ stub
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_sendProfilingData(ProfilingEntry*, int) {
-    return RS_ERROR_SUCCESS;  // ⚠️ stub
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_sendProfilingData(ProfilingEntry* entries, int count) {
+    if (g_network_driven)
+        g_network_driven->SendProfilingData(entries, count);
+    return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_setNewStatusMessage(const char*) {
-    return RS_ERROR_SUCCESS;  // ⚠️ stub
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_setNewStatusMessage(const char* msg) {
+    if (g_network_driven)
+        g_network_driven->SetNewStatusMessage(msg ? msg : "");
+    return RS_ERROR_SUCCESS;
 }

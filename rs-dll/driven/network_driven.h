@@ -50,8 +50,9 @@ public:
     RS_ERROR AwaitFrame(int timeoutMs, FrameData* data) override;
     RS_ERROR GetCamera(StreamHandle handle, CameraData* out) override;
 
-    // Send a CameraResponseData ack back to the conductor.
     void Response(const CameraResponseData& data);
+    void SetNewStatusMessage(const std::string& text);
+    void SendProfilingData(const ProfilingEntry* entries, int count);
 
 private:
     void IoLoop();
@@ -78,7 +79,8 @@ private:
     int      tick_version_   = 0;
     double   last_t_tracked_ = 0.0;
 
-    std::shared_ptr<Session> session_;
+    std::string                last_status_;
+    std::shared_ptr<Session>   session_;
 };
 
 }  // namespace rs

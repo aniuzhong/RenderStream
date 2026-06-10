@@ -151,15 +151,51 @@ void Conductor::OnRecv(const std::error_code& ec, size_t n) {
 
     try {
         auto j = nlohmann::json::parse(line);
-        CameraResponseData ack = j.get<CameraResponseData>();
-        static int s_ack_count = 0;
-        if (++s_ack_count <= 5 || s_ack_count % 240 == 0)
-            fprintf(stderr, "[Conductor] ack #%d t=%.3f camera(id=%llu x=%.2f y=%.2f z=%.2f)\n",
-                    s_ack_count, ack.tTracked,
-                    static_cast<unsigned long long>(ack.camera.id),
-                    ack.camera.x, ack.camera.y, ack.camera.z);
+        std::string type = j.value("type", "");
+
+        if (type == "FrameResponseData") {
+            CameraResponseData ack = j.get<CameraResponseData>();
+            static int s_ack_count = 0;
+            if (++s_ack_count <= 5 || s_ack_count % 240 == 0)
+                fprintf(stderr, "[Conductor] FrameResponseData #%d t=%.3f camera(id=%llu x=%.2f y=%.2f z=%.2f)\n",
+                        s_ack_count, ack.tTracked,
+                        static_cast<unsigned long long>(ack.camera.id),
+                        ack.camera.x, ack.camera.y, ack.camera.z);
+        } else if (type == "Status") {
+            std::string text = j.value("text", "");
+            fprintf(stderr, "[Conductor] Status: %s\n", text.c_str());
+        } else if (type == "ProfilingData") {
+            static int s_prof_count = 0;
+            ++s_prof_count;
+
+            auto get_entry = [&](const char* name) -> float {
+                if (j.contains("entries") && j["entries"].is_array())
+                    for (const auto& e : j["entries"])
+                        if (e.value("name", "") == name)
+                            return e.value("value", 0.0f);
+                return 0.0f;
+            };
+
+            if (s_prof_count <= 3) {
+                // First 3 frames: print all entries for diagnostics
+                fprintf(stderr, "[Conductor] Profiling #%d ", s_prof_count);
+                if (j.contains("entries") && j["entries"].is_array())
+                    for (const auto& e : j["entries"])
+                        fprintf(stderr, "%.1fms %s ", e["value"].get<float>(), e["name"].get<std::string>().c_str());
+                fprintf(stderr, "\n");
+            } else if (s_prof_count % 120 == 0) {
+                float frame_time = get_entry("Frame Time");
+                float fps = frame_time > 0.0f ? 1000.0f / frame_time : 0.0f;
+                float gpu_time  = get_entry("GPU Time");
+                float await_time = get_entry("Await Time");
+                fprintf(stderr, "[Conductor] Frame #%d  frame=%.1fms (%.0ffps)  gpu=%.1fms  await=%.1fms\n",
+                        s_prof_count, frame_time, fps, gpu_time, await_time);
+            }
+        } else {
+            fprintf(stderr, "[Conductor] unknown msg: %s\n", line.c_str());
+        }
     } catch (const std::exception& e) {
-        fprintf(stderr, "[Conductor] ack parse error: %s | raw: %s\n",
+        fprintf(stderr, "[Conductor] parse error: %s | raw: %s\n",
                 e.what(), line.c_str());
     }
 

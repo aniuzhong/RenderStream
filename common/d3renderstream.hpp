@@ -98,6 +98,17 @@ inline void from_json(const nlohmann::json& j, CameraResponseData& crd) {
 }
 
 // ============================================================
+// ProfilingEntry — JSON serialization (outbound only)
+// ============================================================
+
+inline void to_json(nlohmann::json& j, const ProfilingEntry& pe) {
+    j = {
+        {"name",  pe.name ? pe.name : ""},
+        {"value", pe.value},
+    };
+}
+
+// ============================================================
 // Shared flat-buffer helpers
 // ============================================================
 
@@ -699,15 +710,8 @@ inline bool save_schema_file(const std::filesystem::path& json_path, const schem
 }
 
 // ============================================================
-// Per-frame protocol — Request / Response
+// Per-frame protocol — Request
 // ============================================================
-
-struct StreamAck {
-    uint64_t   handle        = 0;
-    CameraData camera_used;               // echoed back for verification
-    bool       gpu_submit_ok = false;
-    bool       ndi_send_ok   = false;
-};
 
 struct Request {
     double                      t            = 0.0;
@@ -718,12 +722,6 @@ struct Request {
     std::vector<float>          param_values;
     std::vector<std::string>    text_values;
     std::vector<ImageFrameData> image_refs;
-};
-
-struct Response {
-    uint64_t                frame_counter = 0;
-    double                  t_tracked     = 0.0;
-    std::vector<StreamAck>  streams;
 };
 
 // --- Request JSON ---
@@ -784,40 +782,6 @@ inline void from_json(const nlohmann::json& j, Request& r) {
             r.image_refs.push_back(ifd);
         }
     }
-}
-
-// --- StreamAck / Response JSON ---
-
-inline void to_json(nlohmann::json& j, const StreamAck& a) {
-    j = {
-        {"handle",      a.handle},
-        {"camera",      a.camera_used},
-        {"gpuOk",       a.gpu_submit_ok},
-        {"ndiOk",       a.ndi_send_ok},
-    };
-}
-
-inline void from_json(const nlohmann::json& j, StreamAck& a) {
-    a.handle        = j.value("handle", 0ull);
-    a.gpu_submit_ok = j.value("gpuOk",  false);
-    a.ndi_send_ok   = j.value("ndiOk",  false);
-    if (j.contains("camera"))
-        from_json(j["camera"], a.camera_used);
-}
-
-inline void to_json(nlohmann::json& j, const Response& r) {
-    j["frame"]   = r.frame_counter;
-    j["t"]       = r.t_tracked;
-    j["streams"] = r.streams;
-}
-
-inline void from_json(const nlohmann::json& j, Response& r) {
-    r.frame_counter = j.value("frame", 0ull);
-    r.t_tracked     = j.value("t",     0.0);
-    r.streams.clear();
-    if (j.contains("streams") && j["streams"].is_array())
-        for (const auto& sa : j["streams"])
-            r.streams.push_back(sa.get<StreamAck>());
 }
 
 }  // namespace rs
