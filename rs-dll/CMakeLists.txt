@@ -14,7 +14,6 @@ add_library(renderstream SHARED
     logging.cpp
     sender.cpp
     renderstream.cpp
-    schema.cpp
     topology.cpp
     driven/self_driven.cpp
     driven/network_driven.cpp

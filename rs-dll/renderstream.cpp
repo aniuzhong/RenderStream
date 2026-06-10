@@ -2,6 +2,7 @@
 #define RS_NETWORK_TICK_PORT 9581
 
 #include "d3renderstream.h"
+#include "d3renderstream.hpp"
 
 #include <winsock2.h>
 #include <windows.h>
@@ -18,7 +19,40 @@
 #include "driven/network_driven.h"
 #include "misc.h"
 
+// ============================================================
+// Singletons used by the C API
+// ============================================================
+//
+//   rs::GetDriven()        → IDriven   (set by rs_initialise)
+//   rs::GetGpu()           → GpuContext (set by rs_initialiseGpGpuWithDX12DeviceAndQueue)
+//   rs::GetSender()        → Sender    (configured by rs_getStreams / Topology)
+//   rs::Topology::Instance()→ Topology  (set by rs_initialise)
+//   g_network_driven        → NetworkDriven raw ptr (set by rs_initialise in network mode)
+//   rs::log::*              → logging  (always available, no init required)
+//
+// Status legend:
+//   ✅ implemented — delegates to a singleton, does real work
+//   ⚠️ stub        — returns SUCCESS but no-op (placeholder for future)
+//   ❌ stub        — returns NOTFOUND / no data (placeholder for future)
+
 static rs::NetworkDriven* g_network_driven = nullptr;
+
+// ============================================================
+// 1. Logging — isolated, no init required
+//    Dependencies: rs::log::*
+// ============================================================
+
+extern "C" D3_RENDER_STREAM_API void rs_registerLoggingFunc(logger_t fn)        { rs::log::SetInfoCallback(fn); }
+extern "C" D3_RENDER_STREAM_API void rs_registerErrorLoggingFunc(logger_t fn)   { rs::log::SetErrorCallback(fn); }
+extern "C" D3_RENDER_STREAM_API void rs_registerVerboseLoggingFunc(logger_t fn) { rs::log::SetVerboseCallback(fn); }
+extern "C" D3_RENDER_STREAM_API void rs_unregisterLoggingFunc()                 { rs::log::ClearInfoCallback(); }
+extern "C" D3_RENDER_STREAM_API void rs_unregisterErrorLoggingFunc()            { rs::log::ClearErrorCallback(); }
+extern "C" D3_RENDER_STREAM_API void rs_unregisterVerboseLoggingFunc()          { rs::log::ClearVerboseCallback(); }
+
+// ============================================================
+// 2. Lifecycle — init / shutdown
+//    Dependencies: Topology, IDriven, NetworkDriven, SelfDriven, NDI
+// ============================================================
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor, int expectedVersionMinor) {
     (void)expectedVersionMajor;
@@ -34,25 +68,21 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor,
                        reinterpret_cast<LPCWSTR>(&rs_initialise), &self);
 
     auto camera_fn = MakeKeyframeCamera({
-        // camera0 - left-top
         {true, {
             make_camera_key(0.0, -2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0),
             make_camera_key(3.0,  2.00, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0),
             make_camera_key(6.0, -2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0),
         }},
-        // camera1 - right-top
         {true, {
             make_camera_key(0.0,  5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0),
             make_camera_key(3.0, -5.59, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0),
             make_camera_key(6.0,  5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0),
         }},
-        // camera2 - left-bottom
         {true, {
             make_camera_key(0.0, -11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0),
             make_camera_key(3.0, -11.395, 8.30, -5.00, -20.0, 84.1, 0.0, 90.0),
             make_camera_key(6.0, -11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0),
         }},
-        // camera3 - right-bottom
         {true, {
             make_camera_key(0.0, 12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0),
             make_camera_key(3.0, 12.40, 7.70,  7.00, -30.0, -90.0, 0.0, 90.0),
@@ -76,6 +106,7 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor,
     }
 #else
     rs::log::Info("[rs_initialise] hosting mode (self-clocked 60fps)");
+    g_network_driven = nullptr;
     rs::SelfDriven::Config cfg;
     cfg.topology = &rs::Topology::Instance();
     cfg.camera   = camera_fn;
@@ -89,7 +120,7 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor,
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_shutdown() {
     rs::log::Info("[rs_shutdown] >>> shutting down...");
-    rs::log::Info("[rs_shutdown] step 1/4: destroying frame source...");
+    rs::log::Info("[rs_shutdown] step 1/4: destroying driven...");
     g_network_driven = nullptr;
     rs::SetDriven(nullptr);
     rs::log::Info("[rs_shutdown] step 2/4: shutting down GPU...");
@@ -103,6 +134,209 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_shutdown() {
     return RS_ERROR_SUCCESS;
 }
 
+// ============================================================
+// 3. GPU initialisation — requires init
+//    Dependencies: GpuContext
+// ============================================================
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_useDX12SharedHeapFlag(UseDX12SharedHeapFlag*) {
+    return RS_ERROR_SUCCESS;  // ⚠️ stub
+}
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithoutInterop(ID3D11Device*) {
+    return RS_ERROR_SUCCESS;  // ⚠️ stub
+}
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX11Device(ID3D11Device*) {
+    return RS_ERROR_SUCCESS;  // ⚠️ stub
+}
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX11Resource(ID3D11Resource*) {
+    return RS_ERROR_SUCCESS;  // ⚠️ stub
+}
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithOpenGlContexts(HGLRC, HDC) {
+    return RS_ERROR_SUCCESS;  // ⚠️ stub
+}
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithVulkanDevice(VkDevice) {
+    return RS_ERROR_SUCCESS;  // ⚠️ stub
+}
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX12DeviceAndQueue(
+    ID3D12Device* device, ID3D12CommandQueue* queue) {
+    if (!rs::GetGpu().Initialize(device, queue)) {
+        rs::log::Error("rs_initialiseGpGpuWithDX12DeviceAndQueue: GPU init failed");
+        return RS_ERROR_UNSPECIFIED;
+    }
+    return RS_ERROR_SUCCESS;  // ✅
+}
+
+// ============================================================
+// 4. Schema — requires init
+//    Dependencies: rs:: schema I/O helpers (d3renderstream.hpp)
+// ============================================================
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_loadSchema(const char* assetPath, Schema* outSchema, uint32_t* nBytes) {
+    std::string json_path = rs::schema_path(assetPath);
+
+    auto opt_s = rs::load_schema_file(json_path);
+    if (!opt_s) {
+        rs::log::Error("rs_loadSchema: failed to load %s", json_path.c_str());
+        if (outSchema)
+            std::memset(outSchema, 0, sizeof(Schema));
+        if (!outSchema)
+            *nBytes = sizeof(Schema);
+        return RS_ERROR_NOTFOUND;
+    }
+
+    size_t required = opt_s->bytes();
+
+    if (!outSchema) {
+        *nBytes = static_cast<uint32_t>(required);
+        return RS_ERROR_SUCCESS;
+    }
+
+    if (*nBytes < required) {
+        *nBytes = static_cast<uint32_t>(required);
+        return RS_ERROR_BUFFER_OVERFLOW;
+    }
+
+    ::Schema* result = opt_s->to_c(outSchema, *nBytes);
+    if (!result) {
+        rs::log::Error("rs_loadSchema: to_c failed for %s", json_path.c_str());
+        std::memset(outSchema, 0, sizeof(Schema));
+        return RS_ERROR_NOTFOUND;
+    }
+
+    rs::log::Info("rs_loadSchema: loaded %s (%u scenes, %u channels)",
+                  json_path.c_str(), result->scenes.nScenes,
+                  result->channels.nChannels);
+    *nBytes = sizeof(Schema);
+    return RS_ERROR_SUCCESS;  // ✅
+}
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_saveSchema(const char* assetPath, Schema* inSchema) {
+    if (!assetPath || !inSchema)
+        return RS_ERROR_INVALID_PARAMETERS;
+
+    std::string json_path = rs::schema_path(assetPath);
+    rs::schema s = rs::schema::from_c(inSchema);
+
+    if (!rs::save_schema_file(json_path, s)) {
+        rs::log::Error("rs_saveSchema: failed to write %s", json_path.c_str());
+        return RS_ERROR_NOTFOUND;
+    }
+
+    rs::log::Info("rs_saveSchema: written %s", json_path.c_str());
+    return RS_ERROR_SUCCESS;  // ✅
+}
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_setSchema(Schema*) {
+    return RS_ERROR_SUCCESS;  // ⚠️ stub
+}
+
+// ============================================================
+// 5. Frame pacing — requires running inside launcher env
+//    Dependencies: IDriven
+// ============================================================
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_awaitFrameData(int timeoutMs, FrameData* data) {
+    auto* s = rs::GetDriven();
+    if (!data || !s)
+        return RS_ERROR_INVALID_PARAMETERS;
+    return s->AwaitFrame(timeoutMs, data);  // ✅
+}
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_setFollower(int) {
+    return RS_ERROR_SUCCESS;  // ⚠️ stub
+}
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_beginFollowerFrame(double) {
+    return RS_ERROR_SUCCESS;  // ⚠️ stub
+}
+
+// ============================================================
+// 6. Frame data — cameras / parameters / images / text
+//    Dependencies: IDriven
+// ============================================================
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameCamera(StreamHandle streamHandle, CameraData* outCameraData) {
+    auto* s = rs::GetDriven();
+    if (!s)
+        return RS_ERROR_NOTFOUND;
+    return s->GetCamera(streamHandle, outCameraData);  // ✅
+}
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameParameters(uint64_t schemaHash, void* outData, uint64_t size) {
+    auto* s = rs::GetDriven();
+    if (!s)
+        return RS_ERROR_NOTFOUND;
+    return s->GetFrameParameters(schemaHash, outData, size);  // ⚠️ default SUCCESS, no data
+}
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameImageData(uint64_t schemaHash, ImageFrameData* out, uint64_t count) {
+    auto* s = rs::GetDriven();
+    if (!s)
+        return RS_ERROR_NOTFOUND;
+    return s->GetFrameImageData(schemaHash, out, count);  // ⚠️ default SUCCESS, no data
+}
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameImage2(int64_t imageId, const SenderFrame* frame) {
+    auto* s = rs::GetDriven();
+    if (!s)
+        return RS_ERROR_NOTFOUND;
+    return s->GetFrameImage(imageId, frame);  // ❌ default NOTFOUND
+}
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameText(uint64_t schemaHash, uint32_t index, const char** outText) {
+    auto* s = rs::GetDriven();
+    if (!s)
+        return RS_ERROR_NOTFOUND;
+    return s->GetFrameText(schemaHash, index, outText);  // ❌ default NOTFOUND
+}
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_releaseImage2(const SenderFrame*) {
+    return RS_ERROR_SUCCESS;  // ⚠️ stub
+}
+
+// ============================================================
+// 7. Skeleton
+//    Dependencies: IDriven
+// ============================================================
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointPoses(uint64_t schemaHash, uint32_t poseParamIndex, SkeletonPose* pose, int* numJoints) {
+    auto* s = rs::GetDriven();
+    if (!s) {
+        if (numJoints) *numJoints = 0;
+        return RS_ERROR_UNSPECIFIED;
+    }
+    return s->GetSkeletonJointPoses(schemaHash, poseParamIndex, pose, numJoints);  // ❌ default NOTFOUND
+}
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonLayout(uint64_t schemaHash, uint64_t id, SkeletonLayout* layout, int* numJoints) {
+    auto* s = rs::GetDriven();
+    if (!s) {
+        if (numJoints) *numJoints = 0;
+        return RS_ERROR_UNSPECIFIED;
+    }
+    return s->GetSkeletonLayout(schemaHash, id, layout, numJoints);  // ❌ default NOTFOUND
+}
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointNames(uint64_t schemaHash, uint64_t layoutId, const char** names, int** nameByteLengths, int* numJoints) {
+    auto* s = rs::GetDriven();
+    if (!s) {
+        if (numJoints) *numJoints = 0;
+        return RS_ERROR_UNSPECIFIED;
+    }
+    return s->GetSkeletonJointNames(schemaHash, layoutId, names, nameByteLengths, numJoints);  // ❌ default NOTFOUND
+}
+
+// ============================================================
+// 8. Output — frame send / telemetry
+//    Dependencies: GpuContext, Sender, NetworkDriven
+// ============================================================
+
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_sendFrame2(StreamHandle streamHandle, const SenderFrame* frame, const FrameResponseData* frameData) {
     int layer_key = static_cast<int>(streamHandle) - 1;
 
@@ -114,8 +348,19 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_sendFrame2(StreamHandle streamHandle
         rs::GetSender().SendPack(ready_pack);
 
     if (frameData && frameData->cameraData && g_network_driven)
-        g_network_driven->Response(*frameData->cameraData);
+        g_network_driven->Response(*frameData->cameraData);  // ✅ TCP ack
 
     return RS_ERROR_SUCCESS;
 }
 
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_logToD3(const char*) {
+    return RS_ERROR_SUCCESS;  // ⚠️ stub
+}
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_sendProfilingData(ProfilingEntry*, int) {
+    return RS_ERROR_SUCCESS;  // ⚠️ stub
+}
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_setNewStatusMessage(const char*) {
+    return RS_ERROR_SUCCESS;  // ⚠️ stub
+}

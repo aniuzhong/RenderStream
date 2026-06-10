@@ -418,36 +418,3 @@ bool GpuContext::EnsureReadbackPool(int frame_w, int frame_h,
 }
 
 }  // namespace rs
-
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_useDX12SharedHeapFlag(UseDX12SharedHeapFlag*) {
-    return RS_ERROR_SUCCESS;
-}
-
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithoutInterop(ID3D11Device*) {
-    return RS_ERROR_SUCCESS;
-}
-
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX11Device(ID3D11Device*) {
-    return RS_ERROR_SUCCESS;
-}
-
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX11Resource(ID3D11Resource*) {
-    return RS_ERROR_SUCCESS;
-}
-
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithOpenGlContexts(HGLRC, HDC) {
-    return RS_ERROR_SUCCESS;
-}
-
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithVulkanDevice(VkDevice) {
-    return RS_ERROR_SUCCESS;
-}
-
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX12DeviceAndQueue(
-    ID3D12Device* device, ID3D12CommandQueue* queue) {
-    if (!rs::GetGpu().Initialize(device, queue)) {
-        rs::log::Error("rs_initialiseGpGpuWithDX12DeviceAndQueue: GPU init failed");
-        return RS_ERROR_UNSPECIFIED;
-    }
-    return RS_ERROR_SUCCESS;
-}
