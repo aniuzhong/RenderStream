@@ -7,6 +7,66 @@
 
 namespace rs {
 
+// ============================================================
+// Session
+// ============================================================
+
+Session::Session(asio::ip::tcp::socket socket,
+                 LineHandler on_line,
+                 DisconnectHandler on_disconnect)
+    : socket_(std::move(socket))
+    , on_line_(std::move(on_line))
+    , on_disconnect_(std::move(on_disconnect))
+{
+    auto remote = socket_.remote_endpoint();
+    rs::log::Info("[Session] created: %s:%u",
+        remote.address().to_string().c_str(), remote.port());
+}
+
+Session::~Session() {
+    rs::log::Info("[Session] destroyed");
+}
+
+void Session::Start() {
+    BeginRead();
+}
+
+void Session::BeginRead() {
+    auto self = shared_from_this();
+    asio::async_read_until(socket_, read_buf_, '\n',
+        [self](const std::error_code& ec, size_t n) {
+            self->OnRead(ec, n);
+        });
+}
+
+void Session::OnRead(const std::error_code& ec, size_t n) {
+    if (ec) {
+        rs::log::Info("[Session] disconnected: %s", ec.message().c_str());
+        if (on_disconnect_)
+            on_disconnect_();
+        return;  // Session refcount → 0, auto-destruct
+    }
+
+    std::istream is(&read_buf_);
+    std::string line;
+    std::getline(is, line);
+
+    if (!line.empty() && on_line_)
+        on_line_(line);
+
+    BeginRead();
+}
+
+void Session::Write(std::shared_ptr<std::string> msg) {
+    auto self = shared_from_this();
+    asio::async_write(socket_, asio::buffer(*msg),
+        [self, msg](const std::error_code&, size_t) {});
+}
+
+// ============================================================
+// NetworkFrameSource
+// ============================================================
+
 NetworkFrameSource::NetworkFrameSource(const Topology& topology)
     : topology_(topology)
     , acceptor_(io_, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), kPort))
@@ -39,67 +99,50 @@ void NetworkFrameSource::OnAccept(const std::error_code& ec, asio::ip::tcp::sock
         rs::log::Info("[Network] accept stopped: %s", ec.message().c_str());
         return;
     }
-    auto remote = socket.remote_endpoint();
-    rs::log::Info("[Network] connected: %s:%u", remote.address().to_string().c_str(), remote.port());
-    auto sock = std::make_shared<asio::ip::tcp::socket>(std::move(socket));
-    auto buf  = std::make_shared<asio::streambuf>();
-    BeginRead(std::move(sock), std::move(buf));
+    rs::log::Info("[Network] new connection");
+    session_ = std::make_shared<Session>(
+        std::move(socket),
+        [this](const std::string& line) { OnLine(line); },
+        [this]() { OnDisconnect(); });
+    session_->Start();
 }
 
-void NetworkFrameSource::BeginRead(std::shared_ptr<asio::ip::tcp::socket> socket,
-                                   std::shared_ptr<asio::streambuf> buf) {
-    asio::async_read_until(*socket, *buf, '\n',
-        [this, socket, buf](const std::error_code& ec, size_t n) {
-            OnRead(socket, buf, ec, n);
-        });
-}
+void NetworkFrameSource::OnLine(const std::string& line) {
+    try {
+        auto j = nlohmann::json::parse(line);
+        auto req = j.get<Request>();
 
-void NetworkFrameSource::OnRead(std::shared_ptr<asio::ip::tcp::socket> socket,
-                                std::shared_ptr<asio::streambuf> buf,
-                                const std::error_code& ec, size_t n) {
-    if (ec) {
-        rs::log::Info("[Network] disconnected: %s", ec.message().c_str());
-        BeginAccept();
-        return;
-    }
+        const double tickT = req.t;
+        const size_t tickCameras = req.cameras.size();
+        const uint32_t tickScene = req.scene;
+        const uint32_t tickFlags = req.flags;
+        const uint64_t tickSchemaHash = req.schema_hash;
+        const size_t tickParams = req.param_values.size();
+        const size_t tickTexts = req.text_values.size();
+        const size_t tickImages = req.image_refs.size();
 
-    std::istream is(buf.get());
-    std::string line;
-    std::getline(is, line);
-
-    if (!line.empty()) {
-        try {
-            auto j = nlohmann::json::parse(line);
-            auto req = j.get<Request>();
-
-            const double tickT = req.t;
-            const size_t tickCameras = req.cameras.size();
-            const uint32_t tickScene = req.scene;
-            const uint32_t tickFlags = req.flags;
-            const uint64_t tickSchemaHash = req.schema_hash;
-            const size_t tickParams = req.param_values.size();
-            const size_t tickTexts = req.text_values.size();
-            const size_t tickImages = req.image_refs.size();
-
-            {
-                std::lock_guard lock(mutex_);
-                *inbox_ = std::move(req);
-                ++tick_version_;
-            }
-            cv_.notify_one();
-
-            static int s_tick_log = 0;
-            if (++s_tick_log <= 5)
-                rs::log::Info("[Network] Rx t=%.3f scene=%u flags=%u schemaHash=%llu cameras=%zu params=%zu texts=%zu images=%zu",
-                    tickT, tickScene, tickFlags,
-                    static_cast<unsigned long long>(tickSchemaHash),
-                    tickCameras, tickParams, tickTexts, tickImages);
-        } catch (const std::exception& e) {
-            rs::log::Error("[Network] parse error: %s", e.what());
+        {
+            std::lock_guard lock(mutex_);
+            *inbox_ = std::move(req);
+            ++tick_version_;
         }
-    }
+        cv_.notify_one();
 
-    BeginRead(std::move(socket), std::move(buf));
+        static int s_tick_log = 0;
+        if (++s_tick_log <= 5)
+            rs::log::Info("[Network] Rx t=%.3f scene=%u flags=%u schemaHash=%llu cameras=%zu params=%zu texts=%zu images=%zu",
+                tickT, tickScene, tickFlags,
+                static_cast<unsigned long long>(tickSchemaHash),
+                tickCameras, tickParams, tickTexts, tickImages);
+    } catch (const std::exception& e) {
+        rs::log::Error("[Network] parse error: %s", e.what());
+    }
+}
+
+void NetworkFrameSource::OnDisconnect() {
+    rs::log::Info("[Network] session ended, re-entering accept");
+    session_.reset();
+    BeginAccept();
 }
 
 RS_ERROR NetworkFrameSource::AwaitFrame(int timeoutMs, FrameData* data) {

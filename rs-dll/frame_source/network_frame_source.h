@@ -6,13 +6,39 @@
 #include <asio.hpp>
 
 #include <condition_variable>
+#include <functional>
+#include <memory>
 #include <mutex>
+#include <string>
 #include <thread>
 #include <vector>
 
 namespace rs {
 
 class Topology;
+
+class Session : public std::enable_shared_from_this<Session> {
+public:
+    using LineHandler       = std::function<void(const std::string& line)>;
+    using DisconnectHandler = std::function<void()>;
+
+    Session(asio::ip::tcp::socket socket, LineHandler on_line, DisconnectHandler on_disconnect);
+    ~Session();
+
+    void Start();
+
+    // Queue a line for async write. Thread-safe — posts to io_context.
+    void Write(std::shared_ptr<std::string> msg);
+
+private:
+    void BeginRead();
+    void OnRead(const std::error_code& ec, size_t n);
+
+    asio::ip::tcp::socket socket_;
+    asio::streambuf       read_buf_;
+    LineHandler           on_line_;
+    DisconnectHandler     on_disconnect_;
+};
 
 class NetworkFrameSource : public IFrameSource {
 public:
@@ -28,8 +54,9 @@ private:
     void IoLoop();
     void BeginAccept();
     void OnAccept(const std::error_code& ec, asio::ip::tcp::socket socket);
-    void BeginRead(std::shared_ptr<asio::ip::tcp::socket> socket, std::shared_ptr<asio::streambuf> buf);
-    void OnRead(std::shared_ptr<asio::ip::tcp::socket> socket, std::shared_ptr<asio::streambuf> buf, const std::error_code& ec, size_t n);
+
+    void OnLine(const std::string& line);
+    void OnDisconnect();
 
     const Topology& topology_;
     uint32_t        last_topology_version_ = 0;
@@ -47,6 +74,8 @@ private:
 
     int      tick_version_   = 0;
     double   last_t_tracked_ = 0.0;
+
+    std::shared_ptr<Session> session_;
 };
 
 }  // namespace rs
