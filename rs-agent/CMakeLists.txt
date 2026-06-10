@@ -63,7 +63,7 @@ target_link_libraries(rs_client PUBLIC nlohmann_json::nlohmann_json httplib::htt
 
 if(BUILD_TESTING)
     add_library(rs_agent_test_common INTERFACE)
-    target_include_directories(rs_agent_test_common INTERFACE .)
+    target_include_directories(rs_agent_test_common INTERFACE . ${CMAKE_SOURCE_DIR}/common)
     target_link_libraries(rs_agent_test_common INTERFACE
         nlohmann_json::nlohmann_json
     )

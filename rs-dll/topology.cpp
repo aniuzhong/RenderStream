@@ -128,7 +128,7 @@ RS_ERROR rs_getStreams(StreamDescriptions* out, uint32_t* nBytes) {
     // Compute string pool size
     size_t str_pool_total = 0;
     for (const auto& s : streams)
-        str_pool_total += s.string_pool_size();
+        str_pool_total += s.bytes();
 
     const uint32_t header_size = static_cast<uint32_t>(sizeof(StreamDescriptions));
     const uint32_t array_size  = static_cast<uint32_t>(n * sizeof(StreamDescription));
@@ -148,7 +148,7 @@ RS_ERROR rs_getStreams(StreamDescriptions* out, uint32_t* nBytes) {
     char* str_pool = reinterpret_cast<char*>(sd + n);
 
     for (int i = 0; i < n; ++i) {
-        stream_description src = streams[i];
+        rs::stream_description src = streams[i];
         if (src.handle == 0)
             src.handle = static_cast<uint64_t>(i + 1);
         size_t written = src.to_c(&sd[i], str_pool);

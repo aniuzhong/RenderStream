@@ -15,7 +15,6 @@ add_library(renderstream SHARED
     sender.cpp
     renderstream.cpp
     schema/schema.cpp
-    schema/schema_serializer.cpp
     topology.cpp
     frame_source/local_frame_source.cpp
     frame_source/network_frame_source.cpp
@@ -60,21 +59,3 @@ endif()
 
 target_include_directories(renderstream PRIVATE "${nlohmann_json_SOURCE_DIR}/single_include")
 
-if(BUILD_TESTING)
-add_executable(schema_serializer_test
-    schema/test_schema_serializer.cpp
-    schema/schema_serializer.cpp
-)
-target_include_directories(schema_serializer_test PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}"
-    "${CMAKE_SOURCE_DIR}/common"
-    "${CMAKE_CURRENT_SOURCE_DIR}/schema"
-    ${nlohmann_json_SOURCE_DIR}/single_include
-)
-target_compile_features(schema_serializer_test PRIVATE cxx_std_17)
-target_link_libraries(schema_serializer_test PRIVATE Catch2::Catch2WithMain)
-if(MSVC)
-    target_compile_options(schema_serializer_test PRIVATE /W3 /sdl /permissive- /utf-8)
-endif()
-catch_discover_tests(schema_serializer_test)
-endif()
