@@ -205,6 +205,21 @@ void Link::SendProfilingData(const ProfilingEntry* entries, int count) {
     session_->Write(std::move(msg));
 }
 
+bool Link::HasSession() const {
+    return session_ != nullptr;
+}
+
+void Link::LogToD3(const std::string& text) {
+    if (!session_)
+        return;
+
+    nlohmann::json j;
+    j["type"] = "Log";
+    j["text"] = text;
+    auto msg = std::make_shared<std::string>(j.dump() + "\n");
+    session_->Write(std::move(msg));
+}
+
 RS_ERROR Link::AwaitFrame(int timeoutMs, FrameData* data) {
     const uint32_t current_version = topology_.Version();
     const bool topology_changed = (current_version == 0 || current_version != last_topology_version_);

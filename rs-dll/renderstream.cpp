@@ -336,8 +336,10 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_sendFrame2(StreamHandle streamHandle
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_logToD3(const char*) {
-    return RS_ERROR_SUCCESS;  // ⚠️ stub
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_logToD3(const char* msg) {
+    if (g_link && msg && msg[0])
+        g_link->LogToD3(msg);
+    return RS_ERROR_SUCCESS;
 }
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_sendProfilingData(ProfilingEntry* entries, int count) {

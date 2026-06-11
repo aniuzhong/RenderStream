@@ -56,9 +56,12 @@ public:
     RS_ERROR AwaitFrame(int timeoutMs, FrameData* data) override;
     RS_ERROR GetCamera(StreamHandle handle, CameraData* out) override;
 
-    void SendFrameResponseData(const CameraResponseData& data);
-    void SetNewStatusMessage(const std::string& text);
-    void SendProfilingData(const ProfilingEntry* entries, int count);
+    bool HasSession() const;
+
+    void SendFrameResponseData(const CameraResponseData& data);       // {"type":"FrameResponseData", ...}
+    void SetNewStatusMessage(const std::string& text);                // {"type":"Status", ...}
+    void SendProfilingData(const ProfilingEntry* entries, int count); // {"type":"ProfilingData", ...}
+    void LogToD3(const std::string& text);                            // {"type":"Log", ...}
 
 private:
     void IoLoop();
