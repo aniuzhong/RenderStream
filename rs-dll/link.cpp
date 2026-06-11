@@ -1,4 +1,4 @@
-#include "driven/network_driven.h"
+#include "link.h"
 #include "d3renderstream.hpp"
 #include "logging.h"
 #include "topology.h"
@@ -63,42 +63,42 @@ void Session::Write(std::shared_ptr<std::string> msg) {
 }
 
 // ============================================================
-// NetworkDriven
+// Link
 // ============================================================
 
-NetworkDriven::NetworkDriven(const Topology& topology)
+Link::Link(const Topology& topology)
     : topology_(topology)
     , acceptor_(io_, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), kPort))
 {
-    rs::log::Info("[Network] listening on port %u", kPort);
+    rs::log::Info("[Link] listening on port %u", kPort);
     BeginAccept();
     io_thread_ = std::thread([this] { IoLoop(); });
 }
 
-NetworkDriven::~NetworkDriven() {
-    rs::log::Info("[Network] shutting down");
+Link::~Link() {
+    rs::log::Info("[Link] shutting down");
     io_.stop();
     if (io_thread_.joinable())
         io_thread_.join();
 }
 
-void NetworkDriven::IoLoop() {
+void Link::IoLoop() {
     io_.run();
 }
 
-void NetworkDriven::BeginAccept() {
+void Link::BeginAccept() {
     acceptor_.async_accept(
         [this](const std::error_code& ec, asio::ip::tcp::socket socket) {
             OnAccept(ec, std::move(socket));
         });
 }
 
-void NetworkDriven::OnAccept(const std::error_code& ec, asio::ip::tcp::socket socket) {
+void Link::OnAccept(const std::error_code& ec, asio::ip::tcp::socket socket) {
     if (ec) {
-        rs::log::Info("[Network] accept stopped: %s", ec.message().c_str());
+        rs::log::Info("[Link] accept stopped: %s", ec.message().c_str());
         return;
     }
-    rs::log::Info("[Network] new connection");
+    rs::log::Info("[Link] new connection");
     session_ = std::make_shared<Session>(
         std::move(socket),
         [this](const std::string& line) { OnTick(line); },
@@ -106,7 +106,7 @@ void NetworkDriven::OnAccept(const std::error_code& ec, asio::ip::tcp::socket so
     session_->Start();
 }
 
-void NetworkDriven::OnTick(const std::string& line) {
+void Link::OnTick(const std::string& line) {
     try {
         auto j = nlohmann::json::parse(line);
         auto req = j.get<Request>();
@@ -129,22 +129,22 @@ void NetworkDriven::OnTick(const std::string& line) {
 
         static int s_tick_log = 0;
         if (++s_tick_log <= 5)
-            rs::log::Info("[Network] Rx t=%.3f scene=%u flags=%u schemaHash=%llu cameras=%zu params=%zu texts=%zu images=%zu",
+            rs::log::Info("[Link] Rx t=%.3f scene=%u flags=%u schemaHash=%llu cameras=%zu params=%zu texts=%zu images=%zu",
                 tickT, tickScene, tickFlags,
                 static_cast<unsigned long long>(tickSchemaHash),
                 tickCameras, tickParams, tickTexts, tickImages);
     } catch (const std::exception& e) {
-        rs::log::Error("[Network] parse error: %s", e.what());
+        rs::log::Error("[Link] parse error: %s", e.what());
     }
 }
 
-void NetworkDriven::OnDisconnect() {
-    rs::log::Info("[Network] session ended, re-entering accept");
+void Link::OnDisconnect() {
+    rs::log::Info("[Link] session ended, re-entering accept");
     session_.reset();
     BeginAccept();
 }
 
-void NetworkDriven::Response(const CameraResponseData& data) {
+void Link::SendFrameResponseData(const CameraResponseData& data) {
     if (!session_) return;
     auto j = nlohmann::json(data);
     j["type"] = "FrameResponseData";
@@ -152,7 +152,7 @@ void NetworkDriven::Response(const CameraResponseData& data) {
     session_->Write(std::move(msg));
 }
 
-void NetworkDriven::SetNewStatusMessage(const std::string& text) {
+void Link::SetNewStatusMessage(const std::string& text) {
     if (!session_) return;
     if (text == last_status_) return;
     last_status_ = text;
@@ -163,7 +163,7 @@ void NetworkDriven::SetNewStatusMessage(const std::string& text) {
     session_->Write(std::move(msg));
 }
 
-void NetworkDriven::SendProfilingData(const ProfilingEntry* entries, int count) {
+void Link::SendProfilingData(const ProfilingEntry* entries, int count) {
     if (!session_ || !entries || count <= 0) return;
     auto arr = nlohmann::json::array();
     for (int i = 0; i < count; ++i)
@@ -175,7 +175,7 @@ void NetworkDriven::SendProfilingData(const ProfilingEntry* entries, int count) 
     session_->Write(std::move(msg));
 }
 
-RS_ERROR NetworkDriven::AwaitFrame(int timeoutMs, FrameData* data) {
+RS_ERROR Link::AwaitFrame(int timeoutMs, FrameData* data) {
     const uint32_t current_version = topology_.Version();
     const bool topology_changed = (current_version == 0 || current_version != last_topology_version_);
 
@@ -219,7 +219,7 @@ RS_ERROR NetworkDriven::AwaitFrame(int timeoutMs, FrameData* data) {
     static int s_frame_log = 0;
     ++s_frame_log;
     if (s_frame_log <= 5 || s_frame_log % 120 == 0)
-        rs::log::Info("[Network] AwaitFrame #%d t=%.3f dt=%.4f scene=%u flags=%u cameras=%zu params=%zu texts=%zu images=%zu",
+        rs::log::Info("[Link] AwaitFrame #%d t=%.3f dt=%.4f scene=%u flags=%u cameras=%zu params=%zu texts=%zu images=%zu",
             s_frame_log, t, dt, published_->scene, published_->flags,
             published_->cameras.size(), published_->param_values.size(),
             published_->text_values.size(), published_->image_refs.size());
@@ -227,7 +227,7 @@ RS_ERROR NetworkDriven::AwaitFrame(int timeoutMs, FrameData* data) {
     return RS_ERROR_SUCCESS;
 }
 
-RS_ERROR NetworkDriven::GetCamera(StreamHandle handle, CameraData* out) {
+RS_ERROR Link::GetCamera(StreamHandle handle, CameraData* out) {
     if (!out)
         return RS_ERROR_INVALID_PARAMETERS;
     int idx = static_cast<int>(handle) - 1;

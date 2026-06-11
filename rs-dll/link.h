@@ -1,6 +1,6 @@
 #pragma once
 
-#include "driven/driven.h"
+#include "driven.h"
 #include "d3renderstream.hpp"
 
 #include <asio.hpp>
@@ -40,17 +40,17 @@ private:
     DisconnectHandler     on_disconnect_;
 };
 
-class NetworkDriven : public IDriven {
+class Link : public IDriven {
 public:
     static constexpr uint16_t kPort = 9581;
 
-    explicit NetworkDriven(const Topology& topology);
-    ~NetworkDriven();
+    explicit Link(const Topology& topology);
+    ~Link();
 
     RS_ERROR AwaitFrame(int timeoutMs, FrameData* data) override;
     RS_ERROR GetCamera(StreamHandle handle, CameraData* out) override;
 
-    void Response(const CameraResponseData& data);
+    void SendFrameResponseData(const CameraResponseData& data);
     void SetNewStatusMessage(const std::string& text);
     void SendProfilingData(const ProfilingEntry* entries, int count);
 

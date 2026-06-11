@@ -1,4 +1,4 @@
-#include "driven/driven.h"
+#include "driven.h"
 #include "logging.h"
 
 #include <memory>
@@ -52,4 +52,3 @@ RS_ERROR IDriven::GetSkeletonJointNames(uint64_t, uint64_t, const char**, int**,
 }
 
 }  // namespace rs
-

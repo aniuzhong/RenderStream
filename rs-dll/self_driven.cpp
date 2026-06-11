@@ -1,4 +1,4 @@
-#include "driven/self_driven.h"
+#include "self_driven.h"
 #include "logging.h"
 #include "topology.h"
 #include "misc.h"
@@ -15,7 +15,7 @@ SelfDriven::SelfDriven(Config cfg)
       fn_(cfg_.camera ? cfg_.camera : OrbitCameraFn),
       dt_(1.0 / cfg_.fps) {}
 
-//  Frame pacing 
+//  Frame pacing
 
 RS_ERROR SelfDriven::AwaitFrame(int timeoutMs, FrameData* data) {
     (void)timeoutMs;
