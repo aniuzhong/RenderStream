@@ -15,7 +15,6 @@ add_library(renderstream SHARED
     sender.cpp
     renderstream.cpp
     topology.cpp
-    self_driven.cpp
     link.cpp
     driven.cpp
     ${CMAKE_SOURCE_DIR}/common/misc.cpp
