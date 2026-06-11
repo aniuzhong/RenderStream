@@ -28,11 +28,11 @@ static constexpr int kTickPort = 9581;
 static constexpr double kFps = 60.0;
 
 const char* kEngineExe =
-    // "C:/Program Files/Epic Games/UE_5.5/Engine/Binaries/Win64/UnrealEditor.exe";
-    "D:/Epic Games/UE_5.5/Engine/Binaries/Win64/UnrealEditor.exe";
+    "C:/Program Files/Epic Games/UE_5.5/Engine/Binaries/Win64/UnrealEditor.exe";
+    // "D:/Epic Games/UE_5.5/Engine/Binaries/Win64/UnrealEditor.exe";
 const char* kProjectPath =
-    "E:/Assets/Unreal Projects/nDisplay_Demo_55/nDisplay_Demo.uproject";
-    // "C:/Users/hido/Documents/Unreal Projects/nDisplay_Demo_55/nDisplay_Demo.uproject";
+    // "E:/Assets/Unreal Projects/nDisplay_Demo_55/nDisplay_Demo.uproject";
+    "C:/Users/hido/Documents/Unreal Projects/nDisplay_Demo_55/nDisplay_Demo.uproject";
 const char* kNodeName = "node0";
 
 //  Viewport layout (2x2 grid)
@@ -106,10 +106,10 @@ static nlohmann::json GenerateNdisplayConfig(const std::vector<Viewport>& vps) {
 
     cfg.network.connect_retries_amount = "10";
     cfg.network.connect_retry_delay = "1000";
-    cfg.network.game_start_barrier_timeout = "60000";
-    cfg.network.frame_start_barrier_timeout = "10000";
-    cfg.network.frame_end_barrier_timeout = "10000";
-    cfg.network.render_sync_barrier_timeout = "10000";
+    cfg.network.game_start_barrier_timeout = "1";
+    cfg.network.frame_start_barrier_timeout = "1";
+    cfg.network.frame_end_barrier_timeout = "1";
+    cfg.network.render_sync_barrier_timeout = "1";
     cfg.render_sync_policy = "None";
     cfg.input_sync_policy = "None";
 

@@ -21,3 +21,23 @@ target_include_directories(four_viewports_ext PRIVATE
     ${CMAKE_SOURCE_DIR}/common
 )
 target_link_libraries(four_viewports_ext PRIVATE ndisplay_gen rs_client nlohmann_json::nlohmann_json asio::asio ws2_32)
+
+add_executable(node_check
+    node_check.cpp
+)
+target_include_directories(node_check PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/common
+)
+target_link_libraries(node_check PRIVATE rs_client nlohmann_json::nlohmann_json ws2_32)
+
+add_executable(cluster_example
+    cluster_example.cpp
+    conductor.cpp
+    ${CMAKE_SOURCE_DIR}/common/misc.cpp
+)
+target_include_directories(cluster_example PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/common
+)
+target_link_libraries(cluster_example PRIVATE ndisplay_gen rs_client nlohmann_json::nlohmann_json asio::asio ws2_32)

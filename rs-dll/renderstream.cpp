@@ -231,12 +231,16 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_awaitFrameData(int timeoutMs, FrameD
     return s->AwaitFrame(timeoutMs, data);  // ✅
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_setFollower(int) {
-    return RS_ERROR_SUCCESS;  // ⚠️ stub
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_setFollower(int isFollower) {
+    if (g_link)
+        g_link->SetFollower(isFollower != 0);
+    return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_beginFollowerFrame(double) {
-    return RS_ERROR_SUCCESS;  // ⚠️ stub
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_beginFollowerFrame(double tTracked) {
+    if (!g_link)
+        return RS_ERROR_UNSPECIFIED;
+    return g_link->BeginFollowerFrame(tTracked);
 }
 
 // ============================================================

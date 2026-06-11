@@ -57,6 +57,8 @@ public:
     RS_ERROR GetCamera(StreamHandle handle, CameraData* out) override;
 
     bool HasSession() const;
+    void SetFollower(bool is_follower);
+    RS_ERROR BeginFollowerFrame(double tTracked);
 
     void SendFrameResponseData(const CameraResponseData& data);       // {"type":"FrameResponseData", ...}
     void SetNewStatusMessage(const std::string& text);                // {"type":"Status", ...}
@@ -85,8 +87,11 @@ private:
     Request* inbox_      = &buf_[0];
     Request* published_  = &buf_[1];
 
-    int      tick_version_   = 0;
-    double   last_t_tracked_ = 0.0;
+    int      tick_version_          = 0;
+    int      last_consumed_version_ = 0;
+    double   last_t_tracked_        = 0.0;
+    bool     is_follower_           = false;
+    bool     quit_                  = false;
 
     std::string                last_status_;
     std::shared_ptr<Session>   session_;

@@ -95,8 +95,13 @@ void Topology::MaxResolution(int* w, int* h) const {
 static void InitPipelineFromTopology() {
     auto& topo = Topology::Instance();
 
+    char hostname[128] = "rs";
+    DWORD sz = sizeof(hostname);
+    if (!GetComputerNameA(hostname, &sz))
+        snprintf(hostname, sizeof(hostname), "rs");
+
     rs::GetSender().Stop();
-    rs::GetSender().Configure("rs_output", 0);
+    rs::GetSender().Configure(hostname, 0);
     rs::GetSender().Start();
 
     rs::log::Info("[Topology] pipeline initialized: %d layers", topo.Count());

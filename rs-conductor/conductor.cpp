@@ -42,8 +42,9 @@ const std::vector<KeyframeTrack>& ConductorTracks() {
 // Conductor
 // ============================================================
 
-Conductor::Conductor(const char* node_ip, int tick_port, int stream_w, int stream_h)
-    : node_ip_(node_ip), tick_port_(tick_port), stream_w_(stream_w), stream_h_(stream_h),
+Conductor::Conductor(const char* node_ip, int tick_port, int stream_w, int stream_h,
+                     const char* tag)
+    : tag_(tag), node_ip_(node_ip), tick_port_(tick_port), stream_w_(stream_w), stream_h_(stream_h),
       camera_fn_(MakeKeyframeCamera(ConductorTracks())) {}
 
 Conductor::~Conductor() {
@@ -60,17 +61,17 @@ bool Conductor::Connect(int retries) {
             tcp::resolver resolver(io_);
             auto endpoints = resolver.resolve(node_ip_, std::to_string(tick_port_));
             asio::connect(sock_, endpoints);
-            fprintf(stderr, "[Conductor] connected to %s:%d\n",
-                    node_ip_.c_str(), tick_port_);
+            fprintf(stderr, "[%s] connected to %s:%d\n",
+                    tag_.c_str(), node_ip_.c_str(), tick_port_);
             return true;
         } catch (const std::exception& e) {
             sock_.close();
-            fprintf(stderr, "[Conductor] connect attempt %d/%d: %s\n",
-                    i + 1, retries, e.what());
+            fprintf(stderr, "[%s] connect attempt %d/%d: %s\n",
+                    tag_.c_str(), i + 1, retries, e.what());
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
     }
-    fprintf(stderr, "[Conductor] failed to connect after %d retries\n", retries);
+    fprintf(stderr, "[%s] failed to connect after %d retries\n", tag_.c_str(), retries);
     return false;
 }
 
@@ -92,16 +93,16 @@ void Conductor::Run() {
     BeginTick();
     BeginRecv();
 
-    fprintf(stderr, "[Conductor] loop started at %.0f fps\n", 1.0 / tick_interval_);
+    fprintf(stderr, "[%s] loop started at %.0f fps\n", tag_.c_str(), 1.0 / tick_interval_);
 
     try {
         io_.run();
     } catch (const std::exception& e) {
-        fprintf(stderr, "[Conductor] io loop exception: %s\n", e.what());
+        fprintf(stderr, "[%s] io loop exception: %s\n", tag_.c_str(), e.what());
     }
 
     running_ = false;
-    fprintf(stderr, "[Conductor] loop ended (frames=%d)\n", frame_seq_);
+    fprintf(stderr, "[%s] loop ended (frames=%d)\n", tag_.c_str(), frame_seq_);
 }
 
 void Conductor::Stop() {
@@ -124,7 +125,6 @@ void Conductor::OnTick(const std::error_code& ec) {
     t_ += tick_interval_;
     ++frame_seq_;
 
-    // re‑arm timer at absolute expiry: no cumulative drift
     using namespace std::chrono;
     auto interval = duration_cast<nanoseconds>(duration<double>(tick_interval_));
     tick_timer_.expires_at(tick_timer_.expiry() + interval);
@@ -140,7 +140,7 @@ void Conductor::BeginRecv() {
 
 void Conductor::OnRecv(const std::error_code& ec, size_t n) {
     if (ec) {
-        fprintf(stderr, "[Conductor] recv disconnected: %s\n", ec.message().c_str());
+        fprintf(stderr, "[%s] recv disconnected: %s\n", tag_.c_str(), ec.message().c_str());
         Stop();
         return;
     }
@@ -157,13 +157,13 @@ void Conductor::OnRecv(const std::error_code& ec, size_t n) {
             CameraResponseData ack = j.get<CameraResponseData>();
             static int s_ack_count = 0;
             if (++s_ack_count <= 5 || s_ack_count % 240 == 0)
-                fprintf(stderr, "[Conductor] FrameResponseData #%d t=%.3f camera(id=%llu x=%.2f y=%.2f z=%.2f)\n",
-                        s_ack_count, ack.tTracked,
+                fprintf(stderr, "[%s] FrameResponseData #%d t=%.3f camera(id=%llu x=%.2f y=%.2f z=%.2f)\n",
+                        tag_.c_str(), s_ack_count, ack.tTracked,
                         static_cast<unsigned long long>(ack.camera.id),
                         ack.camera.x, ack.camera.y, ack.camera.z);
         } else if (type == "Status") {
             std::string text = j.value("text", "");
-            fprintf(stderr, "[Conductor] Status: %s\n", text.c_str());
+            fprintf(stderr, "[%s] Status: %s\n", tag_.c_str(), text.c_str());
         } else if (type == "ProfilingData") {
             static int s_prof_count = 0;
             ++s_prof_count;
@@ -177,8 +177,7 @@ void Conductor::OnRecv(const std::error_code& ec, size_t n) {
             };
 
             if (s_prof_count <= 3) {
-                // First 3 frames: print all entries for diagnostics
-                fprintf(stderr, "[Conductor] Profiling #%d ", s_prof_count);
+                fprintf(stderr, "[%s] Profiling #%d ", tag_.c_str(), s_prof_count);
                 if (j.contains("entries") && j["entries"].is_array())
                     for (const auto& e : j["entries"])
                         fprintf(stderr, "%.1fms %s ", e["value"].get<float>(), e["name"].get<std::string>().c_str());
@@ -188,21 +187,22 @@ void Conductor::OnRecv(const std::error_code& ec, size_t n) {
                 float fps = frame_time > 0.0f ? 1000.0f / frame_time : 0.0f;
                 float gpu_time  = get_entry("GPU Time");
                 float await_time = get_entry("Await Time");
-                fprintf(stderr, "[Conductor] Frame #%d  frame=%.1fms (%.0ffps)  gpu=%.1fms  await=%.1fms\n",
-                        s_prof_count, frame_time, fps, gpu_time, await_time);
+                fprintf(stderr, "[%s] Frame #%d  frame=%.1fms (%.0ffps)  gpu=%.1fms  await=%.1fms\n",
+                        tag_.c_str(), s_prof_count, frame_time, fps, gpu_time, await_time);
             }
+        } else if (type == "Log") {
+            std::string text = j.value("text", "");
+            fprintf(stderr, "%s\n", text.c_str());
         } else {
-            fprintf(stderr, "[Conductor] unknown msg: %s\n", line.c_str());
+            fprintf(stderr, "[%s] unknown msg: %s\n", tag_.c_str(), line.c_str());
         }
     } catch (const std::exception& e) {
-        fprintf(stderr, "[Conductor] parse error: %s | raw: %s\n",
-                e.what(), line.c_str());
+        fprintf(stderr, "[%s] parse error: %s | raw: %s\n",
+                tag_.c_str(), e.what(), line.c_str());
     }
 
     BeginRecv();
 }
-
-// ── Camera generation ───────────────────────────────────────
 
 void Conductor::GenerateCameras(double t) {
     last_cameras_.resize(4);
@@ -226,13 +226,13 @@ void Conductor::BuildAndSend(double t) {
         nlohmann::json(req).dump() + "\n");
 
     if (frame_seq_ <= 3 || frame_seq_ % 120 == 0)
-        fprintf(stderr, "[Conductor] #%d t=%.3f len=%zu cameras=%zu\n",
-                frame_seq_, t, msg->size(), req.cameras.size());
+        fprintf(stderr, "[%s] #%d t=%.3f len=%zu cameras=%zu\n",
+                tag_.c_str(), frame_seq_, t, msg->size(), req.cameras.size());
 
     asio::async_write(sock_, asio::buffer(*msg),
         [this, msg](const std::error_code& err, size_t) {
             if (err) {
-                fprintf(stderr, "[Conductor] send error: %s\n", err.message().c_str());
+                fprintf(stderr, "[%s] send error: %s\n", tag_.c_str(), err.message().c_str());
                 Stop();
             }
         });

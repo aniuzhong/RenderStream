@@ -19,7 +19,8 @@
 //
 class Conductor {
 public:
-    Conductor(const char* node_ip, int tick_port, int stream_w, int stream_h);
+    Conductor(const char* node_ip, int tick_port, int stream_w, int stream_h,
+              const char* tag = "Conductor");
     ~Conductor();
 
     Conductor(const Conductor&) = delete;
@@ -50,6 +51,7 @@ private:
 
     // ── Config ───────────────────────────────────────────────
 
+    std::string tag_;
     std::string node_ip_;
     int tick_port_;
     int stream_w_, stream_h_;

@@ -169,7 +169,8 @@ void Link::OnTick(const std::string& line) {
 }
 
 void Link::OnDisconnect() {
-    rs::log::Info("[Link] session ended, re-entering accept");
+    quit_ = true;
+    rs::log::Info("[Link] session ended — quit flag set");
     session_.reset();
     BeginAccept();
 }
@@ -220,7 +221,61 @@ void Link::LogToD3(const std::string& text) {
     session_->Write(std::move(msg));
 }
 
+void Link::SetFollower(bool f) {
+    if (is_follower_ == f)
+        return;  // no state change
+    is_follower_ = f;
+    rs::log::Info("[Link] SetFollower: %s", f ? "true (follower mode)" : "false (controller mode)");
+}
+
+RS_ERROR Link::BeginFollowerFrame(double tTracked) {
+    if (quit_)
+        return RS_ERROR_QUIT;
+
+    // Follower path — mirrors AwaitFrame's inbox→published swap without blocking.
+    // TCP already delivered tick data to inbox_; we just need to publish it.
+    static int s_call = 0;
+    ++s_call;
+
+    {
+        std::lock_guard lock(mutex_);
+
+        if (tick_version_ == 0) {
+            if (s_call <= 3)
+                rs::log::Info("[Link] BeginFollowerFrame #%d t=%.3f: no tick received yet (version=0)",
+                              s_call, tTracked);
+            return RS_ERROR_SUCCESS;
+        }
+
+        if (tick_version_ == last_consumed_version_) {
+            if (s_call <= 3)
+                rs::log::Info("[Link] BeginFollowerFrame #%d t=%.3f: tick already consumed (version=%d)",
+                              s_call, tTracked, tick_version_);
+            // published_ still has last frame's data — ok to reuse
+            return RS_ERROR_SUCCESS;
+        }
+
+        std::swap(inbox_, published_);
+        last_consumed_version_ = tick_version_;
+    }
+
+    double dt = (last_t_tracked_ > 0.0) ? (tTracked - last_t_tracked_) : (1.0 / 60.0);
+    last_t_tracked_ = tTracked;
+
+    if (s_call <= 5 || s_call % 120 == 0)
+        rs::log::Info("[Link] BeginFollowerFrame #%d t=%.3f dt=%.4f cameras=%zu params=%zu texts=%zu",
+                      s_call, tTracked, dt,
+                      published_->cameras.size(),
+                      published_->param_values.size(),
+                      published_->text_values.size());
+
+    return RS_ERROR_SUCCESS;
+}
+
 RS_ERROR Link::AwaitFrame(int timeoutMs, FrameData* data) {
+    if (quit_)
+        return RS_ERROR_QUIT;
+
     const uint32_t current_version = topology_.Version();
     const bool topology_changed = (current_version == 0 || current_version != last_topology_version_);
 
