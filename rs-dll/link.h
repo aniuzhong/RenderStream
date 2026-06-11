@@ -9,6 +9,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <queue>
 #include <string>
 #include <thread>
 #include <vector>
@@ -27,17 +28,22 @@ public:
 
     void Start();
 
-    // Queue a line for async write. Thread-safe — posts to io_context.
+    // Queue a line for async write. Thread-safe — serializes via write queue.
     void Write(std::shared_ptr<std::string> msg);
 
 private:
     void BeginRead();
     void OnRead(const std::error_code& ec, size_t n);
+    void DoWrite();
 
     asio::ip::tcp::socket socket_;
     asio::streambuf       read_buf_;
     TickHandler           on_tick_;
     DisconnectHandler     on_disconnect_;
+
+    std::mutex                               write_mutex_;
+    std::queue<std::shared_ptr<std::string>> write_queue_;
+    bool                                     writing_ = false;
 };
 
 class Link : public IDriven {

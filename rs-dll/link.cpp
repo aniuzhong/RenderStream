@@ -57,9 +57,39 @@ void Session::OnRead(const std::error_code& ec, size_t n) {
 }
 
 void Session::Write(std::shared_ptr<std::string> msg) {
+    bool start_write = false;
+    {
+        std::lock_guard lock(write_mutex_);
+        write_queue_.push(std::move(msg));
+        if (!writing_) {
+            writing_ = true;
+            start_write = true;
+        }
+    }
+    if (start_write) {
+        auto self = shared_from_this();
+        asio::post(socket_.get_executor(), [self] { self->DoWrite(); });
+    }
+}
+
+void Session::DoWrite() {
+    // Only ever called on the io_context thread — single writer invariant.
+    std::shared_ptr<std::string> msg;
+    {
+        std::lock_guard lock(write_mutex_);
+        if (write_queue_.empty()) {
+            writing_ = false;
+            return;
+        }
+        msg = std::move(write_queue_.front());
+        write_queue_.pop();
+    }
+
     auto self = shared_from_this();
     asio::async_write(socket_, asio::buffer(*msg),
-        [self, msg](const std::error_code&, size_t) {});
+        [self, msg](const std::error_code&, size_t) {
+            self->DoWrite();
+        });
 }
 
 // ============================================================
