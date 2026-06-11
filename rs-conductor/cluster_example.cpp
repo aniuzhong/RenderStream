@@ -36,10 +36,10 @@ struct NodeConfig {
 };
 
 static const NodeConfig kNodes[] = {
-    {"node0",
-     "C:/Program Files/Epic Games/UE_5.5/Engine/Binaries/Win64/UnrealEditor.exe",
-     "C:/Users/hido/Documents/Unreal Projects/nDisplay_Demo_55/nDisplay_Demo.uproject"},
-    {"node1",
+    {"node0",  // primary — local machine
+     "D:/Epic Games/UE_5.5/Engine/Binaries/Win64/UnrealEditor.exe",
+     "E:/Assets/Unreal Projects/nDisplay_Demo_55/nDisplay_Demo.uproject"},
+    {"node1",  // secondary — 10.241.12.246
      "C:/Program Files/Epic Games/UE_5.5/Engine/Binaries/Win64/UnrealEditor.exe",
      "C:/Users/hido/Documents/Unreal Projects/nDisplay_Demo_55/nDisplay_Demo.uproject"},
 };
@@ -142,9 +142,22 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    std::vector<RS_NodeInfo> nodes;
-    for (int i = 0; i < std::min(list.count, 2); ++i)
-        nodes.push_back(list.nodes[i]);
+    // Map discovered nodes to roles by IP:
+    //   node0 (primary) = 10.241.12.217 (local)
+    //   node1 (secondary) = 10.241.12.246
+    std::vector<RS_NodeInfo> nodes(2);
+    int assigned = 0;
+    for (int i = 0; i < list.count && assigned < 2; ++i) {
+        std::string ip(list.nodes[i].ip);
+        if (ip == "10.241.12.217")      { nodes[0] = list.nodes[i]; ++assigned; }
+        else if (ip == "10.241.12.246") { nodes[1] = list.nodes[i]; ++assigned; }
+    }
+    if (assigned < 2) {
+        fprintf(stderr, "ERROR: need both .217 and .246, got %d\n", assigned);
+        RS_FreeNodeList(&list); WSACleanup(); return 1;
+    }
+    fprintf(stderr, "  node0 (primary) → %s (%s)\n", nodes[0].name, nodes[0].ip);
+    fprintf(stderr, "  node1 (secondary) → %s (%s)\n\n", nodes[1].name, nodes[1].ip);
 
     // 2. Schema
     fprintf(stderr, "Querying schema from %s...\n", nodes[0].name);

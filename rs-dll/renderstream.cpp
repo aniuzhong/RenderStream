@@ -324,8 +324,34 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointNames(uint64_t schem
 // 8. Output — frame send / telemetry
 // ============================================================
 
+// DEBUG: frame interval stats
+// static std::chrono::steady_clock::time_point s_last_send_time;
+// static int s_send_seq = 0;
+// static long long s_frame_min_us = 0;
+// static long long s_frame_max_us = 0;
+// static long long s_frame_sum_us = 0;
+// static int s_frame_count = 0;
+
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_sendFrame2(StreamHandle streamHandle, const SenderFrame* frame, const FrameResponseData* frameData) {
     int layer_key = static_cast<int>(streamHandle) - 1;
+
+    // DEBUG: frame interval diagnostics
+    // auto now = std::chrono::steady_clock::now();
+    // ++s_send_seq;
+    // if (s_send_seq > 1) {
+    //     auto delta_us = std::chrono::duration_cast<std::chrono::microseconds>(now - s_last_send_time).count();
+    //     if (s_frame_count == 0 || delta_us < s_frame_min_us) s_frame_min_us = delta_us;
+    //     if (delta_us > s_frame_max_us) s_frame_max_us = delta_us;
+    //     s_frame_sum_us += delta_us;
+    //     ++s_frame_count;
+    //     if (s_frame_count >= 60) {
+    //         long long avg = s_frame_sum_us / s_frame_count;
+    //         rs::log::Info("[GPU] FRAME STATS (last %d): min=%lldus max=%lldus avg=%lldus",
+    //                       s_frame_count, (long long)s_frame_min_us, (long long)s_frame_max_us, (long long)avg);
+    //         s_frame_min_us = 0; s_frame_max_us = 0; s_frame_sum_us = 0; s_frame_count = 0;
+    //     }
+    // }
+    // s_last_send_time = now;
 
     if (!rs::GetGpu().SubmitFrame(frame, layer_key))
         return RS_ERROR_UNSPECIFIED;

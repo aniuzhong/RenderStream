@@ -232,32 +232,44 @@ RS_ERROR Link::BeginFollowerFrame(double tTracked) {
     if (quit_)
         return RS_ERROR_QUIT;
 
-    // Follower path — mirrors AwaitFrame's inbox→published swap without blocking.
-    // TCP already delivered tick data to inbox_; we just need to publish it.
     static int s_call = 0;
     ++s_call;
 
+    // DEBUG: version jump tracking
+    // static int s_version_jump = 0;
+    // static int s_reuse_count = 0;
+    // static int s_swap_count  = 0;
+    // static int s_vj_count = 0;
+    // bool did_swap = false;
+    // int version_before = 0;
+    // int last_consumed_before = 0;
+
     {
         std::lock_guard lock(mutex_);
+
+        // DEBUG: version_before = tick_version_;
+        // DEBUG: last_consumed_before = last_consumed_version_;
 
         if (tick_version_ == 0) {
             if (s_call <= 3)
                 rs::log::Info("[Link] BeginFollowerFrame #%d t=%.3f: no tick received yet (version=0)",
                               s_call, tTracked);
             return RS_ERROR_SUCCESS;
-        }
-
-        if (tick_version_ == last_consumed_version_) {
+        } else if (tick_version_ == last_consumed_version_) {
             if (s_call <= 3)
                 rs::log::Info("[Link] BeginFollowerFrame #%d t=%.3f: tick already consumed (version=%d)",
                               s_call, tTracked, tick_version_);
             // published_ still has last frame's data — ok to reuse
             return RS_ERROR_SUCCESS;
+        } else {
+            std::swap(inbox_, published_);
+            last_consumed_version_ = tick_version_;
+            // DEBUG: did_swap = true;
         }
-
-        std::swap(inbox_, published_);
-        last_consumed_version_ = tick_version_;
     }
+
+    // DEBUG: version jump stats
+    // { int jump = version_before - last_consumed_before; ... }
 
     double dt = (last_t_tracked_ > 0.0) ? (tTracked - last_t_tracked_) : (1.0 / 60.0);
     last_t_tracked_ = tTracked;

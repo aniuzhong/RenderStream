@@ -92,6 +92,21 @@ void Topology::MaxResolution(int* w, int* h) const {
     *h = mh;
 }
 
+static std::string ParseDcNode() {
+    const wchar_t* cmd = GetCommandLineW();
+    if (!cmd) return "";
+    std::wstring ws(cmd);
+    auto pos = ws.find(L"-dc_node=");
+    if (pos == std::wstring::npos) return "";
+    pos += 9;  // skip "-dc_node="
+    auto end = ws.find(L' ', pos);
+    if (end == std::wstring::npos) end = ws.size();
+    std::wstring node = ws.substr(pos, end - pos);
+    std::string result;
+    for (wchar_t c : node) result += static_cast<char>(c);
+    return result;
+}
+
 static void InitPipelineFromTopology() {
     auto& topo = Topology::Instance();
 
@@ -100,11 +115,18 @@ static void InitPipelineFromTopology() {
     if (!GetComputerNameA(hostname, &sz))
         snprintf(hostname, sizeof(hostname), "rs");
 
+    std::string dc_node = ParseDcNode();
+    char ndi_name[256];
+    if (!dc_node.empty())
+        snprintf(ndi_name, sizeof(ndi_name), "%s_%s", dc_node.c_str(), hostname);
+    else
+        snprintf(ndi_name, sizeof(ndi_name), "%s", hostname);
+
     rs::GetSender().Stop();
-    rs::GetSender().Configure(hostname, 0);
+    rs::GetSender().Configure(ndi_name, 0);
     rs::GetSender().Start();
 
-    rs::log::Info("[Topology] pipeline initialized: %d layers", topo.Count());
+    rs::log::Info("[Topology] pipeline initialized: %d layers, NDI name '%s'", topo.Count(), ndi_name);
 }
 
 }  // namespace rs

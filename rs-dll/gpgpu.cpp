@@ -274,7 +274,14 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
 }
 
 std::vector<FrameBuffer> GpuContext::ConsumeReadyPack() {
-    if (!frame_complete_) return {};
+    // DEBUG: empty pack tracking
+    // static int s_empty = 0;
+    // static int s_total = 0;
+    // ++s_total;
+    if (!frame_complete_) {
+        // DEBUG: ++s_empty; if (s_total % 60 == 0) rs::log::Info(...);
+        return {};
+    }
     frame_complete_ = false;
     // data_pack_index_ points to the next write pack (after swap).
     // The completed pack is (data_pack_index_ + 1) % 2.

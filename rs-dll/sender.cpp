@@ -144,6 +144,14 @@ void Sender::Send(int layer_id, const uint8_t* data, size_t byte_count) {
 }
 
 void Sender::SendPack(const std::vector<rs::FrameBuffer>& pack) {
+    // DEBUG: SendPack interval stats
+    // static std::chrono::steady_clock::time_point s_last;
+    // static int s_count = 0;
+    // static int s_skip = 0;
+    // ++s_count;
+    // if (pack.empty()) { ... }
+    // auto now = std::chrono::steady_clock::now(); ...
+
     for (const auto& buf : pack) {
         if (!buf.cpu_base)
             continue;
