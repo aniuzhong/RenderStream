@@ -7,18 +7,23 @@
 // 5. Runs tick loops in parallel threads for 60 seconds
 // 6. Gracefully stops conductors and kills remote UE processes
 //
+// Per-node logs are written to %LOCALAPPDATA%/RenderStream/rs-conductor/.
 // Usage: cluster_example.exe [timeout_ms]
 
 #include <cstdio>
 #include <cstdlib>
 
 #include <chrono>
+#include <filesystem>
 #include <string>
 #include <thread>
 #include <vector>
 
 #include <httplib.h>
 #include <nlohmann/json.hpp>
+#include <spdlog/sinks/basic_file_sink.h>
+#include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/spdlog.h>
 
 #include "camera_rig.h"
 #include "conductor.h"
@@ -28,7 +33,7 @@
 
 static constexpr int    kTickPort  = 9581;
 static constexpr double kFps       = 60.0;
-static constexpr int    kRunSecs   = 60;   // auto-stop after this many seconds
+static constexpr int    kRunSecs   = 60;
 
 struct NodeConfig {
     const char* name;
@@ -37,10 +42,10 @@ struct NodeConfig {
 };
 
 static const NodeConfig kNodes[] = {
-    {"node0",  // primary — local machine
+    {"node0",
      "D:/Epic Games/UE_5.5/Engine/Binaries/Win64/UnrealEditor.exe",
      "E:/Assets/Unreal Projects/nDisplay_Demo_55/nDisplay_Demo.uproject"},
-    {"node1",  // secondary — 10.241.12.246
+    {"node1",
      "C:/Program Files/Epic Games/UE_5.5/Engine/Binaries/Win64/UnrealEditor.exe",
      "C:/Users/hido/Documents/Unreal Projects/nDisplay_Demo_55/nDisplay_Demo.uproject"},
 };
@@ -75,6 +80,70 @@ static std::vector<CameraRig> BuildCameraRigs() {
     rigs[3].AddSample(6.0, camera_data_from_fov(12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0));
 
     return rigs;
+}
+
+// ── Log setup ───────────────────────────────────────────────────
+
+static std::string LogDir() {
+    const wchar_t* appdata = nullptr;
+    _wdupenv_s((wchar_t**)&appdata, nullptr, L"LOCALAPPDATA");
+    std::filesystem::path p = appdata ? appdata : L".";
+    free((void*)appdata);
+    p /= L"RenderStream/rs-conductor";
+    std::filesystem::create_directories(p);
+    return p.string();
+}
+
+static void SetupConductorCallbacks(Conductor& c, const char* tag) {
+    auto dir = LogDir();
+
+    // Frame ack → file
+    auto frame_log = spdlog::basic_logger_mt(
+        fmt::format("{}_frame", tag),
+        fmt::format("{}/{}.frame.log", dir, tag));
+    frame_log->set_pattern("[%Y-%m-%d %H:%M:%S.%e] %v");
+    c.on_frame_ack = [frame_log](const CameraResponseData& ack) {
+        frame_log->info("t={:.3f} camera(id={} x={:.2f} y={:.2f} z={:.2f})",
+            ack.tTracked, ack.camera.id, ack.camera.x, ack.camera.y, ack.camera.z);
+    };
+
+    // UE log → file
+    auto ue_log = spdlog::basic_logger_mt(
+        fmt::format("{}_ue", tag),
+        fmt::format("{}/{}.ue.log", dir, tag));
+    ue_log->set_pattern("[%Y-%m-%d %H:%M:%S.%e] %v");
+    c.on_log = [ue_log](const std::string& text) {
+        ue_log->info("{}", text);
+    };
+
+    // Profiling → stdout, throttled
+    auto prof_out = spdlog::stdout_color_mt(fmt::format("{}_prof", tag));
+    prof_out->set_pattern(fmt::format("[%n] %v"));
+    auto prof_counter = std::make_shared<int>(0);
+    c.on_profiling = [prof_out, tag, prof_counter](const nlohmann::json& j) {
+        *prof_counter = (*prof_counter + 1) % 120;
+        if (*prof_counter != 1) return;
+
+        float frame_time = 0, gpu_time = 0, await_time = 0;
+        if (j.contains("entries") && j["entries"].is_array()) {
+            for (const auto& e : j["entries"]) {
+                std::string name = e.value("name", "");
+                if (name == "Frame Time")      frame_time = e.value("value", 0.0f);
+                else if (name == "GPU Time")   gpu_time  = e.value("value", 0.0f);
+                else if (name == "Await Time") await_time = e.value("value", 0.0f);
+            }
+        }
+        float fps = frame_time > 0.0f ? 1000.0f / frame_time : 0.0f;
+        prof_out->info("[{}] frame={:.1f}ms ({:.0f}fps) gpu={:.1f}ms await={:.1f}ms",
+            tag, frame_time, fps, gpu_time, await_time);
+    };
+
+    // Status → stdout
+    auto stat_out = spdlog::stdout_color_mt(fmt::format("{}_stat", tag));
+    stat_out->set_pattern(fmt::format("[%n] %v"));
+    c.on_status = [stat_out, tag](const std::string& text) {
+        stat_out->info("[{}] {}", tag, text);
+    };
 }
 
 // ── nDisplay config ──────────────────────────────────────────────
@@ -140,7 +209,6 @@ static std::string QuerySchema(const char* ip, int port) {
 // ── Streams JSON ─────────────────────────────────────────────────
 
 static nlohmann::json BuildStreams() {
-    // Single camera0, 1920x1080 per node.
     return nlohmann::json::array({
         {{"name", "vp0"}, {"channel", "camera0"}, {"width", 1920}, {"height", 1080}, {"viewpoint", 0}}
     });
@@ -162,7 +230,7 @@ int main(int argc, char* argv[]) {
     int timeout_ms = (argc > 1) ? atoi(argv[1]) : 500;
 
     fprintf(stderr, "=== Cluster Example ===\n");
-    fprintf(stderr, "  tick: %d  fps: %.0f  run: %ds  timeout: %dms\n\n",
+    fprintf(stderr, "  tick: %d  fps: %.0f  run: %ds  timeout: %dms\n",
             kTickPort, kFps, kRunSecs, timeout_ms);
 
     // 1. Discover
@@ -175,9 +243,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Map discovered nodes to roles by IP:
-    //   node0 (primary) = 10.241.12.217 (local)
-    //   node1 (secondary) = 10.241.12.246
     std::vector<RS_NodeInfo> nodes(2);
     int assigned = 0;
     for (int i = 0; i < list.count && assigned < 2; ++i) {
@@ -195,7 +260,10 @@ int main(int argc, char* argv[]) {
     // 2. Schema
     fprintf(stderr, "Querying schema from %s...\n", nodes[0].name);
     std::string schema_body = QuerySchema(nodes[0].ip, nodes[0].port);
-    if (schema_body.empty()) { fprintf(stderr, "  schema not found\n"); RS_FreeNodeList(&list); WSACleanup(); return 1; }
+    if (schema_body.empty()) {
+        fprintf(stderr, "  schema not found\n");
+        RS_FreeNodeList(&list); WSACleanup(); return 1;
+    }
     auto schema = nlohmann::json::parse(schema_body);
     fprintf(stderr, "  %zu channels, %zu scenes\n\n",
             schema["channels"].size(), schema["scenes"].size());
@@ -243,6 +311,8 @@ int main(int argc, char* argv[]) {
     fprintf(stderr, "\n");
 
     // 6. Create conductors
+    fprintf(stderr, "Logs → %s\n\n", LogDir().c_str());
+
     std::vector<std::unique_ptr<Conductor>> conductors;
     std::vector<std::thread> threads;
 
@@ -250,6 +320,7 @@ int main(int argc, char* argv[]) {
         if (pids[i] == 0) continue;
         auto c = std::make_unique<Conductor>(nodes[i].ip, kTickPort, kNodes[i].name);
         c->SetRigs(rigs);
+        SetupConductorCallbacks(*c, kNodes[i].name);
         fprintf(stderr, "[%s] connecting to %s:%d...\n", kNodes[i].name, nodes[i].ip, kTickPort);
         if (!c->Connect(60)) {
             fprintf(stderr, "[%s] WARNING: could not connect\n", kNodes[i].name);

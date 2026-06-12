@@ -1,7 +1,10 @@
 #include "conductor.h"
 
-#include <cstdio>
+#include <spdlog/sinks/stdout_color_sinks.h>
+#include <spdlog/spdlog.h>
+
 #include <chrono>
+#include <cstdio>
 #include <thread>
 
 // ============================================================
@@ -9,7 +12,40 @@
 // ============================================================
 
 Conductor::Conductor(const char* node_ip, int tick_port, const char* tag)
-    : tag_(tag), node_ip_(node_ip), tick_port_(tick_port) {}
+    : tag_(tag), node_ip_(node_ip), tick_port_(tick_port) {
+
+    // Default callbacks → stdout.
+    // spdlog::get() retrieves the same logger for lifecycle messages.
+    auto out = spdlog::stdout_color_mt(tag_);
+    out->set_pattern("[%n] %v");
+    out->set_level(spdlog::level::info);
+
+    on_frame_ack = [out](const CameraResponseData& ack) {
+        out->debug("t={:.3f} camera(id={} x={:.2f} y={:.2f} z={:.2f})",
+            ack.tTracked, ack.camera.id, ack.camera.x, ack.camera.y, ack.camera.z);
+    };
+
+    on_status = [out](const std::string& text) {
+        out->info("Status: {}", text);
+    };
+
+    on_log = [out](const std::string& text) {
+        out->info("{}", text);
+    };
+
+    on_profiling = [out](const nlohmann::json& j) {
+        float frame_time = 0, gpu_time = 0, await_time = 0;
+        for (const auto& e : j["entries"]) {
+            std::string name = e.value("name", "");
+            if (name == "Frame Time")      frame_time = e.value("value", 0.0f);
+            else if (name == "GPU Time")   gpu_time  = e.value("value", 0.0f);
+            else if (name == "Await Time") await_time = e.value("value", 0.0f);
+        }
+        float fps = frame_time > 0.0f ? 1000.0f / frame_time : 0.0f;
+        out->debug("frame={:.1f}ms ({:.0f}fps) gpu={:.1f}ms await={:.1f}ms",
+            frame_time, fps, gpu_time, await_time);
+    };
+}
 
 Conductor::~Conductor() {
     Disconnect();
@@ -22,6 +58,7 @@ void Conductor::SetRigs(std::vector<CameraRig> rigs) {
 // ── Connection ──────────────────────────────────────────────
 
 bool Conductor::Connect(int retries) {
+    auto log = spdlog::get(tag_);
     using asio::ip::tcp;
 
     for (int i = 0; i < retries; ++i) {
@@ -29,17 +66,15 @@ bool Conductor::Connect(int retries) {
             tcp::resolver resolver(io_);
             auto endpoints = resolver.resolve(node_ip_, std::to_string(tick_port_));
             asio::connect(sock_, endpoints);
-            fprintf(stderr, "[%s] connected to %s:%d\n",
-                    tag_.c_str(), node_ip_.c_str(), tick_port_);
+            log->info("connected to {}:{}", node_ip_, tick_port_);
             return true;
         } catch (const std::exception& e) {
             sock_.close();
-            fprintf(stderr, "[%s] connect attempt %d/%d: %s\n",
-                    tag_.c_str(), i + 1, retries, e.what());
+            log->warn("connect attempt {}/{}: {}", i + 1, retries, e.what());
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
     }
-    fprintf(stderr, "[%s] failed to connect after %d retries\n", tag_.c_str(), retries);
+    log->error("failed to connect after {} retries", retries);
     return false;
 }
 
@@ -52,25 +87,25 @@ void Conductor::Disconnect() {
 // ── Run loop ────────────────────────────────────────────────
 
 void Conductor::Run() {
+    auto log = spdlog::get(tag_);
     running_ = true;
     t_ = 0.0;
     frame_seq_ = 0;
 
-    // fire first tick immediately, then every tick_interval_
     tick_timer_.expires_after(std::chrono::seconds(0));
     BeginTick();
     BeginRecv();
 
-    fprintf(stderr, "[%s] loop started at %.0f fps\n", tag_.c_str(), 1.0 / tick_interval_);
+    log->info("loop started at {} fps", 1.0 / tick_interval_);
 
     try {
         io_.run();
     } catch (const std::exception& e) {
-        fprintf(stderr, "[%s] io loop exception: %s\n", tag_.c_str(), e.what());
+        log->error("io loop exception: {}", e.what());
     }
 
     running_ = false;
-    fprintf(stderr, "[%s] loop ended (frames=%d)\n", tag_.c_str(), frame_seq_);
+    log->info("loop ended (frames={})", frame_seq_);
 }
 
 void Conductor::Stop() {
@@ -99,7 +134,7 @@ void Conductor::OnTick(const std::error_code& ec) {
     BeginTick();
 }
 
-// ── Recv ────────────────────────────────────────────────────
+// ── Recv — dispatch to callbacks only ───────────────────────
 
 void Conductor::BeginRecv() {
     asio::async_read_until(sock_, recv_buf_, '\n',
@@ -108,7 +143,7 @@ void Conductor::BeginRecv() {
 
 void Conductor::OnRecv(const std::error_code& ec, size_t n) {
     if (ec) {
-        fprintf(stderr, "[%s] recv disconnected: %s\n", tag_.c_str(), ec.message().c_str());
+        spdlog::get(tag_)->error("recv disconnected: {}", ec.message());
         Stop();
         return;
     }
@@ -122,51 +157,22 @@ void Conductor::OnRecv(const std::error_code& ec, size_t n) {
         std::string type = j.value("type", "");
 
         if (type == "FrameResponseData") {
-            CameraResponseData ack = j.get<CameraResponseData>();
-            static int s_ack_count = 0;
-            if (++s_ack_count <= 5 || s_ack_count % 240 == 0)
-                fprintf(stderr, "[%s] FrameResponseData #%d t=%.3f camera(id=%llu x=%.2f y=%.2f z=%.2f)\n",
-                        tag_.c_str(), s_ack_count, ack.tTracked,
-                        static_cast<unsigned long long>(ack.camera.id),
-                        ack.camera.x, ack.camera.y, ack.camera.z);
+            on_frame_ack(j.get<CameraResponseData>());
+
         } else if (type == "Status") {
-            std::string text = j.value("text", "");
-            fprintf(stderr, "[%s] Status: %s\n", tag_.c_str(), text.c_str());
+            on_status(j.value("text", std::string{}));
+
         } else if (type == "ProfilingData") {
-            static int s_prof_count = 0;
-            ++s_prof_count;
+            on_profiling(j);
 
-            auto get_entry = [&](const char* name) -> float {
-                if (j.contains("entries") && j["entries"].is_array())
-                    for (const auto& e : j["entries"])
-                        if (e.value("name", "") == name)
-                            return e.value("value", 0.0f);
-                return 0.0f;
-            };
-
-            if (s_prof_count <= 3) {
-                fprintf(stderr, "[%s] Profiling #%d ", tag_.c_str(), s_prof_count);
-                if (j.contains("entries") && j["entries"].is_array())
-                    for (const auto& e : j["entries"])
-                        fprintf(stderr, "%.1fms %s ", e["value"].get<float>(), e["name"].get<std::string>().c_str());
-                fprintf(stderr, "\n");
-            } else if (s_prof_count % 120 == 0) {
-                float frame_time = get_entry("Frame Time");
-                float fps = frame_time > 0.0f ? 1000.0f / frame_time : 0.0f;
-                float gpu_time  = get_entry("GPU Time");
-                float await_time = get_entry("Await Time");
-                fprintf(stderr, "[%s] Frame #%d  frame=%.1fms (%.0ffps)  gpu=%.1fms  await=%.1fms\n",
-                        tag_.c_str(), s_prof_count, frame_time, fps, gpu_time, await_time);
-            }
         } else if (type == "Log") {
-            std::string text = j.value("text", "");
-            fprintf(stderr, "%s\n", text.c_str());
+            on_log(j.value("text", std::string{}));
+
         } else {
-            fprintf(stderr, "[%s] unknown msg: %s\n", tag_.c_str(), line.c_str());
+            spdlog::get(tag_)->debug("unknown: {}", line);
         }
     } catch (const std::exception& e) {
-        fprintf(stderr, "[%s] parse error: %s | raw: %s\n",
-                tag_.c_str(), e.what(), line.c_str());
+        spdlog::get(tag_)->warn("parse error: {}  raw: {}", e.what(), line);
     }
 
     BeginRecv();
@@ -194,14 +200,10 @@ void Conductor::BuildAndSend(double t) {
     auto msg = std::make_shared<std::string>(
         nlohmann::json(req).dump() + "\n");
 
-    if (frame_seq_ <= 3 || frame_seq_ % 120 == 0)
-        fprintf(stderr, "[%s] #%d t=%.3f len=%zu cameras=%zu\n",
-                tag_.c_str(), frame_seq_, t, msg->size(), req.cameras.size());
-
     asio::async_write(sock_, asio::buffer(*msg),
         [this, msg](const std::error_code& err, size_t) {
             if (err) {
-                fprintf(stderr, "[%s] send error: %s\n", tag_.c_str(), err.message().c_str());
+                spdlog::get(tag_)->error("send error: {}", err.message());
                 Stop();
             }
         });

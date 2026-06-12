@@ -5,6 +5,7 @@
 
 #include <asio.hpp>
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -12,10 +13,9 @@
 //
 // Conductor — io_context‑driven tick source for one render node.
 //
-//   Run() blocks on the calling thread.  A steady_timer fires at the
-//   configured rate to send per‑frame NDJSON.  An async_read_until
-//   loop receives responses (future: CameraResponseData ack) on the
-//   same socket.
+//   On each tick: evaluates all rigs at t, sends the Request as NDJSON.
+//   On each response line: dispatches to the matching callback.
+//   Callbacks are always set — constructor provides stdout defaults.
 //
 class Conductor {
 public:
@@ -41,6 +41,16 @@ public:
     // ── Observers ────────────────────────────────────────────
 
     const std::vector<CameraData>& LastCameras() const { return last_cameras_; }
+
+    // ── Callbacks — route response to caller ─────────────────
+    //
+    //  Always valid.  Constructor sets stdout defaults;
+    //  override to redirect per-message-type.
+
+    std::function<void(const CameraResponseData&)> on_frame_ack;
+    std::function<void(const std::string&)>        on_status;
+    std::function<void(const std::string&)>        on_log;
+    std::function<void(const nlohmann::json&)>     on_profiling;
 
 private:
     void BeginTick();
