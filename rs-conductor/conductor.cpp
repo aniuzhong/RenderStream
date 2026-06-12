@@ -5,50 +5,18 @@
 #include <thread>
 
 // ============================================================
-// Keyframe tracks
-// ============================================================
-
-namespace {
-
-const std::vector<KeyframeTrack>& ConductorTracks() {
-    static const std::vector<KeyframeTrack> tracks = {
-        {true, { // camera0 - left-top
-            make_camera_key(0.0, -2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0),
-            make_camera_key(3.0,  2.00, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0),
-            make_camera_key(6.0, -2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0),
-        }},
-        {true, { // camera1 - right-top
-            make_camera_key(0.0,  5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0),
-            make_camera_key(3.0, -5.59, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0),
-            make_camera_key(6.0,  5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0),
-        }},
-        {true, { // camera2 - left-bottom
-            make_camera_key(0.0, -11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0),
-            make_camera_key(3.0, -11.395, 8.30, -5.00, -20.0, 84.1, 0.0, 90.0),
-            make_camera_key(6.0, -11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0),
-        }},
-        {true, { // camera3 - right-bottom
-            make_camera_key(0.0, 12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0),
-            make_camera_key(3.0, 12.40, 7.70,  7.00, -30.0, -90.0, 0.0, 90.0),
-            make_camera_key(6.0, 12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0),
-        }},
-    };
-    return tracks;
-}
-
-}  // anonymous namespace
-
-// ============================================================
 // Conductor
 // ============================================================
 
-Conductor::Conductor(const char* node_ip, int tick_port, int stream_w, int stream_h,
-                     const char* tag)
-    : tag_(tag), node_ip_(node_ip), tick_port_(tick_port), stream_w_(stream_w), stream_h_(stream_h),
-      camera_fn_(MakeKeyframeCamera(ConductorTracks())) {}
+Conductor::Conductor(const char* node_ip, int tick_port, const char* tag)
+    : tag_(tag), node_ip_(node_ip), tick_port_(tick_port) {}
 
 Conductor::~Conductor() {
     Disconnect();
+}
+
+void Conductor::SetRigs(std::vector<CameraRig> rigs) {
+    rigs_ = std::move(rigs);
 }
 
 // ── Connection ──────────────────────────────────────────────
@@ -119,7 +87,7 @@ void Conductor::BeginTick() {
 }
 
 void Conductor::OnTick(const std::error_code& ec) {
-    if (ec) return;          // cancelled
+    if (ec) return;
 
     BuildAndSend(t_);
     t_ += tick_interval_;
@@ -204,16 +172,17 @@ void Conductor::OnRecv(const std::error_code& ec, size_t n) {
     BeginRecv();
 }
 
-void Conductor::GenerateCameras(double t) {
-    last_cameras_.resize(4);
-    for (int i = 0; i < 4; ++i) {
-        camera_fn_(t, i, stream_w_, stream_h_, &last_cameras_[i]);
-        last_cameras_[i].id = static_cast<uint64_t>(i + 1);
-    }
-}
+// ── Build & Send ────────────────────────────────────────────
 
 void Conductor::BuildAndSend(double t) {
-    GenerateCameras(t);
+    last_cameras_.clear();
+    for (auto& rig : rigs_) {
+        if (!rig.IsEmpty())
+            last_cameras_.push_back(rig.Evaluate(t));
+    }
+
+    for (size_t i = 0; i < last_cameras_.size(); ++i)
+        last_cameras_[i].id = static_cast<uint64_t>(i + 1);
 
     rs::Request req;
     req.t          = t;

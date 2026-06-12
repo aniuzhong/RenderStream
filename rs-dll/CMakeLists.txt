@@ -17,7 +17,6 @@ add_library(renderstream SHARED
     topology.cpp
     link.cpp
     driven.cpp
-    ${CMAKE_SOURCE_DIR}/common/misc.cpp
 )
 
 set_target_properties(renderstream PROPERTIES

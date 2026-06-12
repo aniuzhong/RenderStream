@@ -19,6 +19,7 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
+#include "camera_rig.h"
 #include "conductor.h"
 #include "ndisplay-gen/model.h"
 #include "ndisplay-gen/serialize.h"
@@ -62,6 +63,45 @@ static int CameraIndex(const std::string& channel) {
     if (pos == std::string::npos) return 0;
     return std::atoi(channel.c_str() + pos + 6);
 }
+
+// ── Camera rigs ─────────────────────────────────────────────────
+
+// clang-format off
+static CameraRig BuildCameraRig(int idx, int sensor_w, int sensor_h) {
+    CameraRig rig;
+    rig.SetLoop(true);
+    rig.SetSensorSize(sensor_w, sensor_h);
+
+    struct Track { double t, x, y, z, rx, ry, rz, fov; };
+    static const Track kTracks[][3] = {
+        { // camera0 - left-top
+            {0, -2.94,   1.50, -7.69,   0.0,   0.0, 0, 90},
+            {3,  2.00,   1.50, -7.69,   0.0,   0.0, 0, 90},
+            {6, -2.94,   1.50, -7.69,   0.0,   0.0, 0, 90},
+        },
+        { // camera1 - right-top
+            {0,  5.71,   1.36,  6.50,   0.0, 179.71, 0, 90},
+            {3, -5.59,   1.36,  6.50,   0.0, 179.71, 0, 90},
+            {6,  5.71,   1.36,  6.50,   0.0, 179.71, 0, 90},
+        },
+        { // camera2 - left-bottom
+            {0, -11.395, 8.30,  7.40, -20.0,  84.1,  0, 90},
+            {3, -11.395, 8.30, -5.00, -20.0,  84.1,  0, 90},
+            {6, -11.395, 8.30,  7.40, -20.0,  84.1,  0, 90},
+        },
+        { // camera3 - right-bottom
+            {0, 12.40,   7.70, -8.60, -30.0, -90.0,  0, 90},
+            {3, 12.40,   7.70,  7.00, -30.0, -90.0,  0, 90},
+            {6, 12.40,   7.70, -8.60, -30.0, -90.0,  0, 90},
+        },
+    };
+
+    const auto& t = kTracks[idx % 4];
+    for (const auto& k : t)
+        rig.AddSample(k.t, camera_data_from_fov(k.x, k.y, k.z, k.rx, k.ry, k.rz, k.fov, sensor_w, sensor_h));
+    return rig;
+}
+// clang-format on
 
 static int WindowW(const std::vector<Viewport>& vps) {
     int w = 0;
@@ -216,15 +256,21 @@ int main(int argc, char* argv[]) {
         auto r = nlohmann::json::parse(launch_res->body);
         fprintf(stderr, "  UE launched: pid=%d\n", r["pid"].get<int>());
 
-        // 6. Connect tick via Conductor.
+        // 6. Build camera rigs per viewport
+        std::vector<CameraRig> rigs;
+        for (const auto& vp : vps)
+            rigs.push_back(BuildCameraRig(CameraIndex(vp.channel), vp.w, vp.h));
+
+        // 7. Connect and run conductor
         fprintf(stderr, "\n[Conductor] connecting to %s:%d...\n", n->ip, kTickPort);
-        Conductor conductor(n->ip, kTickPort, vps[0].w, vps[0].h);
+        Conductor conductor(n->ip, kTickPort);
+        conductor.SetRigs(rigs);
         if (!conductor.Connect(30)) {
             fprintf(stderr, "  [ERROR] could not connect tick socket\n");
             continue;
         }
 
-        // 7. Run tick loop (blocks until UE exits or error).
+        // 8. Run tick loop (blocks until UE exits or error).
         conductor.Run();
     }
 

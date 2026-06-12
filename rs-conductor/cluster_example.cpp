@@ -20,6 +20,7 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
+#include "camera_rig.h"
 #include "conductor.h"
 #include "ndisplay-gen/model.h"
 #include "ndisplay-gen/serialize.h"
@@ -43,6 +44,38 @@ static const NodeConfig kNodes[] = {
      "C:/Program Files/Epic Games/UE_5.5/Engine/Binaries/Win64/UnrealEditor.exe",
      "C:/Users/hido/Documents/Unreal Projects/nDisplay_Demo_55/nDisplay_Demo.uproject"},
 };
+
+// ── Camera rigs ─────────────────────────────────────────────────
+
+static std::vector<CameraRig> BuildCameraRigs() {
+    std::vector<CameraRig> rigs(4);
+    for (auto& rig : rigs) {
+        rig.SetLoop(true);
+        rig.SetSensorSize(1920, 1080);
+    }
+
+    // camera0 - left-top
+    rigs[0].AddSample(0.0, camera_data_from_fov(-2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0));
+    rigs[0].AddSample(3.0, camera_data_from_fov( 2.00, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0));
+    rigs[0].AddSample(6.0, camera_data_from_fov(-2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0));
+
+    // camera1 - right-top
+    rigs[1].AddSample(0.0, camera_data_from_fov( 5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0));
+    rigs[1].AddSample(3.0, camera_data_from_fov(-5.59, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0));
+    rigs[1].AddSample(6.0, camera_data_from_fov( 5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0));
+
+    // camera2 - left-bottom
+    rigs[2].AddSample(0.0, camera_data_from_fov(-11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0));
+    rigs[2].AddSample(3.0, camera_data_from_fov(-11.395, 8.30, -5.00, -20.0, 84.1, 0.0, 90.0));
+    rigs[2].AddSample(6.0, camera_data_from_fov(-11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0));
+
+    // camera3 - right-bottom
+    rigs[3].AddSample(0.0, camera_data_from_fov(12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0));
+    rigs[3].AddSample(3.0, camera_data_from_fov(12.40, 7.70,  7.00, -30.0, -90.0, 0.0, 90.0));
+    rigs[3].AddSample(6.0, camera_data_from_fov(12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0));
+
+    return rigs;
+}
 
 // ── nDisplay config ──────────────────────────────────────────────
 
@@ -119,7 +152,7 @@ static void KillRemoteUE(const char* ip, int port) {
     httplib::Client cli(ip, port);
     cli.set_connection_timeout(2, 0);
     auto res = cli.Post("/api/unreal/kill", "{}", "application/json");
-    fprintf(stderr, "  kill %s:%d → %s\n", ip, port,
+    fprintf(stderr, "  kill %s:%d -> %s\n", ip, port,
             res ? res->body.c_str() : "no response");
 }
 
@@ -167,13 +200,16 @@ int main(int argc, char* argv[]) {
     fprintf(stderr, "  %zu channels, %zu scenes\n\n",
             schema["channels"].size(), schema["scenes"].size());
 
-    // 3. Build config + streams
+    // 3. Build camera rigs
+    auto rigs = BuildCameraRigs();
+
+    // 4. Build config + streams
     auto ndisplay_json = GenerateNdisplayConfig(nodes);
     auto streams_json  = BuildStreams();
     fprintf(stderr, "Viewport layout: 1x 1920x1080 camera0 per node\n");
     fprintf(stderr, "nDisplay config: %zu bytes\n\n", ndisplay_json.dump().size());
 
-    // 4. Launch UE on each node
+    // 5. Launch UE on each node
     std::vector<DWORD> pids;
     std::vector<const char*> node_ips;
     for (size_t i = 0; i < nodes.size(); ++i) {
@@ -206,13 +242,14 @@ int main(int argc, char* argv[]) {
     }
     fprintf(stderr, "\n");
 
-    // 5. Create conductors
+    // 6. Create conductors
     std::vector<std::unique_ptr<Conductor>> conductors;
     std::vector<std::thread> threads;
 
     for (size_t i = 0; i < nodes.size(); ++i) {
         if (pids[i] == 0) continue;
-        auto c = std::make_unique<Conductor>(nodes[i].ip, kTickPort, 1920, 1080, kNodes[i].name);
+        auto c = std::make_unique<Conductor>(nodes[i].ip, kTickPort, kNodes[i].name);
+        c->SetRigs(rigs);
         fprintf(stderr, "[%s] connecting to %s:%d...\n", kNodes[i].name, nodes[i].ip, kTickPort);
         if (!c->Connect(60)) {
             fprintf(stderr, "[%s] WARNING: could not connect\n", kNodes[i].name);
@@ -228,12 +265,12 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // 6. Start tick loops
+    // 7. Start tick loops
     fprintf(stderr, "\nStarting %zu conductor(s) for %d seconds...\n\n", conductors.size(), kRunSecs);
     for (auto& c : conductors)
         threads.emplace_back([&c] { c->Run(); });
 
-    // 7. Wait, then graceful shutdown
+    // 8. Wait, then graceful shutdown
     std::this_thread::sleep_for(std::chrono::seconds(kRunSecs));
     fprintf(stderr, "\n--- %ds elapsed, stopping conductors ---\n", kRunSecs);
 
@@ -245,7 +282,7 @@ int main(int argc, char* argv[]) {
 
     fprintf(stderr, "All conductors stopped.\n\n");
 
-    // 8. Kill remote UEs
+    // 9. Kill remote UEs
     fprintf(stderr, "Killing remote UE processes...\n");
     for (size_t i = 0; i < nodes.size(); ++i) {
         if (pids[i] != 0)

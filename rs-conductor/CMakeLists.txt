@@ -14,7 +14,7 @@ target_link_libraries(ndisplay_gen PUBLIC nlohmann_json::nlohmann_json)
 add_executable(four_viewports_ext
     four_viewports_ext.cpp
     conductor.cpp
-    ${CMAKE_SOURCE_DIR}/common/misc.cpp
+    camera_rig.cpp
 )
 target_include_directories(four_viewports_ext PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -34,7 +34,7 @@ target_link_libraries(node_check PRIVATE rs_client nlohmann_json::nlohmann_json 
 add_executable(cluster_example
     cluster_example.cpp
     conductor.cpp
-    ${CMAKE_SOURCE_DIR}/common/misc.cpp
+    camera_rig.cpp
 )
 target_include_directories(cluster_example PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
