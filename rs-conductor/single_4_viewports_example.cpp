@@ -1,12 +1,12 @@
-// four_viewports_ext.cpp - External-tick nDisplay launcher.
+// single_4_viewports_example.cpp — single-node 4-viewport tick source.
 //
 // Launches a 4-viewport UE session, then acts as an external tick source:
 // connects to renderstream.dll's TCP listener and sends NDJSON ticks at
 // 60 fps.  Uses the Conductor class for frame streaming.
 //
 // Usage:
-//   four_viewports_ext.exe [timeout_ms]
-//   four_viewports_ext.exe 500
+//   single_4_viewports_example.exe [timeout_ms]
+//   single_4_viewports_example.exe 500
 
 #include <cstdio>
 #include <cstdlib>
@@ -98,7 +98,7 @@ static CameraRig BuildCameraRig(int idx, int sensor_w, int sensor_h) {
 
     const auto& t = kTracks[idx % 4];
     for (const auto& k : t)
-        rig.AddSample(k.t, camera_data_from_fov(k.x, k.y, k.z, k.rx, k.ry, k.rz, k.fov, sensor_w, sensor_h));
+        rig.AddSample(k.t, k.x, k.y, k.z, k.rx, k.ry, k.rz, k.fov);
     return rig;
 }
 // clang-format on

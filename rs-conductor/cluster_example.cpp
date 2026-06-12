@@ -60,24 +60,24 @@ static std::vector<CameraRig> BuildCameraRigs() {
     }
 
     // camera0 - left-top
-    rigs[0].AddSample(0.0, camera_data_from_fov(-2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0));
-    rigs[0].AddSample(3.0, camera_data_from_fov( 2.00, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0));
-    rigs[0].AddSample(6.0, camera_data_from_fov(-2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0));
+    rigs[0].AddSample(0.0, -2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0);
+    rigs[0].AddSample(3.0,  2.00, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0);
+    rigs[0].AddSample(6.0, -2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0);
 
     // camera1 - right-top
-    rigs[1].AddSample(0.0, camera_data_from_fov( 5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0));
-    rigs[1].AddSample(3.0, camera_data_from_fov(-5.59, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0));
-    rigs[1].AddSample(6.0, camera_data_from_fov( 5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0));
+    rigs[1].AddSample(0.0,  5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0);
+    rigs[1].AddSample(3.0, -5.59, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0);
+    rigs[1].AddSample(6.0,  5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0);
 
     // camera2 - left-bottom
-    rigs[2].AddSample(0.0, camera_data_from_fov(-11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0));
-    rigs[2].AddSample(3.0, camera_data_from_fov(-11.395, 8.30, -5.00, -20.0, 84.1, 0.0, 90.0));
-    rigs[2].AddSample(6.0, camera_data_from_fov(-11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0));
+    rigs[2].AddSample(0.0, -11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0);
+    rigs[2].AddSample(3.0, -11.395, 8.30, -5.00, -20.0, 84.1, 0.0, 90.0);
+    rigs[2].AddSample(6.0, -11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0);
 
     // camera3 - right-bottom
-    rigs[3].AddSample(0.0, camera_data_from_fov(12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0));
-    rigs[3].AddSample(3.0, camera_data_from_fov(12.40, 7.70,  7.00, -30.0, -90.0, 0.0, 90.0));
-    rigs[3].AddSample(6.0, camera_data_from_fov(12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0));
+    rigs[3].AddSample(0.0, 12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0);
+    rigs[3].AddSample(3.0, 12.40, 7.70,  7.00, -30.0, -90.0, 0.0, 90.0);
+    rigs[3].AddSample(6.0, 12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0);
 
     return rigs;
 }

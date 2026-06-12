@@ -1,5 +1,5 @@
-// node_check.cpp — LAN discovery + health/info/schema query for each rs-agent node.
-// Usage: node_check.exe [timeout_ms]
+// node_probe_example.cpp — probe rs-agent nodes on LAN.
+// Usage: node_probe_example.exe [timeout_ms]
 
 #include <cstdio>
 #include <cstdlib>
@@ -67,7 +67,7 @@ int main(int argc, char* argv[]) {
     const char* project_path =
         "C:/Users/hido/Documents/Unreal Projects/nDisplay_Demo_55/nDisplay_Demo.uproject";
 
-    fprintf(stderr, "=== rs-agent Node Check ===\n");
+    fprintf(stderr, "=== rs-agent Node Probe ===\n");
     fprintf(stderr, "  timeout: %dms\n", timeout_ms);
     fprintf(stderr, "  project: %s\n\n", project_path);
 

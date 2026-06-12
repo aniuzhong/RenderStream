@@ -6,33 +6,6 @@
 #include <nlohmann/json.hpp>
 
 // ============================================================
-// camera_data_from_fov
-// ============================================================
-
-CameraData camera_data_from_fov(double x, double y, double z,
-                                double rx, double ry, double rz,
-                                double fov_h, int sensor_w, int sensor_h) {
-    const double pi = 3.141592653589793;
-    CameraData cd = {};
-    cd.id           = 1;
-    cd.cameraHandle = 1;
-    cd.x  = static_cast<float>(x);
-    cd.y  = static_cast<float>(y);
-    cd.z  = static_cast<float>(z);
-    cd.rx = static_cast<float>(rx);
-    cd.ry = static_cast<float>(ry);
-    cd.rz = static_cast<float>(rz);
-    cd.sensorX = static_cast<float>(sensor_w);
-    cd.sensorY = static_cast<float>(sensor_h);
-    cd.nearZ      = 1.0f;
-    cd.farZ       = 10000.0f;
-    cd.orthoWidth = -1;
-    float fov_rad = static_cast<float>(fov_h * pi / 180.0);
-    cd.focalLength = cd.sensorX * 0.5f / std::tan(fov_rad * 0.5f);
-    return cd;
-}
-
-// ============================================================
 // CameraRig
 // ============================================================
 
@@ -48,9 +21,39 @@ void CameraRig::AddSample(double t, CameraData sample) {
     samples_[t] = sample;
 }
 
+void CameraRig::AddSample(double t,
+                          double x, double y, double z,
+                          double rx, double ry, double rz,
+                          double fov) {
+    CameraData cd = {};
+    cd.id           = 1;
+    cd.cameraHandle = 1;
+    cd.x  = static_cast<float>(x);
+    cd.y  = static_cast<float>(y);
+    cd.z  = static_cast<float>(z);
+    cd.rx = static_cast<float>(rx);
+    cd.ry = static_cast<float>(ry);
+    cd.rz = static_cast<float>(rz);
+    cd.sensorX      = static_cast<float>(sensorW_);
+    cd.sensorY      = static_cast<float>(sensorH_);
+    cd.nearZ        = 1.0f;
+    cd.farZ         = 10000.0f;
+    cd.orthoWidth   = -1;
+    cd.focalLength  = fov_to_focal_length(fov, sensorW_);
+    AddSample(t, cd);
+}
+
 bool CameraRig::IsEmpty() const {
     return samples_.empty();
 }
+
+float CameraRig::fov_to_focal_length(double fov_h, int sensor_w) {
+    const double pi = 3.141592653589793;
+    float fov_rad = static_cast<float>(fov_h * pi / 180.0);
+    return static_cast<float>(sensor_w) * 0.5f / std::tan(fov_rad * 0.5f);
+}
+
+// ── Evaluate ────────────────────────────────────────────────
 
 CameraData CameraRig::lerp(const CameraData& a, const CameraData& b, float t) const {
     CameraData out = a;
@@ -102,6 +105,8 @@ CameraData CameraRig::Evaluate(double t) const {
     return scale_sensor(lerp(prev->second, it->second, f));
 }
 
+// ── FromJson ────────────────────────────────────────────────
+
 CameraRig CameraRig::FromJson(const std::string& path) {
     CameraRig rig;
     std::ifstream f(path);
@@ -119,21 +124,31 @@ CameraRig CameraRig::FromJson(const std::string& path) {
     }
 
     for (const auto& s : j["samples"]) {
-        double t = s.value("t", 0.0);
         int sw = rig.sensorW_, sh = rig.sensorH_;
         if (s.contains("sensor")) {
             sw = s["sensor"].value("w", sw);
             sh = s["sensor"].value("h", sh);
         }
-        CameraData cd = camera_data_from_fov(
-            s.value("x",  0.0), s.value("y", 0.0), s.value("z", 0.0),
-            s.value("rx", 0.0), s.value("ry", 0.0), s.value("rz", 0.0),
-            s.value("fov", 90.0), sw, sh);
-        cd.nearZ         = s.value("nearZ",         1.0f);
-        cd.farZ          = s.value("farZ",          10000.0f);
-        cd.aperture      = s.value("aperture",      0.0f);
-        cd.focusDistance = s.value("focusDistance", 0.0f);
-        rig.AddSample(t, cd);
+
+        CameraData cd = {};
+        cd.id           = 1;
+        cd.cameraHandle = 1;
+        cd.x  = s.value("x", 0.0f);
+        cd.y  = s.value("y", 0.0f);
+        cd.z  = s.value("z", 0.0f);
+        cd.rx = s.value("rx", 0.0f);
+        cd.ry = s.value("ry", 0.0f);
+        cd.rz = s.value("rz", 0.0f);
+        cd.sensorX         = static_cast<float>(sw);
+        cd.sensorY         = static_cast<float>(sh);
+        cd.nearZ           = s.value("nearZ",         1.0f);
+        cd.farZ            = s.value("farZ",          10000.0f);
+        cd.orthoWidth      = -1;
+        cd.aperture        = s.value("aperture",      0.0f);
+        cd.focusDistance   = s.value("focusDistance", 0.0f);
+        cd.focalLength     = CameraRig::fov_to_focal_length(
+                                 s.value("fov", 90.0), sw);
+        rig.AddSample(s.value("t", 0.0), cd);
     }
 
     return rig;
