@@ -1,24 +1,25 @@
 # RenderStream
 
 - [RenderStream](#renderstream)
-  - [Concept (Planning)](#concept-planning)
+  - [Concept](#concept)
 
-## Concept (Planning)
+## Concept
+
 ```mermaid
 flowchart LR
-    subgraph Primary Node
+    subgraph Conductor Node
         rs-conductor
         rs-client
     end
 
-    subgraph Cluster Node A
+    subgraph Cluster Node A Controller
         rs-agent_NodeA
         UE5.x_NodeA
         RenderStream-UE_NodeA
         renderstream.dll_NodeA
     end
 
-    subgraph Cluster Node B
+    subgraph Cluster Node B Follower
         rs-agent_NodeB
         UE5.x_NodeB
         RenderStream-UE_NodeB
