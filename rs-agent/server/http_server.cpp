@@ -307,7 +307,7 @@ void HttpServer::RegisterRoutes(router_t& router) {
                 args += L" " + rs::utils::utf8_to_wstring(map);
                 args += L" -game -log -dc_cluster"
                         L" -NOSCREENMESSAGES -nohmd -dc_dev_mono -forceres";
-                args += L" -ExecCmds=\"r.SceneColorFormat 2\"";
+                args += L" -ExecCmds=\"r.SceneColorFormat 4\"";
                 args += L" -dc_node=" + rs::utils::utf8_to_wstring(node_name);
                 args += L" -dc_cfg=\"" + ndisplay_path.wstring() + L"\"";
                 args += L" -ini:Engine:[/Script/Engine.Engine]:GameViewportClientClassName=/Script/RenderStream.RenderStreamViewportClient";

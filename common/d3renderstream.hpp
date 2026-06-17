@@ -16,7 +16,7 @@
 #include <nlohmann/json.hpp>
 
 // ============================================================
-// CameraData / ProjectionClipping — JSON serialization
+// CameraData / ProjectionClipping - JSON serialization
 // (global scope: the C types from d3renderstream.h live here)
 // ============================================================
 
@@ -81,7 +81,7 @@ inline void from_json(const nlohmann::json& j, ProjectionClipping& c) {
 }
 
 // ============================================================
-// CameraResponseData — JSON serialization
+// CameraResponseData - JSON serialization
 // ============================================================
 
 inline void to_json(nlohmann::json& j, const CameraResponseData& crd) {
@@ -98,7 +98,7 @@ inline void from_json(const nlohmann::json& j, CameraResponseData& crd) {
 }
 
 // ============================================================
-// ProfilingEntry — JSON serialization (outbound only)
+// ProfilingEntry - JSON serialization (outbound only)
 // ============================================================
 
 inline void to_json(nlohmann::json& j, const ProfilingEntry& pe) {
@@ -146,13 +146,13 @@ inline void write_c_str(uint8_t* base, size_t& off, const std::string& s, const 
 }  // namespace
 
 // ============================================================
-// C++ data models — namespace rs
+// C++ data models - namespace rs
 // ============================================================
 
 namespace rs {
 
 // ============================================================
-// stream_description — C++ model for StreamDescription
+// stream_description - C++ model for StreamDescription
 // ============================================================
 
 struct stream_description {
@@ -710,7 +710,7 @@ inline bool save_schema_file(const std::filesystem::path& json_path, const schem
 }
 
 // ============================================================
-// Per-frame protocol — Request
+// Per-frame protocol - Request
 // ============================================================
 
 struct Request {
@@ -723,8 +723,6 @@ struct Request {
     std::vector<std::string>    text_values;
     std::vector<ImageFrameData> image_refs;
 };
-
-// --- Request JSON ---
 
 inline void to_json(nlohmann::json& j, const Request& r) {
     j["t"]          = r.t;

@@ -69,7 +69,6 @@ bool Topology::LoadFromRemote() {
                           s.clipping.left, s.clipping.right, s.clipping.top, s.clipping.bottom);
         }
         return true;
-
     } catch (const std::exception& e) {
         rs::log::Error("[Topology] LoadFromRemote: JSON parse error: %s", e.what());
         return false;
@@ -131,12 +130,6 @@ static void InitPipelineFromTopology() {
 
 }  // namespace rs
 
-// Two-phase call pattern (UE plugin convention):
-//   1. rs_getStreams(nullptr, &nBytes) → get required buffer size
-//   2. rs_getStreams(buf, &nBytes)     → fill buffer, retry on OVERFLOW
-//
-// The first call lazily loads Topology from the rs-agent pipe and
-// initialises GPU/NDI. Subsequent calls are pure memory reads.
 RS_ERROR rs_getStreams(StreamDescriptions* out, uint32_t* nBytes) {
     auto& topo = rs::Topology::Instance();
 
@@ -152,7 +145,6 @@ RS_ERROR rs_getStreams(StreamDescriptions* out, uint32_t* nBytes) {
     const auto& streams = topo.All();
     const int n = static_cast<int>(streams.size());
 
-    // Compute string pool size
     size_t str_pool_total = 0;
     for (const auto& s : streams)
         str_pool_total += s.bytes();

@@ -29,11 +29,11 @@ static constexpr int kTickPort = 9581;
 static constexpr double kFps = 60.0;
 
 const char* kEngineExe =
-    "C:/Program Files/Epic Games/UE_5.5/Engine/Binaries/Win64/UnrealEditor.exe";
-    // "D:/Epic Games/UE_5.5/Engine/Binaries/Win64/UnrealEditor.exe";
+    // "C:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor.exe";
+    "D:/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor.exe";
 const char* kProjectPath =
-    // "E:/Assets/Unreal Projects/nDisplay_Demo_55/nDisplay_Demo.uproject";
-    "C:/Users/hido/Documents/Unreal Projects/nDisplay_Demo_55/nDisplay_Demo.uproject";
+    // "E:/Assets/Unreal Projects/nDisplay_Demo_57/nDisplay_Demo.uproject";
+    "D:/Unreal Projects/nDisplay_Demo_57/nDisplay_Demo.uproject";
 const char* kNodeName = "node0";
 
 //  Viewport layout (2x2 grid)

@@ -43,11 +43,11 @@ struct NodeConfig {
 
 static const NodeConfig kNodes[] = {
     {"node0",
-     "D:/Epic Games/UE_5.5/Engine/Binaries/Win64/UnrealEditor.exe",
-     "E:/Assets/Unreal Projects/nDisplay_Demo_55/nDisplay_Demo.uproject"},
+     "D:/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor.exe",
+     "D:/Unreal Projects/nDisplay_Demo_57/nDisplay_Demo.uproject"},
     {"node1",
-     "C:/Program Files/Epic Games/UE_5.5/Engine/Binaries/Win64/UnrealEditor.exe",
-     "C:/Users/hido/Documents/Unreal Projects/nDisplay_Demo_55/nDisplay_Demo.uproject"},
+     "C:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor.exe",
+     "C:/Users/hido/Documents/Unreal Projects/nDisplay_Demo_57/nDisplay_Demo.uproject"},
 };
 
 // ── Camera rigs ─────────────────────────────────────────────────
