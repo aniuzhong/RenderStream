@@ -17,7 +17,7 @@ const std::vector<stream_description>& Streams() {
 }
 
 bool LoadStreamsFromRemote() {
-    HANDLE pipe = CreateFileA("\\\\.\\pipe\\rs_streams",
+    HANDLE pipe = CreateFileW(L"\\\\.\\pipe\\rs_streams",
                               GENERIC_READ,
                               0,
                               nullptr,

@@ -3,7 +3,7 @@
 #include <spdlog/spdlog.h>
 
 namespace {
-constexpr const char* kPipeName = R"(\\.\pipe\rs_streams)";
+constexpr const wchar_t* kPipeName = L"\\\\.\\pipe\\rs_streams";
 
 int64_t NowMs() {
     using namespace std::chrono;
@@ -61,7 +61,7 @@ void PipeServer::BeginAccept() {
     if (!running_)
         return;
 
-    HANDLE hPipe = CreateNamedPipeA(
+    HANDLE hPipe = CreateNamedPipeW(
         kPipeName,
         PIPE_ACCESS_OUTBOUND | FILE_FLAG_OVERLAPPED,
         PIPE_TYPE_BYTE | PIPE_READMODE_BYTE,
@@ -69,7 +69,7 @@ void PipeServer::BeginAccept() {
         4096, 4096, 0, nullptr);
 
     if (hPipe == INVALID_HANDLE_VALUE) {
-        spdlog::error("pipe: CreateNamedPipeA failed (err={})", GetLastError());
+        spdlog::error("pipe: CreateNamedPipeW failed (err={})", GetLastError());
         // Retry after a delay on io_context
         auto timer = std::make_shared<asio::steady_timer>(io_);
         timer->expires_after(std::chrono::seconds(1));

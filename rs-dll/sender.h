@@ -12,12 +12,6 @@
 
 namespace rs {
 
-// Singleton output sender — one instance per DLL.
-// Owns N NDI send instances, one per layer, each with its own resolution.
-//
-// Pixel path: callers submit CPU pointers (persistently mapped D3D12
-// readback buffers) that remain valid until the next send on the same
-// layer (caller must double-buffer).
 class Sender {
 public:
     ~Sender();
@@ -25,20 +19,12 @@ public:
     Sender(const Sender&) = delete;
     Sender& operator=(const Sender&) = delete;
 
-    // Configure per-layer output sources from stream configuration.
     void Configure(const std::string& name, int device_id);
-
-    // Start all layers. Row pitch is computed from stream max resolution.
     bool Start();
     void Stop();
     bool IsStarted() const { return started_; }
-
-    // |data| must stay valid until the next Send on the same layer.
     void Send(int layer_id, const uint8_t* data, size_t byte_count);
-
-    // Convenience: send an entire double-buffered pack from the GPU.
     void SendPack(const std::vector<rs::FrameBuffer>& pack);
-
     size_t LayerCount() const { return layers_.size(); }
 
 private:
