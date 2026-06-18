@@ -1,18 +1,42 @@
-#include "d3renderstream.h"
-#include "d3renderstream.hpp"
-
 #include <winsock2.h>
 #include <windows.h>
+#include <shellapi.h>
 
 #include <cstring>
 #include <memory>
 
+#include "d3renderstream.h"
+#include "d3renderstream.hpp"
 #include "gpgpu.h"
 #include "logging.h"
 #include "sender.h"
 #include "streams.h"
 #include "driven.h"
 #include "link.h"
+
+static std::string GetArg(const wchar_t* key) {
+    int argc = 0;
+    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    if (!argv)
+        return {};
+
+    std::wstring prefix = L"-";
+    prefix += key;
+    prefix += L"=";
+
+    std::string result;
+    for (int i = 0; i < argc; ++i) {
+        std::wstring_view arg(argv[i]);
+        if (arg.starts_with(prefix)) {
+            std::wstring val(arg.substr(prefix.size()));
+            for (wchar_t c : val)
+                result += static_cast<char>(c);
+            break;
+        }
+    }
+    LocalFree(argv);
+    return result;
+}
 
 static rs::Link* g_link = nullptr;
 
@@ -160,7 +184,13 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getStreams(StreamDescriptions* out, 
             rs::log::Error("[rs_getStreams] LoadStreamsFromRemote failed");
             return RS_ERROR_NOTFOUND;
         }
-        rs::InitPipeline();
+
+        std::string prefix = GetArg(L"dc_node");
+        rs::GetSender().Stop();
+        rs::GetSender().Configure(prefix, 0);
+        rs::GetSender().Start();
+        rs::log::Info("[rs_getStreams] NDI started: %zu layers, prefix '%s'",
+                      rs::Streams().size(), prefix.empty() ? "(none)" : prefix.c_str());
     }
 
     const auto& loaded = rs::Streams();

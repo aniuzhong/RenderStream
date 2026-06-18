@@ -51,6 +51,7 @@ private:
 
     struct Layer {
         NDIlib_send_instance_t  instance        = nullptr;
+        std::string             channel;
         int                     width           = 0;
         int                     height          = 0;
         int                     conn_count      = -1;

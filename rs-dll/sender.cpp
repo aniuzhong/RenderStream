@@ -54,9 +54,10 @@ void Sender::Configure(const std::string& name, int device_id) {
         int cw = static_cast<int>(static_cast<float>(s.width) * (s.clipping.right - s.clipping.left));
         int ch = static_cast<int>(static_cast<float>(s.height) * (s.clipping.bottom - s.clipping.top));
         auto& l = layers_[i];
-        l.width  = cw;
-        l.height = ch;
-        rs::log::Info("[Sender] Configure: layer %d -> %dx%d", i, cw, ch);
+        l.channel = s.channel;
+        l.width   = cw;
+        l.height  = ch;
+        rs::log::Info("[Sender] Configure: layer %d channel='%s' %dx%d", i, l.channel.c_str(), cw, ch);
     }
 }
 
@@ -80,8 +81,10 @@ bool Sender::Start() {
 
     for (auto& [layer_id, l] : layers_) {
         char ndi_name[256];
-        snprintf(ndi_name, sizeof(ndi_name), "%s_%d_%d",
-                 name_.c_str(), device_id_, layer_id);
+        if (!name_.empty())
+            snprintf(ndi_name, sizeof(ndi_name), "%s_%s", name_.c_str(), l.channel.c_str());
+        else
+            snprintf(ndi_name, sizeof(ndi_name), "%s", l.channel.c_str());
 
         NDIlib_send_create_t desc = {ndi_name, nullptr};
         l.instance = NDIlib_send_create(&desc);

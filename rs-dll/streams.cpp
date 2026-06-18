@@ -1,14 +1,12 @@
 #include "streams.h"
 
 #include <Windows.h>
-#include <shellapi.h>
 
 #include <cstring>
 
 #include <nlohmann/json.hpp>
 
 #include "logging.h"
-#include "sender.h"
 
 namespace rs {
 
@@ -16,30 +14,6 @@ static std::vector<stream_description> g_streams;
 
 const std::vector<stream_description>& Streams() {
     return g_streams;
-}
-
-static std::string GetArg(const wchar_t* key) {
-    int argc = 0;
-    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-    if (!argv)
-        return {};
-
-    std::wstring prefix = L"-";
-    prefix += key;
-    prefix += L"=";
-
-    std::string result;
-    for (int i = 0; i < argc; ++i) {
-        std::wstring_view arg(argv[i]);
-        if (arg.starts_with(prefix)) {
-            std::wstring val(arg.substr(prefix.size()));
-            for (wchar_t c : val)
-                result += static_cast<char>(c);
-            break;
-        }
-    }
-    LocalFree(argv);
-    return result;
 }
 
 bool LoadStreamsFromRemote() {
@@ -104,26 +78,6 @@ bool LoadStreamsFromRemote() {
         rs::log::Error("[Streams] LoadStreamsFromRemote: JSON parse error: %s", e.what());
         return false;
     }
-}
-
-void InitPipeline() {
-    char hostname[128] = "rs";
-    DWORD sz = sizeof(hostname);
-    if (!GetComputerNameA(hostname, &sz))
-        snprintf(hostname, sizeof(hostname), "rs");
-
-    std::string dc_node = GetArg(L"dc_node");
-    char ndi_name[256];
-    if (!dc_node.empty())
-        snprintf(ndi_name, sizeof(ndi_name), "%s_%s", dc_node.c_str(), hostname);
-    else
-        snprintf(ndi_name, sizeof(ndi_name), "%s", hostname);
-
-    rs::GetSender().Stop();
-    rs::GetSender().Configure(ndi_name, 0);
-    rs::GetSender().Start();
-
-    rs::log::Info("[Streams] pipeline initialized: %zu layers, NDI name '%s'", g_streams.size(), ndi_name);
 }
 
 }  // namespace rs
