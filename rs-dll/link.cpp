@@ -1,14 +1,10 @@
-#include "link.h"
-#include "d3renderstream.hpp"
-#include "logging.h"
-
 #include <nlohmann/json.hpp>
 
-namespace rs {
+#include "d3renderstream.hpp"
+#include "link.h"
+#include "logging.h"
 
-// ============================================================
-// Session
-// ============================================================
+namespace rs {
 
 Session::Session(asio::ip::tcp::socket socket,
                  TickHandler on_tick,
@@ -90,10 +86,6 @@ void Session::DoWrite() {
             self->DoWrite();
         });
 }
-
-// ============================================================
-// Link
-// ============================================================
 
 Link::Link()
     : acceptor_(io_, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), kPort))
@@ -182,8 +174,10 @@ void Link::SendFrameResponseData(const CameraResponseData& data) {
 }
 
 void Link::SetNewStatusMessage(const std::string& text) {
-    if (!session_) return;
-    if (text == last_status_) return;
+    if (!session_)
+        return;
+    if (text == last_status_)
+        return;
     last_status_ = text;
     nlohmann::json j;
     j["type"] = "Status";

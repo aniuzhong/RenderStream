@@ -1,8 +1,5 @@
 #pragma once
 
-#include "driven.h"
-#include "d3renderstream.hpp"
-
 #include <asio.hpp>
 
 #include <condition_variable>
@@ -13,6 +10,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#include "d3renderstream.hpp"
 
 namespace rs {
 
@@ -44,15 +43,15 @@ private:
     bool                                     writing_ = false;
 };
 
-class Link : public IDriven {
+class Link {
 public:
     static constexpr uint16_t kPort = 9581;
 
     Link();
     ~Link();
 
-    RS_ERROR AwaitFrame(int timeoutMs, FrameData* data) override;
-    RS_ERROR GetCamera(StreamHandle handle, CameraData* out) override;
+    RS_ERROR AwaitFrame(int timeoutMs, FrameData* data);
+    RS_ERROR GetCamera(StreamHandle handle, CameraData* out);
 
     bool HasSession() const;
     void SetFollower(bool is_follower);

@@ -16,7 +16,6 @@ add_library(renderstream SHARED
     renderstream.cpp
     streams.cpp
     link.cpp
-    driven.cpp
 )
 
 set_target_properties(renderstream PROPERTIES
