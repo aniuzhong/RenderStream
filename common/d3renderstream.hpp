@@ -131,7 +131,7 @@ inline size_t measure_c_str(size_t& off, const std::string& s) {
 }
 
 // Write one string into flat buffer at |base[off]|, set output pointer,
-// advance |off|.  Empty string → nullptr.
+// advance |off|.  Empty string -> nullptr.
 inline void write_c_str(uint8_t* base, size_t& off, const std::string& s, const char** out) {
     if (s.empty()) {
         *out = nullptr;

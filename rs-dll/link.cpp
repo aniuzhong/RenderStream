@@ -42,7 +42,7 @@ void Session::OnRead(const std::error_code& ec, size_t n) {
         rs::log::Info("[Session] disconnected: %s", ec.message().c_str());
         if (on_disconnect_)
             on_disconnect_();
-        return;  // Session refcount → 0, auto-destruct
+        return;  // Session refcount -> 0, auto-destruct
     }
 
     std::istream is(&read_buf_);

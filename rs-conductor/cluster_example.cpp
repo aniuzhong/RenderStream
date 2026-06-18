@@ -97,7 +97,7 @@ static std::string LogDir() {
 static void SetupConductorCallbacks(Conductor& c, const char* tag) {
     auto dir = LogDir();
 
-    // Frame ack → file
+    // Frame ack -> file
     auto frame_log = spdlog::basic_logger_mt(
         fmt::format("{}_frame", tag),
         fmt::format("{}/{}.frame.log", dir, tag));
@@ -107,7 +107,7 @@ static void SetupConductorCallbacks(Conductor& c, const char* tag) {
             ack.tTracked, ack.camera.id, ack.camera.x, ack.camera.y, ack.camera.z);
     };
 
-    // UE log → file
+    // UE log -> file
     auto ue_log = spdlog::basic_logger_mt(
         fmt::format("{}_ue", tag),
         fmt::format("{}/{}.ue.log", dir, tag));
@@ -116,7 +116,7 @@ static void SetupConductorCallbacks(Conductor& c, const char* tag) {
         ue_log->info("{}", text);
     };
 
-    // Profiling → stdout, throttled
+    // Profiling -> stdout, throttled
     auto prof_out = spdlog::stdout_color_mt(fmt::format("{}_prof", tag));
     prof_out->set_pattern(fmt::format("[%n] %v"));
     auto prof_counter = std::make_shared<int>(0);
@@ -138,7 +138,7 @@ static void SetupConductorCallbacks(Conductor& c, const char* tag) {
             tag, frame_time, fps, gpu_time, await_time);
     };
 
-    // Status → stdout
+    // Status -> stdout
     auto stat_out = spdlog::stdout_color_mt(fmt::format("{}_stat", tag));
     stat_out->set_pattern(fmt::format("[%n] %v"));
     c.on_status = [stat_out, tag](const std::string& text) {
@@ -254,8 +254,8 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "ERROR: need both .217 and .246, got %d\n", assigned);
         RS_FreeNodeList(&list); WSACleanup(); return 1;
     }
-    fprintf(stderr, "  node0 (primary) → %s (%s)\n", nodes[0].name, nodes[0].ip);
-    fprintf(stderr, "  node1 (secondary) → %s (%s)\n\n", nodes[1].name, nodes[1].ip);
+    fprintf(stderr, "  node0 (primary) -> %s (%s)\n", nodes[0].name, nodes[0].ip);
+    fprintf(stderr, "  node1 (secondary) -> %s (%s)\n\n", nodes[1].name, nodes[1].ip);
 
     // 2. Schema
     fprintf(stderr, "Querying schema from %s...\n", nodes[0].name);
@@ -311,7 +311,7 @@ int main(int argc, char* argv[]) {
     fprintf(stderr, "\n");
 
     // 6. Create conductors
-    fprintf(stderr, "Logs → %s\n\n", LogDir().c_str());
+    fprintf(stderr, "Logs -> %s\n\n", LogDir().c_str());
 
     std::vector<std::unique_ptr<Conductor>> conductors;
     std::vector<std::thread> threads;

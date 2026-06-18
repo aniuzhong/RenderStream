@@ -17,16 +17,18 @@ struct FrameBuffer {
     int              layer_id       = 0;
 };
 
-// Manages D3D12 command submission and GPU→CPU readback.
+// Manages D3D12 command submission and GPU->CPU readback.
 // Owns allocators, fences, command lists, and the persistently mapped
 // readback buffer pool used by rs_sendFrame2.
 class GpuContext {
 public:
+    static GpuContext& Instance();
+
     ~GpuContext();
     bool Initialize(ID3D12Device* device, ID3D12CommandQueue* queue);
     void Shutdown();
 
-    // Queue a texture→readback copy for one layer.
+    // Queue a texture->readback copy for one layer.
     // Clipping is read from the stream list per-layer.
     bool SubmitFrame(const SenderFrame* frame, int layer_key);
 
@@ -74,7 +76,5 @@ private:
     int                      image_index_     = 0;
     bool                     frame_complete_  = false;
 };
-
-GpuContext& GetGpu();
 
 }  // namespace rs

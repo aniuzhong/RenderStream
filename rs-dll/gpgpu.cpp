@@ -11,7 +11,7 @@
 
 namespace rs {
 
-GpuContext& GetGpu() {
+GpuContext& GpuContext::Instance() {
     static GpuContext instance;
     static bool s_logged = false;
     if (!s_logged) { rs::log::Info("[GPU] GpuContext singleton created at %p", &instance); s_logged = true; }
@@ -95,7 +95,8 @@ void GpuContext::EnsureResources() {
 
 bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
     assert(frame);
-    if (!device_ || !queue_ || !frame) return false;
+    if (!device_ || !queue_ || !frame)
+        return false;
 
     const auto& streams = Streams();
     assert(!streams.empty() && "Streams must be loaded before SubmitFrame");
@@ -114,8 +115,10 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
     assert(tex_w > 0 && tex_h > 0);
 
     // Clamp layer key.
-    if (layer_key < 0) layer_key = 0;
-    if (layer_key >= kMaxLayers) layer_key = kMaxLayers - 1;
+    if (layer_key < 0)
+        layer_key = 0;
+    if (layer_key >= kMaxLayers)
+        layer_key = kMaxLayers - 1;
     assert(layer_key < static_cast<int>(streams.size()));
 
     const ProjectionClipping& clip = streams[layer_key].clipping;
@@ -129,8 +132,7 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
 
     // Compute copy region.
     D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint;
-    device_->GetCopyableFootprints(&desc, 0, 1, 0, &footprint,
-                                   nullptr, nullptr, &buffer_size_);
+    device_->GetCopyableFootprints(&desc, 0, 1, 0, &footprint, nullptr, nullptr, &buffer_size_);
 
     D3D12_BOX box;
     box.left   = static_cast<UINT>(static_cast<float>(tex_w) * clip.left);
@@ -156,24 +158,22 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
 
     // CRITICAL: verify the pool buffer can hold this copy.
     // GPU writes total_bytes using rb_row_pitch_ stride. If the pool is too small
-    // or the pitch mismatches, the GPU will write past the buffer → heap corruption.
-    assert(rb_row_pitch_ >= static_cast<UINT>(row_pitch) &&
-           "readback pool row_pitch must be >= requested row_pitch");
-    assert(rb_buffer_bytes_ >= total_bytes &&
-           "readback pool buffer must be large enough for total_bytes");
+    // or the pitch mismatches, the GPU will write past the buffer -> heap corruption.
+    assert(rb_row_pitch_ >= static_cast<UINT>(row_pitch) && "readback pool row_pitch must be >= requested row_pitch");
+    assert(rb_buffer_bytes_ >= total_bytes && "readback pool buffer must be large enough for total_bytes");
     {
         // Total bytes GPU will write = rb_row_pitch_ * (Height-1) + Width * 4
         const UINT64 gpu_write_bytes = static_cast<UINT64>(rb_row_pitch_) * (footprint.Footprint.Height - 1)
                                        + static_cast<UINT64>(footprint.Footprint.Width) * 4;
-        assert(gpu_write_bytes <= rb_buffer_bytes_ &&
-               "GPU copy footprint must fit within readback buffer");
+        assert(gpu_write_bytes <= rb_buffer_bytes_ && "GPU copy footprint must fit within readback buffer");
     }
 
     // Queue GPU copy.
     const int bank = rb_next_bank_[layer_key];
     ID3D12Resource* rb_buf = rb_res_[layer_key][bank];
     assert(rb_buf && "readback buffer resource must exist");
-    if (!rb_buf) return false;
+    if (!rb_buf)
+        return false;
 
     // Verify the mapped CPU pointer is within the expected allocation.
     // This catches cases where the buffer was unmapped or reallocated without updating rb_cpu_.
@@ -216,10 +216,10 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
         reset_command_ = true;
 
         // The "other" pack is the one from the PREVIOUS submission.
-        // On the first frame data_pack_index_ is -1 → other = 0 → empty → no wait.
+        // On the first frame data_pack_index_ is -1 -> other = 0 -> empty -> no wait.
         int other = (data_pack_index_ + 1) % 2;
 
-        // ── diagnostic: GPU fence wait timing ──
+        // diagnostic: GPU fence wait timing
         {
             static int s_frame = 0;
             ++s_frame;
@@ -286,7 +286,7 @@ std::vector<FrameBuffer> GpuContext::ConsumeReadyPack() {
     // data_pack_index_ points to the next write pack (after swap).
     // The completed pack is (data_pack_index_ + 1) % 2.
     int ready_idx = (data_pack_index_ + 1) % 2;
-    if (ready_idx < 0) ready_idx = 0;  // safety: data_pack_index_ = -1 → ready_idx = 0
+    if (ready_idx < 0) ready_idx = 0;  // safety: data_pack_index_ = -1 -> ready_idx = 0
     std::vector<FrameBuffer> result = std::move(data_pack_[ready_idx]);
     data_pack_[ready_idx].clear();
 
@@ -332,8 +332,7 @@ void GpuContext::ReleaseReadbackPool() {
     rb_buffer_bytes_ = 0;
 }
 
-bool GpuContext::EnsureReadbackPool(int frame_w, int frame_h,
-                                    UINT req_row_pitch, UINT64 req_total_bytes) {
+bool GpuContext::EnsureReadbackPool(int frame_w, int frame_h, UINT req_row_pitch, UINT64 req_total_bytes) {
     if (!device_) return false;
     assert(req_row_pitch > 0 && req_total_bytes > 0 && "readback pool request must have positive size");
 
@@ -354,7 +353,7 @@ bool GpuContext::EnsureReadbackPool(int frame_w, int frame_h,
 
     UINT fp_w = static_cast<UINT>(res_w);
     UINT fp_h = static_cast<UINT>(res_h);
-    UINT row_pitch   = Align(fp_w * 4, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
+    UINT row_pitch = Align(fp_w * 4, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
     UINT64 total_bytes = static_cast<UINT64>(row_pitch) * fp_h;
 
     row_pitch   = (std::max)(row_pitch,   req_row_pitch);

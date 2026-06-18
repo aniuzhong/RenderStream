@@ -14,7 +14,7 @@
 Conductor::Conductor(const char* node_ip, int tick_port, const char* tag)
     : tag_(tag), node_ip_(node_ip), tick_port_(tick_port) {
 
-    // Default callbacks → stdout.
+    // Default callbacks -> stdout.
     // spdlog::get() retrieves the same logger for lifecycle messages.
     auto out = spdlog::stdout_color_mt(tag_);
     out->set_pattern("[%n] %v");

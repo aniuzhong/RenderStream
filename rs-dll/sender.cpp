@@ -47,7 +47,6 @@ bool Sender::Start(const std::string& dc_node) {
     std::lock_guard lock(mutex_);
     StopLocked();
 
-    // Configure from streams
     dc_node_ = dc_node;
     layers_.clear();
 
@@ -68,7 +67,6 @@ bool Sender::Start(const std::string& dc_node) {
         return true;
     }
 
-    // Create NDI senders
     int max_w = 0;
     for (const auto& [id, l] : layers_)
         max_w = (std::max)(max_w, l.width);

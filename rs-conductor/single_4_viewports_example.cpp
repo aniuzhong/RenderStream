@@ -33,6 +33,7 @@ const char* kEngineExe =
     "D:/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor.exe";
 const char* kProjectPath =
     // "E:/Assets/Unreal Projects/nDisplay_Demo_57/nDisplay_Demo.uproject";
+    // "C:/Users/hido/Documents/Unreal Projects/nDisplay_Demo_57/nDisplay_Demo.uproject";
     "D:/Unreal Projects/nDisplay_Demo_57/nDisplay_Demo.uproject";
 const char* kNodeName = "node0";
 

@@ -75,7 +75,7 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_shutdown() {
     g_link = nullptr;
     rs::SetDriven(nullptr);
     rs::log::Info("[rs_shutdown] step 2/4: shutting down GPU...");
-    rs::GetGpu().Shutdown();
+    rs::GpuContext::Instance().Shutdown();
     rs::log::Info("[rs_shutdown] step 3/4: stopping NDI senders...");
     rs::Sender::Instance().Stop();
     rs::log::Info("[rs_shutdown] step 4/4: destroying NDI library...");
@@ -110,7 +110,7 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithVulkanDevice(VkDe
 }
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX12DeviceAndQueue(ID3D12Device* device, ID3D12CommandQueue* queue) {
-    if (!rs::GetGpu().Initialize(device, queue)) {
+    if (!rs::GpuContext::Instance().Initialize(device, queue)) {
         rs::log::Error("rs_initialiseGpGpuWithDX12DeviceAndQueue: GPU init failed");
         return RS_ERROR_UNSPECIFIED;
     }
@@ -314,10 +314,10 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointNames(uint64_t schem
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_sendFrame2(StreamHandle streamHandle, const SenderFrame* frame, const FrameResponseData* frameData) {
     int layer_key = static_cast<int>(streamHandle) - 1;
 
-    if (!rs::GetGpu().SubmitFrame(frame, layer_key))
+    if (!rs::GpuContext::Instance().SubmitFrame(frame, layer_key))
         return RS_ERROR_UNSPECIFIED;
 
-    auto ready_pack = rs::GetGpu().ConsumeReadyPack();
+    auto ready_pack = rs::GpuContext::Instance().ConsumeReadyPack();
     for (const auto& buf : ready_pack) {
         if (buf.cpu_base)
             rs::Sender::Instance().Send(buf.layer_id, buf.cpu_base);
