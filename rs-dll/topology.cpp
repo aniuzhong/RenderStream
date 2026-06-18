@@ -9,13 +9,14 @@
 
 namespace rs {
 
-Topology& Topology::Instance() {
-    static Topology inst;
-    return inst;
+static std::vector<stream_description> g_streams;
+
+const std::vector<stream_description>& Streams() {
+    return g_streams;
 }
 
-bool Topology::LoadFromRemote() {
-    rs::log::Info("[Topology] LoadFromRemote: connecting to rs-agent pipe...");
+bool LoadStreamsFromRemote() {
+    rs::log::Info("[Streams] LoadFromRemote: connecting to rs-agent pipe...");
 
     HANDLE pipe = INVALID_HANDLE_VALUE;
     for (int retry = 0; retry < 10; ++retry) {
@@ -26,12 +27,12 @@ bool Topology::LoadFromRemote() {
         if (GetLastError() != ERROR_PIPE_BUSY &&
             GetLastError() != ERROR_FILE_NOT_FOUND)
             break;
-        rs::log::Info("[Topology] LoadFromRemote: pipe busy/not found, retry %d/10...", retry + 1);
+        rs::log::Info("[Streams] LoadFromRemote: pipe busy/not found, retry %d/10...", retry + 1);
         Sleep(500);
     }
 
     if (pipe == INVALID_HANDLE_VALUE) {
-        rs::log::Error("[Topology] LoadFromRemote: cannot open pipe (err=%lu)", GetLastError());
+        rs::log::Error("[Streams] LoadFromRemote: cannot open pipe (err=%lu)", GetLastError());
         return false;
     }
 
@@ -43,7 +44,7 @@ bool Topology::LoadFromRemote() {
     CloseHandle(pipe);
 
     if (json_str.empty()) {
-        rs::log::Error("[Topology] LoadFromRemote: empty response from pipe");
+        rs::log::Error("[Streams] LoadFromRemote: empty response from pipe");
         return false;
     }
 
@@ -52,17 +53,16 @@ bool Topology::LoadFromRemote() {
         std::vector<stream_description> parsed = j["streams"].get<std::vector<stream_description>>();
 
         if (parsed.empty()) {
-            rs::log::Error("[Topology] LoadFromRemote: no streams in pipe data");
+            rs::log::Error("[Streams] LoadFromRemote: no streams in pipe data");
             return false;
         }
 
-        streams_ = std::move(parsed);
-        ++version_;
+        g_streams = std::move(parsed);
 
-        rs::log::Info("[Topology] LoadFromRemote: %zu streams, version=%u", streams_.size(), version_);
-        for (size_t i = 0; i < streams_.size(); ++i) {
-            const auto& s = streams_[i];
-            rs::log::Info("[Topology]   stream[%zu] '%s' chan='%s' %dx%d fmt=%d handle=%llu clip=[%.2f,%.2f,%.2f,%.2f]",
+        rs::log::Info("[Streams] LoadFromRemote: %zu streams", g_streams.size());
+        for (size_t i = 0; i < g_streams.size(); ++i) {
+            const auto& s = g_streams[i];
+            rs::log::Info("[Streams]   stream[%zu] '%s' chan='%s' %dx%d fmt=%d handle=%llu clip=[%.2f,%.2f,%.2f,%.2f]",
                           i, s.name.c_str(), s.channel.c_str(),
                           s.width, s.height, static_cast<int>(s.format),
                           static_cast<unsigned long long>(s.handle),
@@ -70,20 +70,14 @@ bool Topology::LoadFromRemote() {
         }
         return true;
     } catch (const std::exception& e) {
-        rs::log::Error("[Topology] LoadFromRemote: JSON parse error: %s", e.what());
+        rs::log::Error("[Streams] LoadFromRemote: JSON parse error: %s", e.what());
         return false;
     }
 }
 
-void Topology::LoadFromCache(const std::vector<stream_description>& streams) {
-    streams_ = streams;
-    ++version_;
-    rs::log::Info("[Topology] LoadFromCache: %zu streams, version=%u", streams_.size(), version_);
-}
-
-void Topology::MaxResolution(int* w, int* h) const {
+void MaxResolution(int* w, int* h) {
     int mw = 0, mh = 0;
-    for (const auto& s : streams_) {
+    for (const auto& s : g_streams) {
         mw = (std::max)(mw, static_cast<int>(s.width));
         mh = (std::max)(mh, static_cast<int>(s.height));
     }
@@ -97,7 +91,7 @@ static std::string ParseDcNode() {
     std::wstring ws(cmd);
     auto pos = ws.find(L"-dc_node=");
     if (pos == std::wstring::npos) return "";
-    pos += 9;  // skip "-dc_node="
+    pos += 9;
     auto end = ws.find(L' ', pos);
     if (end == std::wstring::npos) end = ws.size();
     std::wstring node = ws.substr(pos, end - pos);
@@ -107,8 +101,6 @@ static std::string ParseDcNode() {
 }
 
 static void InitPipelineFromTopology() {
-    auto& topo = Topology::Instance();
-
     char hostname[128] = "rs";
     DWORD sz = sizeof(hostname);
     if (!GetComputerNameA(hostname, &sz))
@@ -125,28 +117,28 @@ static void InitPipelineFromTopology() {
     rs::GetSender().Configure(ndi_name, 0);
     rs::GetSender().Start();
 
-    rs::log::Info("[Topology] pipeline initialized: %d layers, NDI name '%s'", topo.Count(), ndi_name);
+    rs::log::Info("[Streams] pipeline initialized: %zu layers, NDI name '%s'", g_streams.size(), ndi_name);
 }
 
 }  // namespace rs
 
 RS_ERROR rs_getStreams(StreamDescriptions* out, uint32_t* nBytes) {
-    auto& topo = rs::Topology::Instance();
+    const auto& streams = rs::Streams();
 
-    if (!topo.IsLoaded()) {
+    if (streams.empty()) {
         rs::log::Info("[rs_getStreams] first call — lazy init...");
-        if (!topo.LoadFromRemote()) {
+        if (!rs::LoadStreamsFromRemote()) {
             rs::log::Error("[rs_getStreams] LoadFromRemote failed");
             return RS_ERROR_NOTFOUND;
         }
         rs::InitPipelineFromTopology();
     }
 
-    const auto& streams = topo.All();
-    const int n = static_cast<int>(streams.size());
+    const auto& loaded = rs::Streams();
+    const int n = static_cast<int>(loaded.size());
 
     size_t str_pool_total = 0;
-    for (const auto& s : streams)
+    for (const auto& s : loaded)
         str_pool_total += s.bytes();
 
     const uint32_t header_size = static_cast<uint32_t>(sizeof(StreamDescriptions));
@@ -167,7 +159,7 @@ RS_ERROR rs_getStreams(StreamDescriptions* out, uint32_t* nBytes) {
     char* str_pool = reinterpret_cast<char*>(sd + n);
 
     for (int i = 0; i < n; ++i) {
-        rs::stream_description src = streams[i];
+        rs::stream_description src = loaded[i];
         if (src.handle == 0)
             src.handle = static_cast<uint64_t>(i + 1);
         size_t written = src.to_c(&sd[i], str_pool);

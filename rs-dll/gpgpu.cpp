@@ -97,8 +97,8 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
     assert(frame);
     if (!device_ || !queue_ || !frame) return false;
 
-    auto& topo = Topology::Instance();
-    assert(topo.Count() > 0 && "Topology must be loaded before SubmitFrame");
+    const auto& streams = Streams();
+    assert(!streams.empty() && "Streams must be loaded before SubmitFrame");
 
     // Extract D3D12 texture from the Disguise SenderFrame.
     ID3D12Resource* tex = nullptr;
@@ -116,9 +116,9 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
     // Clamp layer key.
     if (layer_key < 0) layer_key = 0;
     if (layer_key >= kMaxLayers) layer_key = kMaxLayers - 1;
-    assert(layer_key < topo.Count());
+    assert(layer_key < static_cast<int>(streams.size()));
 
-    const ProjectionClipping& clip = topo.At(layer_key).clipping;
+    const ProjectionClipping& clip = streams[layer_key].clipping;
 
     // Reset command allocator + list if needed.
     if (reset_command_) {
@@ -206,7 +206,7 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
     data_pack_[data_pack_index_ == 0 ? 0 : 1].push_back(buf);
 
     // Check if this was the last layer of the frame.
-    if (image_index_ == (topo.Count() - 1)) {
+    if (image_index_ == (static_cast<int>(streams.size()) - 1)) {
         // Close, execute, signal.
         cmd_list_->Close();
         ID3D12CommandList* lists[] = { cmd_list_ };
@@ -269,7 +269,7 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
         command_index_ = (command_index_ + 1) % 2;
         frame_complete_ = true;
     }
-    image_index_ = (image_index_ + 1) % topo.Count();
+    image_index_ = (image_index_ + 1) % static_cast<int>(streams.size());
     return true;
 }
 
@@ -343,7 +343,7 @@ bool GpuContext::EnsureReadbackPool(int frame_w, int frame_h,
     // rs::log::Info("[GPU] EnsureReadbackPool: frame=%dx%d layout=%dx%d req_pitch=%u req_bytes=%llu", frame_w, frame_h, layout_.width, layout_.height, req_row_pitch, req_total_bytes);
 
     int topo_w, topo_h;
-    Topology::Instance().MaxResolution(&topo_w, &topo_h);
+    MaxResolution(&topo_w, &topo_h);
     res_w = (std::max)(res_w, topo_w);
     res_h = (std::max)(res_h, topo_h);
 
@@ -360,7 +360,7 @@ bool GpuContext::EnsureReadbackPool(int frame_w, int frame_h,
 
     // rs::log::Info("[GPU] EnsureReadbackPool: final row_pitch=%u total_bytes=%llu (layers=%d)", row_pitch, total_bytes, layout_.n_layers);
 
-    int n_l = Topology::Instance().Count();
+    int n_l = static_cast<int>(Streams().size());
     if (n_l <= 0) n_l = 1;
     if (n_l > kMaxLayers)
         n_l = kMaxLayers;

@@ -1,7 +1,6 @@
 #include "link.h"
 #include "d3renderstream.hpp"
 #include "logging.h"
-#include "topology.h"
 
 #include <nlohmann/json.hpp>
 
@@ -96,9 +95,8 @@ void Session::DoWrite() {
 // Link
 // ============================================================
 
-Link::Link(const Topology& topology)
-    : topology_(topology)
-    , acceptor_(io_, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), kPort))
+Link::Link()
+    : acceptor_(io_, asio::ip::tcp::endpoint(asio::ip::tcp::v4(), kPort))
 {
     rs::log::Info("[Link] listening on port %u", kPort);
     BeginAccept();
@@ -288,12 +286,9 @@ RS_ERROR Link::AwaitFrame(int timeoutMs, FrameData* data) {
     if (quit_)
         return RS_ERROR_QUIT;
 
-    const uint32_t current_version = topology_.Version();
-    const bool topology_changed = (current_version == 0 || current_version != last_topology_version_);
-
-    if (topology_changed) {
-        if (current_version > 0)
-            last_topology_version_ = current_version;
+    static bool topology_signaled = false;
+    if (!topology_signaled) {
+        topology_signaled = true;
         return RS_ERROR_STREAMS_CHANGED;
     }
 

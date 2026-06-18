@@ -48,9 +48,9 @@ void Sender::Configure(const std::string& name, int device_id) {
     device_id_ = device_id;
     layers_.clear();
 
-    auto& topo = Topology::Instance();
-    for (int i = 0; i < topo.Count(); ++i) {
-        const auto& s = topo.At(i);
+    const auto& streams = Streams();
+    for (int i = 0; i < static_cast<int>(streams.size()); ++i) {
+        const auto& s = streams[i];
         int cw = static_cast<int>(static_cast<float>(s.width) * (s.clipping.right - s.clipping.left));
         int ch = static_cast<int>(static_cast<float>(s.height) * (s.clipping.bottom - s.clipping.top));
         auto& l = layers_[i];
@@ -74,7 +74,7 @@ bool Sender::Start() {
     }
 
     int max_w, max_h;
-    Topology::Instance().MaxResolution(&max_w, &max_h);
+    MaxResolution(&max_w, &max_h);
     row_pitch_ = (static_cast<uint32_t>(max_w * 4) + 255) & ~255u;
 
     for (auto& [layer_id, l] : layers_) {

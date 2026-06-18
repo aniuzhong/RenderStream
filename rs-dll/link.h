@@ -16,8 +16,6 @@
 
 namespace rs {
 
-class Topology;
-
 class Session : public std::enable_shared_from_this<Session> {
 public:
     using TickHandler       = std::function<void(const std::string& line)>;
@@ -50,7 +48,7 @@ class Link : public IDriven {
 public:
     static constexpr uint16_t kPort = 9581;
 
-    explicit Link(const Topology& topology);
+    Link();
     ~Link();
 
     RS_ERROR AwaitFrame(int timeoutMs, FrameData* data) override;
@@ -72,9 +70,6 @@ private:
 
     void OnTick(const std::string& line);
     void OnDisconnect();
-
-    const Topology& topology_;
-    uint32_t        last_topology_version_ = 0;
 
     asio::io_context         io_;
     asio::ip::tcp::acceptor  acceptor_;

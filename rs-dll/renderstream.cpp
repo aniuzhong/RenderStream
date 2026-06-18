@@ -10,7 +10,6 @@
 #include "gpgpu.h"
 #include "logging.h"
 #include "sender.h"
-#include "topology.h"
 #include "driven.h"
 #include "link.h"
 
@@ -34,7 +33,7 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor,
 
     rs::log::Info("[rs_initialise] network tick mode");
     try {
-        auto link = std::make_unique<rs::Link>(rs::Topology::Instance());
+        auto link = std::make_unique<rs::Link>();
         g_link = link.get();
         rs::SetDriven(std::move(link));
     } catch (const std::exception& e) {

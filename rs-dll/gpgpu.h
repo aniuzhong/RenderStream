@@ -6,7 +6,6 @@
 #include <vector>
 
 #include "d3renderstream.h"
-#include "topology.h"
 
 namespace rs {
 
