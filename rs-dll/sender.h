@@ -1,12 +1,12 @@
 #pragma once
 
-#include "Processing.NDI.Lib.h"
-
 #include <cstdint>
 #include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+#include <Processing.NDI.Lib.h>
 
 #include "gpgpu.h"  // FrameBuffer
 
@@ -19,11 +19,11 @@ public:
     Sender(const Sender&) = delete;
     Sender& operator=(const Sender&) = delete;
 
-    void Configure(const std::string& name, int device_id);
+    void Configure(const std::string& name);
     bool Start();
     void Stop();
     bool IsStarted() const { return started_; }
-    void Send(int layer_id, const uint8_t* data, size_t byte_count);
+    void Send(int layer_id, const uint8_t* data);
     void SendPack(const std::vector<rs::FrameBuffer>& pack);
     size_t LayerCount() const { return layers_.size(); }
 
@@ -48,7 +48,6 @@ private:
     std::unordered_map<int, Layer>  layers_;
     mutable std::mutex              mtx_;
     std::string                     name_;
-    int                             device_id_      = 0;
     uint32_t                        row_pitch_      = 0;
     bool                            started_        = false;
 };

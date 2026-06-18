@@ -362,7 +362,7 @@ inline void from_json(const nlohmann::json& j, remote_parameter& p) {
     p.group        = j.value("group",       "");
     p.display_name = j.value("displayName", "");
     p.key          = j.value("key",         "");
-    auto raw_type  = j.value("type", 0u);
+    auto raw_type  = j.value("type",        0u);
     p.type         = (raw_type <= 6) ? static_cast<param_type>(raw_type) : param_type::number;
 
     switch (p.type) {

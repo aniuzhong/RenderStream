@@ -1,9 +1,10 @@
 #include "sender.h"
-#include "logging.h"
-#include "streams.h"
 
 #include <chrono>
 #include <cstdio>
+
+#include "logging.h"
+#include "streams.h"
 
 namespace rs {
 
@@ -42,10 +43,9 @@ void Sender::Stop() {
     rs::log::Info("[Sender] Stop: complete");
 }
 
-void Sender::Configure(const std::string& name, int device_id) {
+void Sender::Configure(const std::string& name) {
     std::lock_guard lock(mtx_);
-    name_      = name;
-    device_id_ = device_id;
+    name_ = name;
     layers_.clear();
 
     const auto& streams = Streams();
@@ -75,8 +75,8 @@ bool Sender::Start() {
     }
 
     int max_w = 0;
-    for (const auto& s : Streams())
-        max_w = (std::max)(max_w, static_cast<int>(s.width));
+    for (const auto& [id, l] : layers_)
+        max_w = (std::max)(max_w, l.width);
     row_pitch_ = (static_cast<uint32_t>(max_w * 4) + 255) & ~255u;
 
     for (auto& [layer_id, l] : layers_) {
@@ -109,8 +109,7 @@ bool Sender::Start() {
     return true;
 }
 
-void Sender::Send(int layer_id, const uint8_t* data, size_t byte_count) {
-    (void)byte_count;
+void Sender::Send(int layer_id, const uint8_t* data) {
     std::lock_guard lock(mtx_);
     if (!started_ || !data)
         return;
@@ -159,8 +158,7 @@ void Sender::SendPack(const std::vector<rs::FrameBuffer>& pack) {
     for (const auto& buf : pack) {
         if (!buf.cpu_base)
             continue;
-        const size_t n = buf.frame_bytes > 0 ? buf.frame_bytes : static_cast<size_t>(rs::GetGpu().block_size());
-        Send(buf.layer_id, buf.cpu_base, n);
+        Send(buf.layer_id, buf.cpu_base);
     }
 }
 

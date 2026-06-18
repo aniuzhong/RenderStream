@@ -187,7 +187,7 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getStreams(StreamDescriptions* out, 
 
         std::string prefix = GetArg(L"dc_node");
         rs::GetSender().Stop();
-        rs::GetSender().Configure(prefix, 0);
+        rs::GetSender().Configure(prefix);
         rs::GetSender().Start();
         rs::log::Info("[rs_getStreams] NDI started: %zu layers, prefix '%s'",
                       rs::Streams().size(), prefix.empty() ? "(none)" : prefix.c_str());
