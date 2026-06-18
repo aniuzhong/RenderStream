@@ -51,12 +51,11 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor,
     (void)expectedVersionMajor;
     (void)expectedVersionMinor;
 
-    static bool done = false;
-    if (done)
-        return RS_NOT_INITIALISED;
-    done = true;
+    if (!NDIlib_initialize()) {
+        rs::log::Error("[rs_initialise] NDIlib_initialize failed");
+        return RS_ERROR_UNSPECIFIED;
+    }
 
-    rs::log::Info("[rs_initialise] network tick mode");
     try {
         auto link = std::make_unique<rs::Link>();
         g_link = link.get();
@@ -78,7 +77,7 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_shutdown() {
     rs::log::Info("[rs_shutdown] step 2/4: shutting down GPU...");
     rs::GetGpu().Shutdown();
     rs::log::Info("[rs_shutdown] step 3/4: stopping NDI senders...");
-    rs::GetSender().Stop();
+    rs::Sender::Instance().Stop();
     rs::log::Info("[rs_shutdown] step 4/4: destroying NDI library...");
     NDIlib_destroy();
     rs::log::Info("[rs_shutdown] NDIlib_destroy complete");
@@ -186,9 +185,7 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getStreams(StreamDescriptions* out, 
         }
 
         std::string prefix = GetArg(L"dc_node");
-        rs::GetSender().Stop();
-        rs::GetSender().Configure(prefix);
-        rs::GetSender().Start();
+        rs::Sender::Instance().Start(prefix);
         rs::log::Info("[rs_getStreams] NDI started: %zu layers, prefix '%s'",
                       rs::Streams().size(), prefix.empty() ? "(none)" : prefix.c_str());
     }
@@ -321,8 +318,10 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_sendFrame2(StreamHandle streamHandle
         return RS_ERROR_UNSPECIFIED;
 
     auto ready_pack = rs::GetGpu().ConsumeReadyPack();
-    if (!ready_pack.empty())
-        rs::GetSender().SendPack(ready_pack);
+    for (const auto& buf : ready_pack) {
+        if (buf.cpu_base)
+            rs::Sender::Instance().Send(buf.layer_id, buf.cpu_base);
+    }
 
     if (frameData && frameData->cameraData && g_link)
         g_link->SendFrameResponseData(*frameData->cameraData);

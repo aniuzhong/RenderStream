@@ -8,16 +8,14 @@
 
 namespace rs {
 
-static uint32_t Align256(uint32_t v) { return (v + 255) & ~255u; }
-
-static int64_t SteadyNowMs() {
+static int64_t NowMs() {
     using namespace std::chrono;
     return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
 }
 
-Sender& GetSender() {
-    static Sender instance;
-    return instance;
+Sender& Sender::Instance() {
+    static Sender inst;
+    return inst;
 }
 
 Sender::~Sender() {
@@ -25,16 +23,13 @@ Sender::~Sender() {
     Stop();
 }
 
-void Sender::Stop() {
-    std::lock_guard lock(mtx_);
+void Sender::StopLocked() {
     if (!started_)
         return;
-    rs::log::Info("[Sender] Stop: shutting down %zu NDI sender(s)...", layers_.size());
     started_ = false;
 
     for (auto& [id, l] : layers_) {
         if (l.instance) {
-            rs::log::Info("[Sender] Stop: destroying NDI sender layer %d", id);
             NDIlib_send_send_video_async_v2(l.instance, nullptr);
             NDIlib_send_destroy(l.instance);
             l.instance = nullptr;
@@ -43,9 +38,17 @@ void Sender::Stop() {
     rs::log::Info("[Sender] Stop: complete");
 }
 
-void Sender::Configure(const std::string& name) {
-    std::lock_guard lock(mtx_);
-    name_ = name;
+void Sender::Stop() {
+    std::lock_guard lock(mutex_);
+    StopLocked();
+}
+
+bool Sender::Start(const std::string& dc_node) {
+    std::lock_guard lock(mutex_);
+    StopLocked();
+
+    // Configure from streams
+    dc_node_ = dc_node;
     layers_.clear();
 
     const auto& streams = Streams();
@@ -59,21 +62,13 @@ void Sender::Configure(const std::string& name) {
         l.height  = ch;
         rs::log::Info("[Sender] Configure: layer %d channel='%s' %dx%d", i, l.channel.c_str(), cw, ch);
     }
-}
-
-bool Sender::Start() {
-    std::lock_guard lock(mtx_);
-    if (started_) return false;
-    if (!NDIlib_initialize()) {
-        rs::log::Error("[Sender] Start: NDIlib_initialize failed");
-        return false;
-    }
 
     if (layers_.empty()) {
         started_ = true;
         return true;
     }
 
+    // Create NDI senders
     int max_w = 0;
     for (const auto& [id, l] : layers_)
         max_w = (std::max)(max_w, l.width);
@@ -81,8 +76,8 @@ bool Sender::Start() {
 
     for (auto& [layer_id, l] : layers_) {
         char ndi_name[256];
-        if (!name_.empty())
-            snprintf(ndi_name, sizeof(ndi_name), "%s_%s", name_.c_str(), l.channel.c_str());
+        if (!dc_node_.empty())
+            snprintf(ndi_name, sizeof(ndi_name), "%s_%s", dc_node_.c_str(), l.channel.c_str());
         else
             snprintf(ndi_name, sizeof(ndi_name), "%s", l.channel.c_str());
 
@@ -101,7 +96,7 @@ bool Sender::Start() {
             }
             return false;
         }
-        l.started_ms = SteadyNowMs();
+        l.started_ms = NowMs();
         rs::log::Info("[Sender] Start: '%s' %dx%d row_pitch=%u", ndi_name, l.width, l.height, row_pitch_);
     }
 
@@ -110,7 +105,7 @@ bool Sender::Start() {
 }
 
 void Sender::Send(int layer_id, const uint8_t* data) {
-    std::lock_guard lock(mtx_);
+    std::lock_guard lock(mutex_);
     if (!started_ || !data)
         return;
 
@@ -122,7 +117,7 @@ void Sender::Send(int layer_id, const uint8_t* data) {
     if (!l.instance)
         return;
 
-    const int64_t now_ms = SteadyNowMs();
+    const int64_t now_ms = NowMs();
     if (now_ms - l.last_conn_ms > kConnCheckIntervalMs) {
         l.conn_count = static_cast<int>(NDIlib_send_get_no_connections(l.instance, kConnCheckTimeoutMs));
         l.last_conn_ms = now_ms;
@@ -145,21 +140,4 @@ void Sender::Send(int layer_id, const uint8_t* data) {
 
     NDIlib_send_send_video_async_v2(l.instance, &fr);
 }
-
-void Sender::SendPack(const std::vector<rs::FrameBuffer>& pack) {
-    // DEBUG: SendPack interval stats
-    // static std::chrono::steady_clock::time_point s_last;
-    // static int s_count = 0;
-    // static int s_skip = 0;
-    // ++s_count;
-    // if (pack.empty()) { ... }
-    // auto now = std::chrono::steady_clock::now(); ...
-
-    for (const auto& buf : pack) {
-        if (!buf.cpu_base)
-            continue;
-        Send(buf.layer_id, buf.cpu_base);
-    }
-}
-
 }  // namespace rs

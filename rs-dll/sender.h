@@ -8,28 +8,26 @@
 
 #include <Processing.NDI.Lib.h>
 
-#include "gpgpu.h"  // FrameBuffer
-
 namespace rs {
 
 class Sender {
 public:
+    static Sender& Instance();
+
     ~Sender();
 
     Sender(const Sender&) = delete;
     Sender& operator=(const Sender&) = delete;
 
-    void Configure(const std::string& name);
-    bool Start();
+    bool Start(const std::string& dc_node);
     void Stop();
     bool IsStarted() const { return started_; }
     void Send(int layer_id, const uint8_t* data);
-    void SendPack(const std::vector<rs::FrameBuffer>& pack);
     size_t LayerCount() const { return layers_.size(); }
 
 private:
     Sender() = default;
-    friend Sender& GetSender();
+    void StopLocked();
 
     static constexpr int        kConnCheckIntervalMs = 1000;
     static constexpr int        kConnCheckTimeoutMs  = 10;
@@ -46,12 +44,10 @@ private:
     };
 
     std::unordered_map<int, Layer>  layers_;
-    mutable std::mutex              mtx_;
-    std::string                     name_;
+    mutable std::mutex              mutex_;
+    std::string                     dc_node_;
     uint32_t                        row_pitch_      = 0;
     bool                            started_        = false;
 };
-
-Sender& GetSender();
 
 }  // namespace rs
