@@ -286,9 +286,9 @@ RS_ERROR Link::AwaitFrame(int timeoutMs, FrameData* data) {
     if (quit_)
         return RS_ERROR_QUIT;
 
-    static bool topology_signaled = false;
-    if (!topology_signaled) {
-        topology_signaled = true;
+    static bool streams_signaled = false;
+    if (!streams_signaled) {
+        streams_signaled = true;
         return RS_ERROR_STREAMS_CHANGED;
     }
 

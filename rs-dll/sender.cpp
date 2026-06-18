@@ -1,6 +1,6 @@
 #include "sender.h"
 #include "logging.h"
-#include "topology.h"
+#include "streams.h"
 
 #include <chrono>
 #include <cstdio>
@@ -73,8 +73,9 @@ bool Sender::Start() {
         return true;
     }
 
-    int max_w, max_h;
-    MaxResolution(&max_w, &max_h);
+    int max_w = 0;
+    for (const auto& s : Streams())
+        max_w = (std::max)(max_w, static_cast<int>(s.width));
     row_pitch_ = (static_cast<uint32_t>(max_w * 4) + 255) & ~255u;
 
     for (auto& [layer_id, l] : layers_) {

@@ -10,6 +10,7 @@
 #include "gpgpu.h"
 #include "logging.h"
 #include "sender.h"
+#include "streams.h"
 #include "driven.h"
 #include "link.h"
 
@@ -147,6 +148,51 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_saveSchema(const char* assetPath, Sc
 }
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_setSchema(Schema*) {
+    return RS_ERROR_SUCCESS;
+}
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getStreams(StreamDescriptions* out, uint32_t* nBytes) {
+    const auto& streams = rs::Streams();
+
+    if (streams.empty()) {
+        rs::log::Info("[rs_getStreams] first call - lazy init...");
+        if (!rs::LoadStreamsFromRemote()) {
+            rs::log::Error("[rs_getStreams] LoadStreamsFromRemote failed");
+            return RS_ERROR_NOTFOUND;
+        }
+        rs::InitPipeline();
+    }
+
+    const auto& loaded = rs::Streams();
+    const int n = static_cast<int>(loaded.size());
+
+    size_t str_pool_total = 0;
+    for (const auto& s : loaded)
+        str_pool_total += s.bytes();
+
+    const uint32_t header_size = static_cast<uint32_t>(sizeof(StreamDescriptions));
+    const uint32_t array_size  = static_cast<uint32_t>(n * sizeof(StreamDescription));
+    const uint32_t required    = header_size + array_size + static_cast<uint32_t>(str_pool_total);
+
+    if (out == nullptr) {
+        *nBytes = required;
+        return RS_ERROR_SUCCESS;
+    }
+
+    if (*nBytes < required)
+        return RS_ERROR_BUFFER_OVERFLOW;
+
+    out->nStreams = n;
+    StreamDescription* sd = reinterpret_cast<StreamDescription*>(reinterpret_cast<char*>(out) + header_size);
+    out->streams = sd;
+    char* str_pool = reinterpret_cast<char*>(sd + n);
+
+    for (int i = 0; i < n; ++i) {
+        size_t written = loaded[i].to_c(&sd[i], str_pool);
+        str_pool += written;
+    }
+
+    *nBytes = required;
     return RS_ERROR_SUCCESS;
 }
 

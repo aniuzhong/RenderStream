@@ -7,7 +7,7 @@
 
 #include "d3renderstream.h"
 #include "logging.h"
-#include "topology.h"
+#include "streams.h"
 
 namespace rs {
 
@@ -342,10 +342,13 @@ bool GpuContext::EnsureReadbackPool(int frame_w, int frame_h,
 
     // rs::log::Info("[GPU] EnsureReadbackPool: frame=%dx%d layout=%dx%d req_pitch=%u req_bytes=%llu", frame_w, frame_h, layout_.width, layout_.height, req_row_pitch, req_total_bytes);
 
-    int topo_w, topo_h;
-    MaxResolution(&topo_w, &topo_h);
-    res_w = (std::max)(res_w, topo_w);
-    res_h = (std::max)(res_h, topo_h);
+    int max_w = 0, max_h = 0;
+    for (const auto& s : Streams()) {
+        max_w = (std::max)(max_w, static_cast<int>(s.width));
+        max_h = (std::max)(max_h, static_cast<int>(s.height));
+    }
+    res_w = (std::max)(res_w, max_w);
+    res_h = (std::max)(res_h, max_h);
 
     // rs::log::Info("[GPU] EnsureReadbackPool: after layout floor (%dx%d) -> %dx%d", layout_.width, layout_.height, res_w, res_h);
 

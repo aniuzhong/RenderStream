@@ -25,10 +25,10 @@ public:
     Sender(const Sender&) = delete;
     Sender& operator=(const Sender&) = delete;
 
-    // Configure per-layer output sources from Topology.
+    // Configure per-layer output sources from stream configuration.
     void Configure(const std::string& name, int device_id);
 
-    // Start all layers. Row pitch is computed from Topology max resolution.
+    // Start all layers. Row pitch is computed from stream max resolution.
     bool Start();
     void Stop();
     bool IsStarted() const { return started_; }

@@ -27,7 +27,7 @@ public:
     void Shutdown();
 
     // Queue a texture→readback copy for one layer.
-    // Clipping is read from Topology per-layer.
+    // Clipping is read from the stream list per-layer.
     bool SubmitFrame(const SenderFrame* frame, int layer_key);
 
     // After SubmitFrame: returns completed frame data for NDI shipping.
