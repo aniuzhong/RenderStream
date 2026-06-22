@@ -14,7 +14,10 @@ namespace rs {
 GpuContext& GpuContext::Instance() {
     static GpuContext instance;
     static bool s_logged = false;
-    if (!s_logged) { rs::log::Info("[GPU] GpuContext singleton created at %p", &instance); s_logged = true; }
+    if (!s_logged) {
+        rs::log::Info("[GPU] GpuContext singleton created at %p", &instance);
+        s_logged = true;
+    }
     return instance;
 }
 
@@ -27,7 +30,6 @@ bool GpuContext::Initialize(ID3D12Device* device, ID3D12CommandQueue* queue) {
     device_ = device;
     queue_  = queue;
 
-    // Query debug layer status (must be enabled by the host at device creation).
     ID3D12DebugDevice* debug_dev = nullptr;
     if (SUCCEEDED(device_->QueryInterface(IID_PPV_ARGS(&debug_dev)))) {
         rs::log::Info("GpuContext::Initialize: D3D12 debug layer active — GPU errors will be reported");
@@ -81,16 +83,14 @@ void GpuContext::EnsureResources() {
     if (!device_) return;
     for (int i = 0; i < 2; ++i) {
         if (!allocator_[i])
-            device_->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,
-                                            IID_PPV_ARGS(&allocator_[i]));
+            device_->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&allocator_[i]));
         if (!fence_[i]) {
             device_->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence_[i]));
             fence_event_[i] = CreateEvent(nullptr, false, false, nullptr);
         }
     }
     if (!cmd_list_)
-        device_->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT,
-                                   allocator_[0], nullptr, IID_PPV_ARGS(&cmd_list_));
+        device_->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, allocator_[0], nullptr, IID_PPV_ARGS(&cmd_list_));
 }
 
 bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
@@ -101,20 +101,19 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
     const auto& streams = Streams();
     assert(!streams.empty() && "Streams must be loaded before SubmitFrame");
 
-    // Extract D3D12 texture from the Disguise SenderFrame.
     ID3D12Resource* tex = nullptr;
     if (frame->type == RS_FRAMETYPE_DX12_TEXTURE)
         tex = frame->dx12.resource;
     else if (frame->type == RS_FRAMETYPE_DX11_TEXTURE)
         tex = reinterpret_cast<ID3D12Resource*>(frame->dx11.resource);
-    if (!tex) return false;
+    if (!tex)
+        return false;
 
     D3D12_RESOURCE_DESC desc = tex->GetDesc();
     const int tex_w = static_cast<int>(desc.Width);
     const int tex_h = static_cast<int>(desc.Height);
     assert(tex_w > 0 && tex_h > 0);
 
-    // Clamp layer key.
     if (layer_key < 0)
         layer_key = 0;
     if (layer_key >= kMaxLayers)
@@ -123,14 +122,12 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
 
     const ProjectionClipping& clip = streams[layer_key].clipping;
 
-    // Reset command allocator + list if needed.
     if (reset_command_) {
         allocator_[command_index_]->Reset();
         cmd_list_->Reset(allocator_[command_index_], nullptr);
         reset_command_ = false;
     }
 
-    // Compute copy region.
     D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint;
     device_->GetCopyableFootprints(&desc, 0, 1, 0, &footprint, nullptr, nullptr, &buffer_size_);
 
@@ -152,31 +149,23 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
     const UINT64 total_bytes = row_pitch * footprint.Footprint.Height;
     block_size_ = static_cast<UINT>(total_bytes);
 
-    // Ensure readback pool is sized correctly.
     if (!EnsureReadbackPool(tex_w, tex_h, static_cast<UINT>(row_pitch), total_bytes))
         return false;
 
-    // CRITICAL: verify the pool buffer can hold this copy.
-    // GPU writes total_bytes using rb_row_pitch_ stride. If the pool is too small
-    // or the pitch mismatches, the GPU will write past the buffer -> heap corruption.
     assert(rb_row_pitch_ >= static_cast<UINT>(row_pitch) && "readback pool row_pitch must be >= requested row_pitch");
     assert(rb_buffer_bytes_ >= total_bytes && "readback pool buffer must be large enough for total_bytes");
     {
-        // Total bytes GPU will write = rb_row_pitch_ * (Height-1) + Width * 4
         const UINT64 gpu_write_bytes = static_cast<UINT64>(rb_row_pitch_) * (footprint.Footprint.Height - 1)
                                        + static_cast<UINT64>(footprint.Footprint.Width) * 4;
         assert(gpu_write_bytes <= rb_buffer_bytes_ && "GPU copy footprint must fit within readback buffer");
     }
 
-    // Queue GPU copy.
     const int bank = rb_next_bank_[layer_key];
     ID3D12Resource* rb_buf = rb_res_[layer_key][bank];
     assert(rb_buf && "readback buffer resource must exist");
     if (!rb_buf)
         return false;
 
-    // Verify the mapped CPU pointer is within the expected allocation.
-    // This catches cases where the buffer was unmapped or reallocated without updating rb_cpu_.
     uint8_t* const cpu_ptr = rb_cpu_[layer_key][bank];
     assert(cpu_ptr && "readback CPU pointer must be non-null");
     assert(rb_buffer_bytes_ > 0 && "readback buffer size must be positive");
@@ -194,7 +183,6 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
 
     cmd_list_->CopyTextureRegion(&dst_loc, 0, 0, 0, &src_loc, &box);
 
-    // Fill frame buffer entry.
     FrameBuffer buf;
     buf.stage_buffer = rb_buf;
     buf.cpu_base     = rb_cpu_[layer_key][bank];
@@ -202,12 +190,9 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
     buf.layer_id     = layer_key;
     rb_next_bank_[layer_key] ^= 1;
 
-    // Push to current double-buffer pack.
     data_pack_[data_pack_index_ == 0 ? 0 : 1].push_back(buf);
 
-    // Check if this was the last layer of the frame.
     if (image_index_ == (static_cast<int>(streams.size()) - 1)) {
-        // Close, execute, signal.
         cmd_list_->Close();
         ID3D12CommandList* lists[] = { cmd_list_ };
         queue_->ExecuteCommandLists(1, lists);
@@ -215,15 +200,12 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
         queue_->Signal(fence_[command_index_], fence_value_[command_index_]);
         reset_command_ = true;
 
-        // The "other" pack is the one from the PREVIOUS submission.
-        // On the first frame data_pack_index_ is -1 -> other = 0 -> empty -> no wait.
         int other = (data_pack_index_ + 1) % 2;
 
-        // diagnostic: GPU fence wait timing
         {
             static int s_frame = 0;
             ++s_frame;
-            const int wait_idx = data_pack_index_;  // which fence we're waiting on
+            const int wait_idx = data_pack_index_;
             const bool need_wait = (wait_idx >= 0 &&
                 fence_[wait_idx]->GetCompletedValue() < fence_value_[wait_idx]);
 
@@ -260,7 +242,6 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
             }
         }
 
-        // Double-check fence actually completed.
         assert(data_pack_index_ < 0 ||
                fence_[data_pack_index_]->GetCompletedValue() >= fence_value_[data_pack_index_] &&
                "GPU fence must be at or past the expected value after wait");
@@ -274,32 +255,21 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
 }
 
 std::vector<FrameBuffer> GpuContext::ConsumeReadyPack() {
-    // DEBUG: empty pack tracking
-    // static int s_empty = 0;
-    // static int s_total = 0;
-    // ++s_total;
     if (!frame_complete_) {
-        // DEBUG: ++s_empty; if (s_total % 60 == 0) rs::log::Info(...);
         return {};
     }
     frame_complete_ = false;
-    // data_pack_index_ points to the next write pack (after swap).
-    // The completed pack is (data_pack_index_ + 1) % 2.
     int ready_idx = (data_pack_index_ + 1) % 2;
-    if (ready_idx < 0) ready_idx = 0;  // safety: data_pack_index_ = -1 -> ready_idx = 0
+    if (ready_idx < 0)
+        ready_idx = 0;
     std::vector<FrameBuffer> result = std::move(data_pack_[ready_idx]);
     data_pack_[ready_idx].clear();
 
-    // Validate every returned buffer — null pointers or out-of-range data cause NDI to crash or corrupt memory.
     for (const auto& buf : result) {
         assert(buf.cpu_base && "ConsumeReadyPack: cpu_base must not be null");
         assert(buf.stage_buffer && "ConsumeReadyPack: stage_buffer must not be null");
-        assert(buf.frame_bytes > 0 && buf.frame_bytes <= rb_buffer_bytes_ &&
-               "ConsumeReadyPack: frame_bytes must be positive and within pool buffer size");
-        assert(buf.layer_id >= 0 && buf.layer_id < kMaxLayers &&
-               "ConsumeReadyPack: layer_id must be valid");
-        // GPU overrun check: the canary at the end of the buffer must be intact.
-        // If the GPU wrote past the clipped region, it would have corrupted this value.
+        assert(buf.frame_bytes > 0 && buf.frame_bytes <= rb_buffer_bytes_ && "ConsumeReadyPack: frame_bytes must be positive and within pool buffer size");
+        assert(buf.layer_id >= 0 && buf.layer_id < kMaxLayers && "ConsumeReadyPack: layer_id must be valid");
         const size_t canary_offset = static_cast<size_t>(rb_buffer_bytes_) - sizeof(uint32_t);
         const uint32_t canary = *reinterpret_cast<const uint32_t*>(buf.cpu_base + canary_offset);
         assert(canary == 0xDEADBEEF && "GPU WRITE OVERRUN DETECTED: canary corrupted — GPU wrote past buffer bounds!");
@@ -308,7 +278,6 @@ std::vector<FrameBuffer> GpuContext::ConsumeReadyPack() {
 }
 
 void GpuContext::ReleaseReadbackPool() {
-    // Wait for all in-flight GPU work before releasing buffers.
     for (int i = 0; i < 2; ++i) {
         if (fence_[i] && fence_[i]->GetCompletedValue() < fence_value_[i]) {
             fence_[i]->SetEventOnCompletion(fence_value_[i], fence_event_[i]);
@@ -408,8 +377,6 @@ bool GpuContext::EnsureReadbackPool(int frame_w, int frame_h, UINT req_row_pitch
                 return false;
             }
 
-            // Guard: write a canary at the end to detect GPU overrun.
-            // The last 4 bytes are reserved for validation.
             const size_t canary_offset = static_cast<size_t>(total_bytes) - sizeof(uint32_t);
             *reinterpret_cast<uint32_t*>(static_cast<uint8_t*>(mapped) + canary_offset) = 0xDEADBEEF;
 

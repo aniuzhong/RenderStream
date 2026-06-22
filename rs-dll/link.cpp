@@ -38,7 +38,7 @@ void Session::OnRead(const std::error_code& ec, size_t n) {
         rs::log::Info("[Session] disconnected: %s", ec.message().c_str());
         if (on_disconnect_)
             on_disconnect_();
-        return;  // Session refcount -> 0, auto-destruct
+        return;
     }
 
     std::istream is(&read_buf_);
@@ -68,7 +68,6 @@ void Session::Write(std::shared_ptr<std::string> msg) {
 }
 
 void Session::DoWrite() {
-    // Only ever called on the io_context thread — single writer invariant.
     std::shared_ptr<std::string> msg;
     {
         std::lock_guard lock(write_mutex_);
@@ -215,7 +214,7 @@ void Link::LogToD3(const std::string& text) {
 
 void Link::SetFollower(bool f) {
     if (is_follower_ == f)
-        return;  // no state change
+        return;
     is_follower_ = f;
     rs::log::Info("[Link] SetFollower: %s", f ? "true (follower mode)" : "false (controller mode)");
 }
@@ -227,21 +226,8 @@ RS_ERROR Link::BeginFollowerFrame(double tTracked) {
     static int s_call = 0;
     ++s_call;
 
-    // DEBUG: version jump tracking
-    // static int s_version_jump = 0;
-    // static int s_reuse_count = 0;
-    // static int s_swap_count  = 0;
-    // static int s_vj_count = 0;
-    // bool did_swap = false;
-    // int version_before = 0;
-    // int last_consumed_before = 0;
-
     {
         std::lock_guard lock(mutex_);
-
-        // DEBUG: version_before = tick_version_;
-        // DEBUG: last_consumed_before = last_consumed_version_;
-
         if (tick_version_ == 0) {
             if (s_call <= 3)
                 rs::log::Info("[Link] BeginFollowerFrame #%d t=%.3f: no tick received yet (version=0)",
@@ -251,17 +237,12 @@ RS_ERROR Link::BeginFollowerFrame(double tTracked) {
             if (s_call <= 3)
                 rs::log::Info("[Link] BeginFollowerFrame #%d t=%.3f: tick already consumed (version=%d)",
                               s_call, tTracked, tick_version_);
-            // published_ still has last frame's data — ok to reuse
             return RS_ERROR_SUCCESS;
         } else {
             std::swap(inbox_, published_);
             last_consumed_version_ = tick_version_;
-            // DEBUG: did_swap = true;
         }
     }
-
-    // DEBUG: version jump stats
-    // { int jump = version_before - last_consumed_before; ... }
 
     double dt = (last_t_tracked_ > 0.0) ? (tTracked - last_t_tracked_) : (1.0 / 60.0);
     last_t_tracked_ = tTracked;

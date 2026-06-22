@@ -68,15 +68,17 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor,
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_shutdown() {
     rs::log::Info("[rs_shutdown] >>> shutting down...");
-    rs::log::Info("[rs_shutdown] step 1/4: destroying link...");
+
+    rs::log::Info("[rs_shutdown]: destroying link...");
     g_link.reset();
-    rs::log::Info("[rs_shutdown] step 2/4: shutting down GPU...");
+
+    rs::log::Info("[rs_shutdown]: shutting down GPU...");
     rs::GpuContext::Instance().Shutdown();
-    rs::log::Info("[rs_shutdown] step 3/4: stopping NDI senders...");
+
+    rs::log::Info("[rs_shutdown]: stopping NDI senders...");
     rs::Sender::Instance().Stop();
-    rs::log::Info("[rs_shutdown] step 4/4: destroying NDI library...");
     NDIlib_destroy();
-    rs::log::Info("[rs_shutdown] NDIlib_destroy complete");
+
     rs::log::Info("[rs_shutdown] <<< done");
     return RS_ERROR_SUCCESS;
 }

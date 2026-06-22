@@ -24,8 +24,6 @@ public:
     ~Session();
 
     void Start();
-
-    // Queue a line for async write. Thread-safe — serializes via write queue.
     void Write(std::shared_ptr<std::string> msg);
 
 private:
