@@ -56,6 +56,7 @@ public:
     std::function<void(const std::string&)>        on_log;
     std::function<void(const nlohmann::json&)>     on_profiling;
     std::function<void(double t, std::vector<float>& params)> on_build_params;
+    std::function<void(double t, std::vector<std::string>& texts)> on_build_texts;
 
 private:
     void BeginTick();

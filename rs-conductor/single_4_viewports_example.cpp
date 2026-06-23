@@ -310,8 +310,9 @@ int main(int argc, char* argv[]) {
         conductor.SetRigs(rigs);
         conductor.SetSchemaHash(scene_hash);
         conductor.SetParameterValues(param_values);
+        conductor.SetTextValues({""});  // one empty string for the Text param
 
-        // Animate LightColor (r,g,b,a) and LightIntensity with sine waves
+        // Animate LightColor (r,g,b,a), LightIntensity, and Text with sine waves
         conductor.on_build_params = [](double t, std::vector<float>& params) {
             if (params.size() >= 5) {
                 params[0] = 0.5f + 0.5f * (float)std::sin(t * 1.5);          // r: 0-1
@@ -323,6 +324,18 @@ int main(int argc, char* argv[]) {
                 if (++frame <= 10 || frame % 120 == 0)
                     fprintf(stderr, "  [params] t=%.3f rgba=%.2f,%.2f,%.2f,%.2f intensity=%.1f\n",
                         t, params[0], params[1], params[2], params[3], params[4]);
+            }
+        };
+        conductor.on_build_texts = [](double t, std::vector<std::string>& texts) {
+            if (!texts.empty()) {
+                auto now = std::chrono::system_clock::now();
+                auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
+                auto timer = std::chrono::system_clock::to_time_t(now);
+                std::tm* tm = std::localtime(&timer);
+                char buf[64];
+                snprintf(buf, sizeof(buf), "%02d:%02d:%02d.%03lld",
+                    tm->tm_hour, tm->tm_min, tm->tm_sec, static_cast<long long>(ms.count()));
+                texts[0] = buf;
             }
         };
 

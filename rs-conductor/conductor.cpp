@@ -192,6 +192,8 @@ void Conductor::BuildAndSend(double t) {
 
     if (on_build_params)
         on_build_params(t, param_values_);
+    if (on_build_texts)
+        on_build_texts(t, text_values_);
 
     rs::Request req;
     req.t           = t;
