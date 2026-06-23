@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <string>
 #include <thread>
 
@@ -312,7 +313,75 @@ int main(int argc, char* argv[]) {
         conductor.SetParameterValues(param_values);
         conductor.SetTextValues({""});  // one empty string for the Text param
 
-        // Animate LightColor (r,g,b,a), LightIntensity, and Text with sine waves
+        // Build a simple 6-joint skeleton matching Manny's structure
+        {
+            rs::skeleton_layout_data layout;
+            layout.version = 1;
+
+            // Joints: id, parentId, bind transform (identity for simple test)
+            // parentId=0 means root, we use parentId=UINT64_MAX for no parent
+            const uint64_t NO_PARENT = UINT64_MAX;
+            Transform identity = {0,0,0, 0,0,0,1};
+
+            // 0: pelvis (root)
+            layout.joints.push_back({0, NO_PARENT, identity});
+            // 1: spine_01  (bind pose in meters)
+            layout.joints.push_back({1, 0, {0,0,0.12f, 0,0,0,1}});
+            // 2: spine_02
+            layout.joints.push_back({2, 1, {0,0,0.12f, 0,0,0,1}});
+            // 3: neck_01
+            layout.joints.push_back({3, 2, {0,0,0.08f, 0,0,0,1}});
+            // 4: clavicle_l
+            layout.joints.push_back({4, 2, {-0.08f,0,0.06f, 0,0,0,1}});
+            // 5: clavicle_r
+            layout.joints.push_back({5, 2, {0.08f,0,0.06f, 0,0,0,1}});
+
+            std::vector<std::string> jointNames = {
+                "pelvis", "spine_01", "spine_02", "neck_01", "clavicle_l", "clavicle_r"
+            };
+
+            conductor.SetSkeletonLayout(layout, jointNames);
+            conductor.SetSkeletonPoses({{}});  // one empty pose for frame 0
+
+            conductor.on_build_skeleton = [](double t, std::vector<rs::skeleton_pose_data>& poses) {
+                if (poses.empty()) poses.resize(1);
+                auto& p = poses[0];
+                p.layout_id = 0;
+                p.layout_version = 1;
+                p.root_transform = {0, 0.9f, 0, 0, 0, 0, 1};  // d3 Y=0.9m → UE Z=90cm up
+
+                p.joints.resize(6);
+                for (int i = 0; i < 6; ++i) p.joints[i].id = i;
+                // All identity pose first to verify skeleton is stable
+                for (int i = 0; i < 6; ++i) p.joints[i].transform = {0,0,0, 0,0,0,1};
+
+                // Gentle spine sway: rotate around Y (pitch) with small normalized quat
+                auto makeSway = [](float angleRad) -> Transform {
+                    float ha = angleRad * 0.5f;
+                    float qy = std::sin(ha);
+                    float qw = std::cos(ha);
+                    return {0,0,0, 0, qy, 0, qw};  // rotation around Y
+                };
+                auto makeTilt = [](float angleRad) -> Transform {
+                    float ha = angleRad * 0.5f;
+                    float qx = std::sin(ha);
+                    float qw = std::cos(ha);
+                    return {0,0,0, qx, 0, 0, qw};  // rotation around X
+                };
+
+                float sway1 = 0.25f * (float)std::sin(t * 1.5f);
+                float sway2 = 0.20f * (float)std::sin(t * 1.5f);
+                float head  = 0.30f * (float)std::sin(t * 0.8f);
+                float armL  = 1.20f * (float)std::sin(t * 2.0f);
+                float armR  = 1.20f * (float)std::sin(t * 2.0f + 3.14f);
+
+                p.joints[1].transform = makeSway(sway1);   // spine_01 sway
+                p.joints[2].transform = makeSway(sway2);   // spine_02 sway
+                p.joints[3].transform = makeTilt(head);    // neck_01 nod
+                p.joints[4].transform = makeTilt(armL);    // clavicle_l swing
+                p.joints[5].transform = makeTilt(armR);    // clavicle_r swing
+            };
+        }
         conductor.on_build_params = [](double t, std::vector<float>& params) {
             if (params.size() >= 5) {
                 params[0] = 0.5f + 0.5f * (float)std::sin(t * 1.5);          // r: 0-1

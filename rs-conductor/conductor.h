@@ -30,6 +30,10 @@ public:
     void SetParameterValues(std::vector<float> values) { param_values_ = std::move(values); }
     void SetTextValues(std::vector<std::string> values) { text_values_ = std::move(values); }
     void SetImageRefs(std::vector<ImageFrameData> refs) { image_refs_ = std::move(refs); }
+    void SetSkeletonLayout(const rs::skeleton_layout_data& layout, std::vector<std::string> joint_names) {
+        skel_layout_ = layout; joint_names_ = std::move(joint_names);
+    }
+    void SetSkeletonPoses(std::vector<rs::skeleton_pose_data> poses) { skel_poses_ = std::move(poses); }
 
     // ── Lifecycle ────────────────────────────────────────────
 
@@ -57,6 +61,7 @@ public:
     std::function<void(const nlohmann::json&)>     on_profiling;
     std::function<void(double t, std::vector<float>& params)> on_build_params;
     std::function<void(double t, std::vector<std::string>& texts)> on_build_texts;
+    std::function<void(double t, std::vector<rs::skeleton_pose_data>& poses)> on_build_skeleton;
 
 private:
     void BeginTick();
@@ -96,4 +101,7 @@ private:
     std::vector<float>          param_values_;
     std::vector<std::string>    text_values_;
     std::vector<ImageFrameData> image_refs_;
+    rs::skeleton_layout_data    skel_layout_;
+    std::vector<std::string>    joint_names_;
+    std::vector<rs::skeleton_pose_data> skel_poses_;
 };

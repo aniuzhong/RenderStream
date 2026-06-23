@@ -194,6 +194,8 @@ void Conductor::BuildAndSend(double t) {
         on_build_params(t, param_values_);
     if (on_build_texts)
         on_build_texts(t, text_values_);
+    if (on_build_skeleton)
+        on_build_skeleton(t, skel_poses_);
 
     rs::Request req;
     req.t           = t;
@@ -204,6 +206,9 @@ void Conductor::BuildAndSend(double t) {
     req.param_values = param_values_;
     req.text_values  = text_values_;
     req.image_refs   = image_refs_;
+    req.skel_layout  = skel_layout_;
+    req.joint_names  = joint_names_;
+    req.skel_poses   = skel_poses_;
 
     static int s_tick_log = 0;
     if (++s_tick_log <= 5 || s_tick_log % 120 == 0) {
