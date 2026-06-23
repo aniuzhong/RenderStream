@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <string>
 #include <thread>
 
@@ -242,7 +243,7 @@ int main(int argc, char* argv[]) {
         nlohmann::json launch_body;
         launch_body["engine_exe"] = kEngineExe;
         launch_body["project"]    = kProjectPath;
-        launch_body["map"]        = "/Game/Maps/" + schema["scenes"][0].get<std::string>();
+        launch_body["map"]        = "/Game/Maps/" + schema["scenes"][0]["name"].get<std::string>();
         launch_body["node_name"]  = kNodeName;
         launch_body["ndisplay"]   = ndisplay_json;
         launch_body["streams"]    = streams;
@@ -256,22 +257,81 @@ int main(int argc, char* argv[]) {
         }
         auto r = nlohmann::json::parse(launch_res->body);
         fprintf(stderr, "  UE launched: pid=%d\n", r["pid"].get<int>());
+        fflush(stderr);
 
         // 6. Build camera rigs per viewport
+        fprintf(stderr, "  Building camera rigs...\n"); fflush(stderr);
         std::vector<CameraRig> rigs;
         for (const auto& vp : vps)
             rigs.push_back(BuildCameraRig(CameraIndex(vp.channel), vp.w, vp.h));
 
-        // 7. Connect and run conductor
+        // 7. Build parameter values from schema defaults
+        fprintf(stderr, "  Building parameter values...\n"); fflush(stderr);
+        std::vector<float> param_values;
+        uint64_t scene_hash = 0;
+        try {
+            for (const auto& scene : schema["scenes"]) {
+                scene_hash = scene.value("hash", 0ull);
+                for (const auto& param : scene["parameters"]) {
+                    uint32_t type = param.value("type", 0u);
+                    float defaultVal = 0.0f;
+                    if (param.contains("defaultValue") && param["defaultValue"].is_number())
+                        defaultVal = param["defaultValue"].get<float>();
+                    switch (type) {
+                    case 0: // RS_PARAMETER_NUMBER
+                    case 5: // RS_PARAMETER_EVENT
+                        param_values.push_back(defaultVal);
+                        break;
+                    case 2: // RS_PARAMETER_POSE
+                    case 3: // RS_PARAMETER_TRANSFORM (4x4 identity)
+                        for (int r = 0; r < 4; ++r)
+                            for (int c = 0; c < 4; ++c)
+                                param_values.push_back((r == c) ? 1.0f : 0.0f);
+                        break;
+                    case 1: // RS_PARAMETER_IMAGE - handled via rs_getFrameImageData
+                    case 4: // RS_PARAMETER_TEXT  - handled via rs_getFrameText
+                        break;
+                    }
+                }
+                break; // only use first scene
+            }
+        } catch (const std::exception& e) {
+            fprintf(stderr, "  [ERROR] parameter build failed: %s\n", e.what());
+            fflush(stderr);
+        }
+        fprintf(stderr, "  schema: hash=%llu, %zu param floats\n",
+            static_cast<unsigned long long>(scene_hash), param_values.size());
+        fflush(stderr);
+
+        // 8. Connect and run conductor
         fprintf(stderr, "\n[Conductor] connecting to %s:%d...\n", n->ip, kTickPort);
+        fflush(stderr);
         Conductor conductor(n->ip, kTickPort);
         conductor.SetRigs(rigs);
+        conductor.SetSchemaHash(scene_hash);
+        conductor.SetParameterValues(param_values);
+
+        // Animate LightColor (r,g,b,a) and LightIntensity with sine waves
+        conductor.on_build_params = [](double t, std::vector<float>& params) {
+            if (params.size() >= 5) {
+                params[0] = 0.5f + 0.5f * (float)std::sin(t * 1.5);          // r: 0-1
+                params[1] = 0.3f + 0.3f * (float)std::sin(t * 2.0 + 1.0);    // g: 0-0.6
+                params[2] = 0.7f + 0.3f * (float)std::sin(t * 3.0 + 2.0);    // b: 0.4-1.0
+                params[3] = 1.0f;                                              // a: 1
+                params[4] = 10.0f + 10.0f * (float)std::sin(t * 2.0);         // intensity: 0-20
+                static int frame = 0;
+                if (++frame <= 10 || frame % 120 == 0)
+                    fprintf(stderr, "  [params] t=%.3f rgba=%.2f,%.2f,%.2f,%.2f intensity=%.1f\n",
+                        t, params[0], params[1], params[2], params[3], params[4]);
+            }
+        };
+
         if (!conductor.Connect(30)) {
             fprintf(stderr, "  [ERROR] could not connect tick socket\n");
             continue;
         }
 
-        // 8. Run tick loop (blocks until UE exits or error).
+        // 9. Run tick loop (blocks until UE exits or error).
         conductor.Run();
     }
 

@@ -26,6 +26,10 @@ public:
     Conductor& operator=(const Conductor&) = delete;
 
     void SetRigs(std::vector<CameraRig> rigs);
+    void SetSchemaHash(uint64_t schema_hash) { schema_hash_ = schema_hash; }
+    void SetParameterValues(std::vector<float> values) { param_values_ = std::move(values); }
+    void SetTextValues(std::vector<std::string> values) { text_values_ = std::move(values); }
+    void SetImageRefs(std::vector<ImageFrameData> refs) { image_refs_ = std::move(refs); }
 
     // ── Lifecycle ────────────────────────────────────────────
 
@@ -51,6 +55,7 @@ public:
     std::function<void(const std::string&)>        on_status;
     std::function<void(const std::string&)>        on_log;
     std::function<void(const nlohmann::json&)>     on_profiling;
+    std::function<void(double t, std::vector<float>& params)> on_build_params;
 
 private:
     void BeginTick();
@@ -85,4 +90,9 @@ private:
     int frame_seq_ = 0;
 
     std::vector<CameraData> last_cameras_;
+
+    uint64_t schema_hash_ = 0;
+    std::vector<float>          param_values_;
+    std::vector<std::string>    text_values_;
+    std::vector<ImageFrameData> image_refs_;
 };

@@ -168,7 +168,17 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_saveSchema(const char* assetPath, Sc
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_setSchema(Schema*) {
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_setSchema(Schema* schema) {
+    if (!schema)
+        return RS_ERROR_INVALID_PARAMETERS;
+
+    for (uint32_t i = 0; i < schema->scenes.nScenes; ++i) {
+        auto& scene = schema->scenes.scenes[i];
+        if (scene.hash == 0 && scene.name) {
+            scene.hash = std::hash<std::string>{}(scene.name);
+            rs::log::Info("[rs_setSchema] scene[%u] '%s' hash=%llu", i, scene.name, static_cast<unsigned long long>(scene.hash));
+        }
+    }
     return RS_ERROR_SUCCESS;
 }
 
@@ -245,11 +255,61 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameCamera(StreamHandle streamHa
     return g_link->GetCamera(streamHandle, outCameraData);
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameParameters(uint64_t, void*, uint64_t) {
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameParameters(uint64_t schemaHash, void* outParameterData, uint64_t outParameterDataSize) {
+    if (!outParameterData) {
+        if (outParameterDataSize == 0)
+            return RS_ERROR_SUCCESS;  // No params to query, null buffer is acceptable
+        return RS_ERROR_INVALID_PARAMETERS;
+    }
+    if (!g_link)
+        return RS_ERROR_UNSPECIFIED;
+
+    const auto& vals = g_link->Published().param_values;
+    if (vals.empty()) {
+        static int s_warn = 0;
+        if (++s_warn <= 5)
+            rs::log::Info("[rs_getFrameParameters] hash=%llu: no param_values in this tick", static_cast<unsigned long long>(schemaHash));
+        memset(outParameterData, 0, static_cast<size_t>(outParameterDataSize));
+        return RS_ERROR_SUCCESS;
+    }
+
+    size_t copyBytes = (std::min)(static_cast<size_t>(outParameterDataSize), vals.size() * sizeof(float));
+    std::memcpy(outParameterData, vals.data(), copyBytes);
+
+    static int s_log = 0;
+    if (++s_log <= 5 || s_log % 120 == 0)
+        rs::log::Info("[rs_getFrameParameters] hash=%llu copied %zu floats (%zu bytes) of %zu params",
+            static_cast<unsigned long long>(schemaHash),
+            copyBytes / sizeof(float), copyBytes, vals.size());
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameImageData(uint64_t, ImageFrameData*, uint64_t) {
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameImageData(uint64_t schemaHash, ImageFrameData* outParameterData, uint64_t outParameterDataCount) {
+    if (!outParameterData) {
+        if (outParameterDataCount == 0)
+            return RS_ERROR_SUCCESS;  // No images to query, null buffer is acceptable
+        return RS_ERROR_INVALID_PARAMETERS;
+    }
+    if (!g_link)
+        return RS_ERROR_UNSPECIFIED;
+
+    const auto& imgs = g_link->Published().image_refs;
+    if (imgs.empty()) {
+        static int s_warn = 0;
+        if (++s_warn <= 5)
+            rs::log::Info("[rs_getFrameImageData] hash=%llu: no image_refs in this tick", static_cast<unsigned long long>(schemaHash));
+        return RS_ERROR_SUCCESS;
+    }
+
+    uint64_t count = (std::min)(outParameterDataCount, static_cast<uint64_t>(imgs.size()));
+    for (uint64_t i = 0; i < count; ++i)
+        outParameterData[i] = imgs[i];
+
+    static int s_log = 0;
+    if (++s_log <= 5 || s_log % 120 == 0)
+        rs::log::Info("[rs_getFrameImageData] hash=%llu copied %llu image refs of %zu total",
+            static_cast<unsigned long long>(schemaHash),
+            static_cast<unsigned long long>(count), imgs.size());
     return RS_ERROR_SUCCESS;
 }
 
@@ -257,8 +317,28 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameImage2(int64_t, const Sender
     return RS_ERROR_NOTFOUND;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameText(uint64_t, uint32_t, const char**) {
-    return RS_ERROR_NOTFOUND;
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameText(uint64_t schemaHash, uint32_t textParamIndex, const char** outTextPtr) {
+    if (!outTextPtr)
+        return RS_ERROR_INVALID_PARAMETERS;
+    if (!g_link)
+        return RS_ERROR_UNSPECIFIED;
+
+    const auto& texts = g_link->Published().text_values;
+    if (textParamIndex >= texts.size()) {
+        static int s_warn = 0;
+        if (++s_warn <= 5)
+            rs::log::Info("[rs_getFrameText] hash=%llu index=%u out of range (total=%zu)",
+                static_cast<unsigned long long>(schemaHash), textParamIndex, texts.size());
+        return RS_ERROR_NOTFOUND;
+    }
+
+    *outTextPtr = texts[textParamIndex].c_str();
+
+    static int s_log = 0;
+    if (++s_log <= 5 || s_log % 120 == 0)
+        rs::log::Info("[rs_getFrameText] hash=%llu index=%u -> '%s' (len=%zu)",
+            static_cast<unsigned long long>(schemaHash), textParamIndex, *outTextPtr, texts[textParamIndex].size());
+    return RS_ERROR_SUCCESS;
 }
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_releaseImage2(const SenderFrame*) {

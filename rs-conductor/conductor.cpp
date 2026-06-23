@@ -190,12 +190,27 @@ void Conductor::BuildAndSend(double t) {
     for (size_t i = 0; i < last_cameras_.size(); ++i)
         last_cameras_[i].id = static_cast<uint64_t>(i + 1);
 
+    if (on_build_params)
+        on_build_params(t, param_values_);
+
     rs::Request req;
-    req.t          = t;
-    req.scene      = 0;
-    req.flags      = 0;
-    req.schema_hash = 0;
-    req.cameras    = last_cameras_;
+    req.t           = t;
+    req.scene       = 0;
+    req.flags       = 0;
+    req.schema_hash = schema_hash_;
+    req.cameras     = last_cameras_;
+    req.param_values = param_values_;
+    req.text_values  = text_values_;
+    req.image_refs   = image_refs_;
+
+    static int s_tick_log = 0;
+    if (++s_tick_log <= 5 || s_tick_log % 120 == 0) {
+        auto log = spdlog::get(tag_);
+        log->info("Tick t={:7.3f} cameras={} params={} texts={} images={} hash={}",
+            t, req.cameras.size(), req.param_values.size(),
+            req.text_values.size(), req.image_refs.size(),
+            static_cast<unsigned long long>(req.schema_hash));
+    }
 
     auto msg = std::make_shared<std::string>(
         nlohmann::json(req).dump() + "\n");
