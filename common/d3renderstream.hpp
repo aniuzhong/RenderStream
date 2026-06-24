@@ -1,7 +1,5 @@
 #pragma once
 
-#include "d3renderstream.h"
-
 #include <cctype>
 #include <cstdint>
 #include <cstring>
@@ -14,6 +12,8 @@
 #include <vector>
 
 #include <nlohmann/json.hpp>
+
+#include "d3renderstream.h"
 
 // ============================================================
 // CameraData / ProjectionClipping - JSON serialization

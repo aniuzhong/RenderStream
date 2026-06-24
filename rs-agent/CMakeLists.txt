@@ -29,7 +29,6 @@ add_executable(rs-agent WIN32
     server/lan_announcer.cpp
     server/pipe_server.cpp
     server/process_manager.cpp
-    server/registry.cpp
     server/utils/lan_net.cpp
     ${RS_AGENT_ICON_RC}
 )

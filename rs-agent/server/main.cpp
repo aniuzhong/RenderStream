@@ -17,7 +17,6 @@
 #include "server/logger.h"
 #include "server/pipe_server.h"
 #include "server/process_manager.h"
-#include "server/registry.h"
 #include "server/utils/encoding.h"
 #include "server/lan_announcer.h"
 #include "server/logger.h"
@@ -195,42 +194,11 @@ void RunServer() {
     spdlog::info("agent stopped");
 }
 
-//  CLI Commands
-
-int DoInstall() {
-    rs::server::InitLogger();
-    std::wstring exe = ExePath();
-    bool ok = rs::server::Install(exe);
-    spdlog::info("install: {}", ok ? "success" : "failure");
-    wprintf(L"install: %s\n", ok ? L"success" : L"failure");
-    return ok ? 0 : 1;
-}
-
-int DoUninstall() {
-    rs::server::InitLogger();
-    bool ok = rs::server::Uninstall();
-    spdlog::info("uninstall: {}", ok ? "success" : "failure");
-    wprintf(L"uninstall: %s\n", ok ? L"success" : L"failure");
-    return ok ? 0 : 1;
-}
-
 } // namespace
 
 int wmain(int argc, wchar_t* argv[]) {
     if (argc > 1) {
-        if (!AttachConsole(ATTACH_PARENT_PROCESS)) {
-            AllocConsole();
-        }
-        FILE* con = nullptr;
-        freopen_s(&con, "CONOUT$", "w", stdout);
-        freopen_s(&con, "CONOUT$", "w", stderr);
-
-        rs::server::InitLogger();
-
-        std::wstring cmd = argv[1];
-        if (cmd == L"install") return DoInstall();
-        if (cmd == L"uninstall") return DoUninstall();
-        wprintf(L"usage: rs-agent.exe [install|uninstall]\n");
+        wprintf(L"usage: rs-agent.exe\n");
         return 1;
     }
 
