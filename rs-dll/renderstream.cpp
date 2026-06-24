@@ -73,16 +73,13 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_shutdown() {
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX11Device(ID3D11Device*)     { return RS_ERROR_SUCCESS; }
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX11Resource(ID3D11Resource*) { return RS_ERROR_SUCCESS; }
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithOpenGlContexts(HGLRC, HDC)    { return RS_ERROR_SUCCESS; }
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithVulkanDevice(VkDevice)        { return RS_ERROR_SUCCESS; }
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX11Device(ID3D11Device*)     { return RS_ERROR_UNSPECIFIED; }
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX11Resource(ID3D11Resource*) { return RS_ERROR_UNSPECIFIED; }
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithoutInterop(ID3D11Device*)     { return RS_ERROR_UNSPECIFIED; }
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithOpenGlContexts(HGLRC, HDC)    { return RS_ERROR_UNSPECIFIED; }
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithVulkanDevice(VkDevice)        { return RS_ERROR_UNSPECIFIED; }
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_useDX12SharedHeapFlag(UseDX12SharedHeapFlag*) {
-    return RS_ERROR_SUCCESS;
-}
-
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithoutInterop(ID3D11Device*) {
     return RS_ERROR_SUCCESS;
 }
 
@@ -254,12 +251,6 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameParameters(uint64_t schemaHa
 
     size_t copyBytes = (std::min)(static_cast<size_t>(outParameterDataSize), vals.size() * sizeof(float));
     std::memcpy(outParameterData, vals.data(), copyBytes);
-
-    static int s_log = 0;
-    if (++s_log <= 5 || s_log % 120 == 0)
-        rs::log::Info("[rs_getFrameParameters] hash=%llu copied %zu floats (%zu bytes) of %zu params",
-            static_cast<unsigned long long>(schemaHash),
-            copyBytes / sizeof(float), copyBytes, vals.size());
     return RS_ERROR_SUCCESS;
 }
 
@@ -283,12 +274,6 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameImageData(uint64_t schemaHas
     uint64_t count = (std::min)(outParameterDataCount, static_cast<uint64_t>(imgs.size()));
     for (uint64_t i = 0; i < count; ++i)
         outParameterData[i] = imgs[i];
-
-    static int s_log = 0;
-    if (++s_log <= 5 || s_log % 120 == 0)
-        rs::log::Info("[rs_getFrameImageData] hash=%llu copied %llu image refs of %zu total",
-            static_cast<unsigned long long>(schemaHash),
-            static_cast<unsigned long long>(count), imgs.size());
     return RS_ERROR_SUCCESS;
 }
 
@@ -312,11 +297,6 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameText(uint64_t schemaHash, ui
     }
 
     *outTextPtr = texts[textParamIndex].c_str();
-
-    static int s_log = 0;
-    if (++s_log <= 5 || s_log % 120 == 0)
-        rs::log::Info("[rs_getFrameText] hash=%llu index=%u -> '%s' (len=%zu)",
-            static_cast<unsigned long long>(schemaHash), textParamIndex, *outTextPtr, texts[textParamIndex].size());
     return RS_ERROR_SUCCESS;
 }
 
@@ -353,12 +333,6 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointPoses(uint64_t schem
         pose->joints[i].transform = sp.joints[i].transform;
     }
     *numJoints = count;
-
-    static int s_log = 0;
-    if (++s_log <= 5 || s_log % 120 == 0)
-        rs::log::Info("[rs_getSkeletonJointPoses] hash=%llu idx=%u joints=%d layoutId=%llu",
-            static_cast<unsigned long long>(schemaHash), poseParamIndex, count,
-            static_cast<unsigned long long>(sp.layout_id));
     return RS_ERROR_SUCCESS;
 }
 
@@ -384,12 +358,6 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonLayout(uint64_t schemaHas
         layout->joints[i].transform = sl.joints[i].transform;
     }
     *numJoints = count;
-
-    static int s_log = 0;
-    if (++s_log <= 5 || s_log % 120 == 0)
-        rs::log::Info("[rs_getSkeletonLayout] hash=%llu layoutId=%llu joints=%d",
-            static_cast<unsigned long long>(schemaHash),
-            static_cast<unsigned long long>(layoutId), count);
     return RS_ERROR_SUCCESS;
 }
 
@@ -403,10 +371,6 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointNames(uint64_t schem
     int n = static_cast<int>(joint_names.size());
     *numJoints = n;
 
-    if (n == 0) {
-        rs::log::Info("[rs_getSkeletonJointNames] WARNING: joint_names vector is EMPTY in published_");
-    }
-
     if (nameLengths) {
         for (int i = 0; i < n; ++i)
             if (nameLengths[i])
@@ -417,13 +381,6 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointNames(uint64_t schem
         for (int i = 0; i < n; ++i)
             names[i] = joint_names[i].c_str();
     }
-
-    static int s_log = 0;
-    if (++s_log <= 5 || s_log % 120 == 0)
-        rs::log::Info("[rs_getSkeletonJointNames] hash=%llu layoutId=%llu joints=%d name[0]='%s'",
-            static_cast<unsigned long long>(schemaHash),
-            static_cast<unsigned long long>(layoutId), n,
-            n > 0 ? joint_names[0].c_str() : "(empty)");
     return RS_ERROR_SUCCESS;
 }
 

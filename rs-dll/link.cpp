@@ -145,15 +145,6 @@ void Link::OnTick(const std::string& line) {
             ++tick_version_;
         }
         cv_.notify_one();
-
-        static int s_tick_log = 0;
-        if (++s_tick_log <= 5)
-            rs::log::Info("[Link] Rx t=%.3f scene=%u flags=%u schemaHash=%llu cameras=%zu params=%zu texts=%zu images=%zu skelJoints=%zu skelNames=%zu skelPoses=%zu name0='%s'",
-                tickT, tickScene, tickFlags,
-                static_cast<unsigned long long>(tickSchemaHash),
-                tickCameras, tickParams, tickTexts, tickImages,
-                req.skel_layout.joints.size(), req.joint_names.size(), req.skel_poses.size(),
-                req.joint_names.empty() ? "(none)" : req.joint_names[0].c_str());
     } catch (const std::exception& e) {
         rs::log::Error("[Link] parse error: %s", e.what());
     }
