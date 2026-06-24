@@ -35,9 +35,12 @@ target_link_libraries(cluster_example PRIVATE ndisplay_gen rs_client nlohmann_js
 
 add_executable(rs_demo WIN32
     rs_demo.cpp
+    conductor.cpp
+    camera_rig.cpp
 )
 target_include_directories(rs_demo PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/common
 )
-target_link_libraries(rs_demo PRIVATE imgui rs_client nlohmann_json::nlohmann_json ws2_32 d3d11 dxguid)
+target_include_directories(rs_demo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/common)
+target_link_libraries(rs_demo PRIVATE ndisplay_gen imgui rs_client nlohmann_json::nlohmann_json asio::asio spdlog::spdlog ws2_32 d3d11 dxguid)

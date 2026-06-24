@@ -1,7 +1,5 @@
 // rs_demo.cpp — RenderStream ImGui GUI demo
 //
-// Node discovery list with auto-refresh.
-//
 // Usage: rs_demo.exe
 
 #define WIN32_LEAN_AND_MEAN
@@ -12,6 +10,7 @@
 #include "imgui_impl_win32.h"
 #include "imgui_impl_dx11.h"
 
+#include "conductor.h"    // must come before rs_client.h: d3renderstream.h enum vs rs_client.h #define
 #include "rs_client.h"
 #include <nlohmann/json.hpp>
 
@@ -19,6 +18,8 @@
 #include <vector>
 #include <chrono>
 #include <cstdint>
+#include <thread>
+#include <cmath>
 
 // ── DX11 globals ──────────────────────────────────────────────────
 static ID3D11Device*           g_pd3dDevice       = nullptr;
@@ -33,17 +34,15 @@ static void CleanupRenderTarget();
 
 // ── Node cache ────────────────────────────────────────────────────
 struct NodeEntry {
-    std::string name;     // hostname from RS_GetNodeInfo
+    std::string name;
     std::string ip;
     int         port      = 9580;
-    std::string state;    // "idle" / "launching" / "running" / "stopping"
+    std::string state;
     int         pid       = 0;
     int64_t     launched_at = 0;
-    bool        queried   = false;  // have we successfully queried node info?
+    bool        queried   = false;
 
-    // Refresh info from agent
     void Refresh() {
-        // Hostname + displays
         int sz = 0;
         if (RS_GetNodeInfo(ip.c_str(), port, nullptr, &sz) == RS_ERROR_SUCCESS && sz > 0) {
             std::string buf(sz - 1, '\0');
@@ -55,8 +54,6 @@ struct NodeEntry {
                 queried = true;
             }
         }
-
-        // Session status
         RS_SessionStatus st{};
         if (RS_GetSessionStatus(ip.c_str(), port, &st) == RS_ERROR_SUCCESS) {
             state = st.state;
@@ -67,20 +64,16 @@ struct NodeEntry {
 };
 
 static std::vector<NodeEntry> g_nodes;
-static double g_lastRefresh = -99.0; // force first refresh
-static const double kRefreshInterval = 3.0; // seconds
+static double g_lastRefresh = -99.0;
+static const double kRefreshInterval = 3.0;
 
 static void RefreshNodes() {
     int timeout_ms = 300;
     RS_NodeList list{};
     RS_DiscoverNodes(timeout_ms, &list);
-
-    // Merge discovered nodes into cache
     for (int i = 0; i < list.count; ++i) {
         std::string ip(list.nodes[i].ip);
         int port = list.nodes[i].port;
-
-        // Check if already cached
         bool found = false;
         for (auto& n : g_nodes) {
             if (n.ip == ip && n.port == port) { found = true; break; }
@@ -94,16 +87,274 @@ static void RefreshNodes() {
         }
     }
     RS_FreeNodeList(&list);
-
-    // Refresh cached node info
-    for (auto& n : g_nodes)
-        n.Refresh();
-
-    // Remove vanished nodes
+    for (auto& n : g_nodes) n.Refresh();
     g_nodes.erase(
         std::remove_if(g_nodes.begin(), g_nodes.end(),
             [](const NodeEntry& n) { return !n.queried; }),
         g_nodes.end());
+}
+
+// ── Schema cache ──────────────────────────────────────────────────
+struct SchemaCache {
+    std::string project_path;
+    std::string host;
+    int         port = 9580;
+    bool        loaded = false;
+    std::string raw_json;
+
+    // Parsed
+    std::vector<std::string> channels;
+    struct SceneInfo {
+        std::string name;
+        uint64_t    hash = 0;
+        struct ParamInfo {
+            std::string key;
+            std::string displayName;
+            int         type = 0;   // RS_PARAMETER_*
+            float       min = 0;
+            float       max = 1;
+            float       step = 0.1f;
+            float       defaultVal = 0;
+            std::string defaultText;
+            std::vector<std::string> options;
+        };
+        std::vector<ParamInfo> params;
+    };
+    std::vector<SceneInfo> scenes;
+
+    bool Load(const char* node_ip, int node_port, const char* project) {
+        host = node_ip; port = node_port; project_path = project;
+        channels.clear(); scenes.clear(); loaded = false;
+
+        int sz = 0;
+        if (RS_GetSchema(node_ip, node_port, project, nullptr, &sz) != RS_ERROR_SUCCESS || sz <= 0)
+            return false;
+        raw_json.resize(sz - 1);
+        if (RS_GetSchema(node_ip, node_port, project, raw_json.data(), &sz) != RS_ERROR_SUCCESS)
+            return false;
+
+        try {
+            auto j = nlohmann::json::parse(raw_json);
+            for (const auto& ch : j["channels"])
+                channels.push_back(ch.get<std::string>());
+            for (const auto& sc : j["scenes"]) {
+                SceneInfo si;
+                si.name = sc.contains("name") && sc["name"].is_string() ? sc["name"].get<std::string>() : "";
+                si.hash = sc.contains("hash") ? sc["hash"].get<uint64_t>() : uint64_t(0);
+                for (const auto& p : sc["parameters"]) {
+                    SceneInfo::ParamInfo pi;
+                    auto safeStr = [](const nlohmann::json& j, const char* key, const char* def) {
+                        return (j.contains(key) && j[key].is_string()) ? j[key].get<std::string>() : std::string(def);
+                    };
+                    auto safeFloat = [](const nlohmann::json& j, const char* key, float def) {
+                        return (j.contains(key) && j[key].is_number()) ? j[key].get<float>() : def;
+                    };
+                    auto safeInt = [](const nlohmann::json& j, const char* key, int def) {
+                        return (j.contains(key) && j[key].is_number()) ? j[key].get<int>() : def;
+                    };
+                    pi.key         = safeStr(p, "key", "");
+                    pi.displayName = safeStr(p, "displayName", pi.key.c_str());
+                    pi.type        = safeInt(p, "type", 0);
+                    pi.min         = safeFloat(p, "min", 0.0f);
+                    pi.max         = safeFloat(p, "max", 1.0f);
+                    pi.step        = safeFloat(p, "step", 0.1f);
+                    if (p.contains("defaultValue")) {
+                        if (p["defaultValue"].is_number())
+                            pi.defaultVal = p["defaultValue"].get<float>();
+                        else if (p["defaultValue"].is_string())
+                            pi.defaultText = p["defaultValue"].get<std::string>();
+                    }
+                    if (p.contains("options") && p["options"].is_array())
+                        for (const auto& o : p["options"])
+                            pi.options.push_back(o.get<std::string>());
+                    si.params.push_back(pi);
+                }
+                scenes.push_back(si);
+            }
+            loaded = true;
+            return true;
+        } catch (...) {}
+        return false;
+    }
+
+    const char* ParamTypeName(int t) const {
+        switch (t) {
+        case 0: return "Number";
+        case 1: return "Image";
+        case 2: return "Pose";
+        case 3: return "Transform";
+        case 4: return "Text";
+        case 5: return "Event";
+        case 6: return "Skeleton";
+        default: return "?";
+        }
+    }
+};
+
+static SchemaCache g_schema;
+static int g_selectedNode = -1;
+static char g_projectPathBuf[512] = "D:/Unreal Projects/nDisplay_Demo_57/nDisplay_Demo.uproject";
+
+// ── Camera state ──────────────────────────────────────────────────
+struct CamState { float x=0,y=1.5f,z=0, rx=0,ry=0,rz=0, fov=90; };
+static std::vector<CamState> g_cameras;
+static int g_selectedCam = 0;
+
+static void InitCamerasFromSchema() {
+    int n = (int)g_schema.channels.size();
+    if ((int)g_cameras.size() != n) g_cameras.resize(n);
+}
+
+// ── Skeleton joint state ──────────────────────────────────────────
+struct JointState { float rx=0,ry=0,rz=0; };  // rotation in degrees
+static std::vector<JointState> g_joints;
+static int g_selectedJoint = 0;
+static const char* g_jointNames[] = {"pelvis","spine_01","spine_02","neck_01","clavicle_l","clavicle_r"};
+static const int g_jointCount = 6;
+static float g_rootX = 0, g_rootY = 0.9f, g_rootZ = 0;  // root position (meters, d3 Y-up)
+
+// ── Session state ─────────────────────────────────────────────────
+static RS_Session* g_session = nullptr;
+static std::thread g_sessionThread;
+static bool        g_sessionRunning = false;
+
+static const char* kEngine   = "D:/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor.exe";
+static const char* kProject = "D:/Unreal Projects/nDisplay_Demo_57/nDisplay_Demo.uproject";
+static const char* kMap     = "/Game/Maps/Main";
+static const char* kNode    = "node0";
+
+static void SessionThreadFunc() {
+    RS_Run(g_session);
+    g_sessionRunning = false;
+}
+
+static void StartSession(const char* host) {
+    if (g_sessionRunning) return;
+    if (!g_schema.loaded) return;
+
+    InitCamerasFromSchema();
+
+    // Build single-viewport stream (fullscreen on primary)
+    int sw = 1920, sh = 1080;
+    for (auto& n : g_nodes) {
+        if (n.ip == host) {
+            int sz = 0;
+            RS_GetNodeInfo(host, g_nodes[0].port, nullptr, &sz);
+            if (sz > 0) {
+                std::string buf(sz-1,'\0');
+                RS_GetNodeInfo(host, g_nodes[0].port, buf.data(), &sz);
+                auto info = nlohmann::json::parse(buf);
+                if (!info["displays"].empty()) {
+                    sw = info["displays"][0].value("w", 1920);
+                    sh = info["displays"][0].value("h", 1080);
+                }
+            }
+            break;
+        }
+    }
+    nlohmann::json streams = nlohmann::json::array();
+    streams.push_back({{"name","vp0"},{"channel","camera0"},{"width",sw},{"height",sh},{"viewpoint",0}});
+
+    int agentPort = g_nodes[0].port;
+    g_session = RS_CreateSession(host, agentPort, 9581);
+    RS_SetStreams(g_session, streams.dump().c_str());
+
+    if (RS_LoadSchema(g_session, kProject) != 0) {
+        fprintf(stderr, "[ERROR] schema load failed\n");
+        RS_DestroySession(g_session); g_session = nullptr; return;
+    }
+
+    // Camera rigs: fixed positions per channel
+    struct { const char* ch; float x,y,z, rx,ry,rz, fov; } cams[] = {
+        {"camera0", 0,1.5f,0, 0,0,0, 90},
+    };
+    RS_CameraRig* rigs[1];
+    for (int i = 0; i < 1; ++i) {
+        rigs[i] = RS_CreateCameraRig();
+        RS_CameraRig_SetLoop(rigs[i], 1);
+        RS_CameraRig_SetSensorSize(rigs[i], sw, sh);
+        RS_CameraRig_AddSample(rigs[i], 0, cams[i].x,cams[i].y,cams[i].z, cams[i].rx,cams[i].ry,cams[i].rz, cams[i].fov);
+    }
+    RS_SetCameras(g_session, rigs, 1);
+
+    // Skeleton
+    const uint64_t NP = UINT64_MAX;
+    Transform bp[] = {{0,0,0,0,0,0,1},{0,0,0.12f,0,0,0,1},{0,0,0.12f,0,0,0,1},{0,0,0.08f,0,0,0,1},{-0.08f,0,0.06f,0,0,0,1},{0.08f,0,0.06f,0,0,0,1}};
+    uint64_t pids[] = {NP,0,1,2,2,2};
+    const char* jn[] = {"pelvis","spine_01","spine_02","neck_01","clavicle_l","clavicle_r"};
+    RS_SetupSkeleton(g_session, bp, pids, jn, 6);
+
+    if (RS_Launch(g_session, kEngine, kMap, kNode) != 0) {
+        fprintf(stderr, "[ERROR] launch failed\n");
+        RS_DestroySession(g_session); g_session = nullptr; return;
+    }
+
+    // Tick: read camera sliders + animate lights+skeleton
+    RS_OnTick(g_session, [](double t, float* params, int nParams,
+                            const char** texts, int nTexts,
+                            RS_SkelPose* poses, int nPoses,
+                            RS_CameraData* cameras, int nCameras, void*) {
+        // Camera from UI sliders
+        if (cameras && nCameras > 0) {
+            if (g_selectedCam < (int)g_cameras.size()) {
+                auto& c = g_cameras[g_selectedCam];
+                cameras[0].x = c.x; cameras[0].y = c.y; cameras[0].z = c.z;
+                cameras[0].rx= c.rx;cameras[0].ry=c.ry;cameras[0].rz=c.rz; cameras[0].fov = c.fov;
+            }
+        }
+        // Light params
+        if (params && nParams >= 5) {
+            params[0]=0.5f+0.5f*(float)sin(t*1.5); params[1]=0.3f+0.3f*(float)sin(t*2.0+1.0);
+            params[2]=0.7f+0.3f*(float)sin(t*3.0+2.0); params[3]=1.0f;
+            params[4]=10.0f+10.0f*(float)sin(t*2.0);
+        }
+        // Text clock
+        if (texts && nTexts > 0) {
+            static char tbuf[64];
+            auto now = std::chrono::system_clock::now();
+            auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch())%1000;
+            auto timer = std::chrono::system_clock::to_time_t(now);
+            std::tm* tm = std::localtime(&timer);
+            snprintf(tbuf, sizeof(tbuf), "%02d:%02d:%02d.%03lld", tm->tm_hour, tm->tm_min, tm->tm_sec, (long long)ms.count());
+            ((const char**)texts)[0] = tbuf;
+        }
+        // Skeleton from UI sliders
+        if (poses && nPoses > 0 && poses[0].joints && poses[0].jointCount >= 6) {
+            auto mkRot = [](float rxDeg, float ryDeg, float rzDeg) -> Transform {
+                float toRad = 3.14159265f / 180.0f;
+                float hx = rxDeg * toRad * 0.5f, hy = ryDeg * toRad * 0.5f, hz = rzDeg * toRad * 0.5f;
+                float sx = sinf(hx), cx = cosf(hx), sy = sinf(hy), cy = cosf(hy), sz = sinf(hz), cz = cosf(hz);
+                // Compose: Rz * Ry * Rx  → quaternion
+                float qx = sx*cy*cz - cx*sy*sz;
+                float qy = cx*sy*cz + sx*cy*sz;
+                float qz = cx*cy*sz - sx*sy*cz;
+                float qw = cx*cy*cz + sx*sy*sz;
+                return {0,0,0, qx,qy,qz,qw};
+            };
+            poses[0].rootTransform={g_rootX,g_rootY,g_rootZ, 0,0,0,1};
+            if ((int)g_joints.size() < g_jointCount) g_joints.resize(g_jointCount);
+            for (int j = 0; j < 6; ++j) {
+                auto& s = g_joints[j];
+                poses[0].joints[j].t = mkRot(s.rx, s.ry, s.rz);
+            }
+        }
+    }, nullptr);
+
+    if (RS_Connect(g_session, 60) != 0) {
+        fprintf(stderr, "[ERROR] connect failed\n");
+        RS_DestroySession(g_session); g_session = nullptr; return;
+    }
+    g_sessionRunning = true;
+    g_sessionThread = std::thread(SessionThreadFunc);
+}
+
+static void StopSession() {
+    if (!g_sessionRunning) return;
+    RS_Stop(g_session);
+    if (g_sessionThread.joinable()) g_sessionThread.join();
+    RS_DestroySession(g_session);
+    g_session = nullptr;
+    g_sessionRunning = false;
 }
 
 // ── Win32 ─────────────────────────────────────────────────────────
@@ -129,20 +380,20 @@ LRESULT WINAPI WndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     return DefWindowProcW(hWnd, msg, wParam, lParam);
 }
 
-// ── UI helpers ────────────────────────────────────────────────────
+// ── UI ────────────────────────────────────────────────────────────
+
 static void DrawNodeList() {
     ImGui::Begin("Nodes");
     ImGui::Text("%zu node(s)", g_nodes.size());
     ImGui::SameLine();
-    if (ImGui::Button("Refresh"))
-        RefreshNodes();
+    if (ImGui::Button("Refresh")) RefreshNodes();
     ImGui::Separator();
 
     for (size_t i = 0; i < g_nodes.size(); ++i) {
         auto& n = g_nodes[i];
         ImGui::PushID((int)i);
 
-        // Status indicator
+        bool selected = (g_selectedNode == (int)i);
         if (n.state == "running")
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.3f, 1.0f, 0.3f, 1.0f));
         else if (n.state == "launching" || n.state == "stopping")
@@ -150,26 +401,199 @@ static void DrawNodeList() {
         else
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.6f, 0.6f, 0.6f, 1.0f));
 
-        // Node card header
         char label[128];
         snprintf(label, sizeof(label), "%s##%zu", n.name.c_str(), i);
-        bool open = ImGui::CollapsingHeader(label, ImGuiTreeNodeFlags_DefaultOpen);
+        if (ImGui::Selectable(label, selected)) {
+            g_selectedNode = (int)i;
+        }
         ImGui::PopStyleColor();
 
-        if (open) {
+        if (ImGui::IsItemHovered()) {
+            ImGui::BeginTooltip();
             ImGui::Text("IP:    %s", n.ip.c_str());
             ImGui::Text("Port:  %d", n.port);
             ImGui::Text("State: %s", n.state.c_str());
-            if (n.pid > 0)
-                ImGui::Text("PID:   %d", n.pid);
-            if (n.launched_at > 0) {
-                auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::system_clock::now().time_since_epoch()).count();
-                ImGui::Text("Up:    %.0fs", (now_ms - n.launched_at) / 1000.0);
-            }
-            ImGui::Separator();
+            if (n.pid > 0) ImGui::Text("PID:   %d", n.pid);
+            ImGui::EndTooltip();
         }
         ImGui::PopID();
+    }
+    ImGui::End();
+}
+
+static void DrawSchemaPanel() {
+    ImGui::Begin("Schema");
+    if (g_nodes.empty()) {
+        ImGui::TextDisabled("No nodes discovered.");
+        ImGui::End(); return;
+    }
+
+    // Project path input
+    ImGui::InputText("Project", g_projectPathBuf, sizeof(g_projectPathBuf));
+    ImGui::SameLine();
+    bool canLoad = g_selectedNode >= 0 && (int)g_nodes.size() > g_selectedNode;
+    if (!canLoad) ImGui::BeginDisabled();
+    if (ImGui::Button("Load Schema")) {
+        if (canLoad) {
+            auto& n = g_nodes[g_selectedNode];
+            if (!g_schema.Load(n.ip.c_str(), n.port, g_projectPathBuf))
+                g_schema.loaded = false;
+        }
+    }
+    if (!canLoad) ImGui::EndDisabled();
+
+    if (g_selectedNode >= 0 && (int)g_nodes.size() > g_selectedNode) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("<- from %s", g_nodes[g_selectedNode].name.c_str());
+    }
+
+    ImGui::Separator();
+
+    if (!g_schema.loaded) {
+        ImGui::TextDisabled("Select a node and click Load Schema.");
+        ImGui::End(); return;
+    }
+
+    // Channels
+    if (ImGui::CollapsingHeader("Channels", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Text("%zu channel(s)", g_schema.channels.size());
+        for (auto& ch : g_schema.channels)
+            ImGui::BulletText("%s", ch.c_str());
+    }
+
+    // Scenes
+    for (size_t si = 0; si < g_schema.scenes.size(); ++si) {
+        auto& sc = g_schema.scenes[si];
+        char hdr[128];
+        snprintf(hdr, sizeof(hdr), "Scene: %s##%zu", sc.name.c_str(), si);
+        if (!ImGui::CollapsingHeader(hdr, ImGuiTreeNodeFlags_DefaultOpen)) continue;
+
+        ImGui::Text("Hash: %llu", (unsigned long long)sc.hash);
+        ImGui::Text("%zu parameter(s)", sc.params.size());
+
+        if (sc.params.empty()) continue;
+
+        if (ImGui::BeginTable("##params", 5,
+            ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+            ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY,
+            ImVec2(0, -1))) {
+            ImGui::TableSetupColumn("Key");
+            ImGui::TableSetupColumn("Display Name");
+            ImGui::TableSetupColumn("Type");
+            ImGui::TableSetupColumn("Range");
+            ImGui::TableSetupColumn("Default");
+            ImGui::TableHeadersRow();
+
+            for (auto& p : sc.params) {
+                ImGui::TableNextRow();
+                ImGui::TableNextColumn(); ImGui::Text("%s", p.key.c_str());
+                ImGui::TableNextColumn(); ImGui::Text("%s", p.displayName.c_str());
+                ImGui::TableNextColumn(); ImGui::Text("%s", g_schema.ParamTypeName(p.type));
+                ImGui::TableNextColumn();
+                if (p.type == 0 || p.type == 5) // Number / Event
+                    ImGui::Text("[%.2f, %.2f] step %.3f", p.min, p.max, p.step);
+                else
+                    ImGui::Text("-");
+                ImGui::TableNextColumn();
+                if (p.type == 4) // Text
+                    ImGui::Text("\"%s\"", p.defaultText.c_str());
+                else if (p.type == 0 || p.type == 5)
+                    ImGui::Text("%.3f", p.defaultVal);
+                else
+                    ImGui::Text("-");
+            }
+            ImGui::EndTable();
+        }
+    }
+    ImGui::End();
+}
+
+static void DrawSkeletonPanel() {
+    ImGui::Begin("Skeleton");
+    if (g_joints.empty()) g_joints.resize(g_jointCount);
+    if (g_selectedJoint >= g_jointCount) g_selectedJoint = 0;
+
+    // Root position
+    ImGui::Text("Root Position (meters)");
+    ImGui::SliderFloat("X", &g_rootX, -10.f, 10.f);
+    ImGui::SliderFloat("Y", &g_rootY, -2.f, 5.f);
+    ImGui::SliderFloat("Z", &g_rootZ, -10.f, 10.f);
+    ImGui::Separator();
+
+    // Joint selector + rotation
+    if (ImGui::BeginCombo("Joint", g_jointNames[g_selectedJoint])) {
+        for (int i = 0; i < g_jointCount; ++i)
+            if (ImGui::Selectable(g_jointNames[i], i == g_selectedJoint))
+                g_selectedJoint = i;
+        ImGui::EndCombo();
+    }
+    auto& j = g_joints[g_selectedJoint];
+    ImGui::SliderFloat("RX (tilt)", &j.rx, -90.f, 90.f);
+    ImGui::SliderFloat("RY (sway)", &j.ry, -90.f, 90.f);
+    ImGui::SliderFloat("RZ (twist)", &j.rz, -90.f, 90.f);
+    if (ImGui::Button("Reset Joint")) j = JointState{};
+    ImGui::End();
+}
+
+static void DrawCameraPanel() {
+    ImGui::Begin("Cameras");
+    if (!g_schema.loaded || g_schema.channels.empty()) {
+        ImGui::TextDisabled("Load schema first to see channels.");
+        ImGui::End(); return;
+    }
+
+    InitCamerasFromSchema();
+    if (g_selectedCam >= (int)g_cameras.size()) g_selectedCam = 0;
+
+    // Channel selector
+    if (ImGui::BeginCombo("Channel", g_schema.channels[g_selectedCam].c_str())) {
+        for (int i = 0; i < (int)g_schema.channels.size(); ++i)
+            if (ImGui::Selectable(g_schema.channels[i].c_str(), i == g_selectedCam))
+                g_selectedCam = i;
+        ImGui::EndCombo();
+    }
+
+    auto& c = g_cameras[g_selectedCam];
+    ImGui::Separator();
+    ImGui::Text("Position");
+    ImGui::SliderFloat("X", &c.x, -20.f, 20.f);
+    ImGui::SliderFloat("Y", &c.y, -10.f, 10.f);
+    ImGui::SliderFloat("Z", &c.z, -20.f, 20.f);
+    ImGui::Separator();
+    ImGui::Text("Rotation");
+    ImGui::SliderFloat("RX", &c.rx, -180.f, 180.f);
+    ImGui::SliderFloat("RY", &c.ry, -180.f, 180.f);
+    ImGui::SliderFloat("RZ", &c.rz, -180.f, 180.f);
+    ImGui::Separator();
+    ImGui::Text("Lens");
+    ImGui::SliderFloat("FOV", &c.fov, 10.f, 170.f);
+
+    if (ImGui::Button("Reset")) c = CamState{};
+    ImGui::End();
+}
+
+static void DrawSessionBar() {
+    ImGui::Begin("Session Control");
+    if (g_nodes.empty()) {
+        ImGui::TextDisabled("No nodes discovered.");
+        ImGui::End(); return;
+    }
+    ImGui::Text("Host: %s", g_nodes[0].ip.c_str());
+    ImGui::SameLine();
+    ImGui::TextDisabled("| 1 cam | %s", kMap);
+
+    if (!g_sessionRunning) {
+        if (ImGui::Button("Launch & Run")) {
+            if (g_schema.loaded) StartSession(g_nodes[0].ip.c_str());
+        }
+        ImGui::SameLine();
+        ImGui::TextDisabled("Schema: %s", g_schema.loaded ? "loaded" : "not loaded");
+    } else {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.8f, 0.2f, 0.2f, 1.0f));
+        if (ImGui::Button("Stop")) StopSession();
+        ImGui::PopStyleColor();
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.3f, 1.0f, 0.3f, 1.0f), "Running...");
     }
     ImGui::End();
 }
@@ -189,22 +613,19 @@ static void DrawStatusBar() {
         else if (n.state == "idle") idle++;
     }
     ImGui::Text("%zu nodes | %d running | %d idle | %.1f FPS",
-        g_nodes.size(), running, idle,
-        ImGui::GetIO().Framerate);
+        g_nodes.size(), running, idle, ImGui::GetIO().Framerate);
     ImGui::End();
     ImGui::PopStyleVar();
 }
 
 // ── Main ──────────────────────────────────────────────────────────
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
-    // Create window
     WNDCLASSEXW wc = { sizeof(wc), CS_CLASSDC, WndProc, 0L, 0L, hInstance,
                        nullptr, nullptr, nullptr, nullptr, L"RS Demo", nullptr };
     RegisterClassExW(&wc);
     HWND hwnd = CreateWindowW(wc.lpszClassName, L"RenderStream Demo", WS_OVERLAPPEDWINDOW,
-                              100, 100, 960, 640, nullptr, nullptr, wc.hInstance, nullptr);
+                              100, 100, 1100, 680, nullptr, nullptr, wc.hInstance, nullptr);
 
-    // Init DX11 + ImGui
     if (!CreateDeviceD3D(hwnd)) {
         CleanupDeviceD3D();
         UnregisterClassW(wc.lpszClassName, wc.hInstance);
@@ -223,7 +644,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
     ShowWindow(hwnd, nCmdShow);
     UpdateWindow(hwnd);
 
-    // Main loop
     bool running = true;
     while (running) {
         MSG msg;
@@ -235,7 +655,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         }
         if (!running) break;
 
-        // Auto-refresh node list
         double now = (double)GetTickCount64() / 1000.0;
         if (now - g_lastRefresh > kRefreshInterval) {
             RefreshNodes();
@@ -246,7 +665,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
 
+        DrawSessionBar();
         DrawNodeList();
+        DrawSchemaPanel();
+        DrawCameraPanel();
+        DrawSkeletonPanel();
         DrawStatusBar();
 
         ImGui::Render();
@@ -257,7 +680,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE, LPSTR, int nCmdShow) {
         g_pSwapChain->Present(1, 0);
     }
 
-    // Cleanup
+    StopSession();
     ImGui_ImplDX11_Shutdown();
     ImGui_ImplWin32_Shutdown();
     ImGui::DestroyContext();
