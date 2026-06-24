@@ -15,14 +15,40 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
-// Discovery impl
+// ── Helpers ──────────────────────────────────────────────────────
+
+static httplib::Client MakeClient(const char* host, int port) {
+    httplib::Client cli(host, port);
+    cli.set_connection_timeout(3, 0);
+    cli.set_read_timeout(5, 0);
+    return cli;
+}
+
+// Copy HTTP response body to caller buffer.  Returns RS_ERROR_SUCCESS,
+// RS_ERROR_NETWORK, or RS_ERROR_TOO_SMALL.
+static int CopyResponse(const httplib::Result& res, char* buf, int* size) {
+    if (!res || res->status != 200) return RS_ERROR_NETWORK;
+    int required = (int)res->body.size() + 1;  // +null
+    if (!buf) {
+        *size = required;
+        return RS_ERROR_SUCCESS;
+    }
+    if (*size < required) {
+        *size = required;
+        return RS_ERROR_TOO_SMALL;
+    }
+    std::memcpy(buf, res->body.c_str(), required);
+    *size = required;
+    return RS_ERROR_SUCCESS;
+}
+
+// ── Discovery implementation ─────────────────────────────────────
 
 static std::vector<RS_NodeInfo> DiscoverNodes(int timeout_ms) {
     std::vector<RS_NodeInfo> nodes;
 
     SOCKET sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (sock == INVALID_SOCKET)
-        return nodes;
+    if (sock == INVALID_SOCKET) return nodes;
 
     BOOL reuse = TRUE;
     setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char*>(&reuse), sizeof(reuse));
@@ -56,8 +82,7 @@ static std::vector<RS_NodeInfo> DiscoverNodes(int timeout_ms) {
         try {
             auto j = nlohmann::json::parse(buf);
             std::string name = j.value("name", "");
-            if (name.empty() || seen.count(name))
-                continue;
+            if (name.empty() || seen.count(name)) continue;
             seen.insert(name);
 
             char ip[INET_ADDRSTRLEN]{};
@@ -77,25 +102,23 @@ static std::vector<RS_NodeInfo> DiscoverNodes(int timeout_ms) {
             }
             strncpy_s(node.apis, apis.c_str(), _TRUNCATE);
             nodes.push_back(node);
-        } catch (...) {
-        }
+        } catch (...) {}
     }
 
     closesocket(sock);
     return nodes;
 }
 
-// Discovery C API
+// ── Discovery C API ──────────────────────────────────────────────
 
-RS_NodeList RS_DiscoverNodes(int timeout_ms) {
+int RS_DiscoverNodes(int timeout_ms, RS_NodeList* out) {
+    if (!out) return RS_ERROR_PARAM;
     auto nodes = DiscoverNodes(timeout_ms);
-    RS_NodeList list{};
-    list.count = static_cast<int>(nodes.size());
-    list.nodes = new RS_NodeInfo[list.count];
-    for (int i = 0; i < list.count; ++i) {
-        list.nodes[i] = nodes[i];
-    }
-    return list;
+    out->count = static_cast<int>(nodes.size());
+    out->nodes = new RS_NodeInfo[out->count];
+    for (int i = 0; i < out->count; ++i)
+        out->nodes[i] = nodes[i];
+    return RS_ERROR_SUCCESS;
 }
 
 void RS_FreeNodeList(RS_NodeList* list) {
@@ -106,77 +129,81 @@ void RS_FreeNodeList(RS_NodeList* list) {
     }
 }
 
-// HTTP C API
-
-static httplib::Client MakeClient(const char* host, int port) {
-    httplib::Client cli(host, port);
-    cli.set_connection_timeout(3, 0);
-    cli.set_read_timeout(5, 0);
-    return cli;
-}
+// ── Health ───────────────────────────────────────────────────────
 
 int RS_Health(const char* host, int port) {
+    if (!host || port <= 0) return RS_ERROR_PARAM;
     auto res = MakeClient(host, port).Get("/api/health");
-    return (res && res->status == 200) ? 0 : -1;
+    return (res && res->status == 200) ? RS_ERROR_SUCCESS : RS_ERROR_NETWORK;
 }
 
-char* RS_GetNodeInfo(const char* host, int port) {
-    auto res = MakeClient(host, port).Get("/api/node/info");
-    if (!res || res->status != 200) return nullptr;
-    char* s = new char[res->body.size() + 1];
-    std::memcpy(s, res->body.c_str(), res->body.size() + 1);
-    return s;
+// ── Node info / Session ──────────────────────────────────────────
+
+int RS_GetNodeInfo(const char* host, int port, char* buf, int* size) {
+    if (!host || !size) return RS_ERROR_PARAM;
+    return CopyResponse(MakeClient(host, port).Get("/api/node/info"), buf, size);
 }
 
-void RS_FreeString(char* s) {
-    delete[] s;
+int RS_ListUnreal(const char* host, int port, char* buf, int* size) {
+    if (!host || !size) return RS_ERROR_PARAM;
+    return CopyResponse(MakeClient(host, port).Get("/api/unreal/list"), buf, size);
 }
 
-char* RS_ListUnreal(const char* host, int port) {
-    auto res = MakeClient(host, port).Get("/api/unreal/list");
-    if (!res || res->status != 200)
-        return nullptr;
-    char* s = new char[res->body.size() + 1];
-    std::memcpy(s, res->body.c_str(), res->body.size() + 1);
-    return s;
-}
+int RS_GetSessionStatus(const char* host, int port, RS_SessionStatus* out) {
+    if (!host || !out) return RS_ERROR_PARAM;
 
-int RS_KillUnreal(const char* host, int port, int pid) {
-    nlohmann::json body = {{"pid", pid}};
-    auto res = MakeClient(host, port).Post("/api/unreal/kill", body.dump(), "application/json");
-    if (!res || res->status != 200)
-        return -1;
-    return nlohmann::json::parse(res->body).value("success", false) ? 0 : -1;
-}
-
-RS_SessionStatus RS_GetSessionStatus(const char* host, int port) {
-    RS_SessionStatus status{};
-    strncpy_s(status.state, "idle", _TRUNCATE);
-    status.pid = 0;
-    status.exit_code = -1;
-    status.launched_at = 0;
-    status.pipe_connected_at = 0;
+    out->state[0] = '\0';
+    out->pid = 0;
+    out->exit_code = -1;
+    out->launched_at = 0;
+    out->pipe_connected_at = 0;
 
     auto res = MakeClient(host, port).Get("/api/unreal/status");
-    if (!res || res->status != 200)
-        return status;
+    if (!res || res->status != 200) {
+        strncpy_s(out->state, "offline", _TRUNCATE);
+        return RS_ERROR_NETWORK;
+    }
 
     try {
         auto j = nlohmann::json::parse(res->body);
-        auto state = j.value("state", "idle");
-        strncpy_s(status.state, state.c_str(), _TRUNCATE);
-
-        status.pid = j.value("pid", 0);
-
-        if (!j["exit_code"].is_null())
-            status.exit_code = j["exit_code"].get<int>();
+        strncpy_s(out->state, j.value("state", "offline").c_str(), _TRUNCATE);
+        out->pid = j.value("pid", 0);
+        if (j["exit_code"].is_null())
+            out->exit_code = -1;
         else
-            status.exit_code = -1;
-
-        status.launched_at = j.value("launched_at", int64_t{0});
-        status.pipe_connected_at = j.value("pipe_connected_at", int64_t{0});
+            out->exit_code = j["exit_code"].get<int>();
+        out->launched_at = j.value("launched_at", int64_t{0});
+        out->pipe_connected_at = j.value("pipe_connected_at", int64_t{0});
+        return RS_ERROR_SUCCESS;
     } catch (...) {
+        return RS_ERROR_API;
     }
+}
 
-    return status;
+int RS_KillUnreal(const char* host, int port, int pid) {
+    if (!host || pid <= 0) return RS_ERROR_PARAM;
+    nlohmann::json body = {{"pid", pid}};
+    auto res = MakeClient(host, port).Post("/api/unreal/kill", body.dump(), "application/json");
+    if (!res || res->status != 200) return RS_ERROR_NETWORK;
+    try {
+        return nlohmann::json::parse(res->body).value("success", false)
+                   ? RS_ERROR_SUCCESS : RS_ERROR_API;
+    } catch (...) {
+        return RS_ERROR_API;
+    }
+}
+
+// ── Schema / Launch ──────────────────────────────────────────────
+
+int RS_GetSchema(const char* host, int port, const char* project, char* buf, int* size) {
+    if (!host || !project || !size) return RS_ERROR_PARAM;
+    std::string url = "/api/renderstream/schema?project=";
+    url += project;
+    return CopyResponse(MakeClient(host, port).Get(url.c_str()), buf, size);
+}
+
+int RS_LaunchUnreal(const char* host, int port, const char* config_json, char* buf, int* size) {
+    if (!host || !config_json || !size) return RS_ERROR_PARAM;
+    auto res = MakeClient(host, port).Post("/api/renderstream/launch", config_json, "application/json");
+    return CopyResponse(res, buf, size);
 }

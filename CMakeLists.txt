@@ -131,6 +131,27 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(httplib)
 
+# Dear ImGui (DX11 + Win32)
+FetchContent_Declare(
+    imgui
+    GIT_REPOSITORY https://github.com/ocornut/imgui.git
+    GIT_TAG        v1.91.6
+)
+FetchContent_MakeAvailable(imgui)
+set(IMGUI_SRC_DIR "${imgui_SOURCE_DIR}")
+set(IMGUI_BACKENDS_DIR "${IMGUI_SRC_DIR}/backends")
+add_library(imgui STATIC
+    ${IMGUI_SRC_DIR}/imgui.cpp
+    ${IMGUI_SRC_DIR}/imgui_demo.cpp
+    ${IMGUI_SRC_DIR}/imgui_draw.cpp
+    ${IMGUI_SRC_DIR}/imgui_tables.cpp
+    ${IMGUI_SRC_DIR}/imgui_widgets.cpp
+    ${IMGUI_BACKENDS_DIR}/imgui_impl_win32.cpp
+    ${IMGUI_BACKENDS_DIR}/imgui_impl_dx11.cpp
+)
+target_include_directories(imgui PUBLIC ${IMGUI_SRC_DIR} ${IMGUI_BACKENDS_DIR})
+target_link_libraries(imgui PUBLIC d3d11 d3dcompiler dxguid winmm)
+
 # Enable CTest
 include(CTest)
 

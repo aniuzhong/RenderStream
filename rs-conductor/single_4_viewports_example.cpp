@@ -18,7 +18,6 @@
 #include <string>
 #include <thread>
 
-#include <httplib.h>
 #include <nlohmann/json.hpp>
 
 #include "camera_rig.h"
@@ -159,17 +158,15 @@ static nlohmann::json GenerateNdisplayConfig(const std::vector<Viewport>& vps) {
     return ndisplay::ToJson(cfg);
 }
 
-static std::string SchemaProject(const char* node_ip, int node_port) {
-    std::string url = "/api/renderstream/schema?project=";
-    url += kProjectPath;
-    httplib::Client cli(node_ip, node_port);
-    cli.set_connection_timeout(3, 0);
-    auto res = cli.Get(url.c_str());
-    if (!res || res->status != 200) {
+static std::string QuerySchema(const char* node_ip, int node_port) {
+    int sz = 0;
+    if (RS_GetSchema(node_ip, node_port, kProjectPath, nullptr, &sz) != RS_ERROR_SUCCESS || sz <= 0) {
         fprintf(stderr, "  [ERROR] schema not found: %s\n", kProjectPath);
         return {};
     }
-    return res->body;
+    std::string body(sz - 1, '\0');
+    RS_GetSchema(node_ip, node_port, kProjectPath, body.data(), &sz);
+    return body;
 }
 
 //  Main
@@ -182,7 +179,8 @@ int main(int argc, char* argv[]) {
 
     // 1. Discover nodes
     fprintf(stderr, "Discovering nodes (timeout=%dms)...\n", timeout_ms);
-    RS_NodeList list = RS_DiscoverNodes(timeout_ms);
+    RS_NodeList list{};
+    RS_DiscoverNodes(timeout_ms, &list);
     int node_count = list.count;
     fprintf(stderr, "Found %d node(s)\n\n", node_count);
 
@@ -197,20 +195,21 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "-- Node %d: %s (%s:%d) --\n", i, n->name, n->ip, n->port);
 
         // 2. Query node info
-        char* info_str = RS_GetNodeInfo(n->ip, n->port);
-        if (!info_str) {
+        int info_sz = 0;
+        if (RS_GetNodeInfo(n->ip, n->port, nullptr, &info_sz) != RS_ERROR_SUCCESS || info_sz <= 0) {
             fprintf(stderr, "  [ERROR] failed to get node info\n");
             continue;
         }
+        std::string info_str(info_sz - 1, '\0');
+        RS_GetNodeInfo(n->ip, n->port, info_str.data(), &info_sz);
         auto info = nlohmann::json::parse(info_str);
-        RS_FreeString(info_str);
 
         int screen_w = info["displays"][0]["w"];
         int screen_h = info["displays"][0]["h"];
         auto vps = BuildViewports(screen_w, screen_h);
 
         // 3. Query schema
-        std::string schema_body = SchemaProject(n->ip, n->port);
+        std::string schema_body = QuerySchema(n->ip, n->port);
         if (schema_body.empty()) continue;
         auto schema = nlohmann::json::parse(schema_body);
 
@@ -249,14 +248,14 @@ int main(int argc, char* argv[]) {
         launch_body["ndisplay"]   = ndisplay_json;
         launch_body["streams"]    = streams;
 
-        httplib::Client cli(n->ip, n->port);
-        cli.set_connection_timeout(3, 0);
-        auto launch_res = cli.Post("/api/renderstream/launch", launch_body.dump(), "application/json");
-        if (!launch_res || launch_res->status != 200) {
+        std::string body_json = launch_body.dump();
+        char launch_resp[512]{};
+        int launch_sz = sizeof(launch_resp);
+        if (RS_LaunchUnreal(n->ip, n->port, body_json.c_str(), launch_resp, &launch_sz) != RS_ERROR_SUCCESS) {
             fprintf(stderr, "  [ERROR] launch rejected\n");
             continue;
         }
-        auto r = nlohmann::json::parse(launch_res->body);
+        auto r = nlohmann::json::parse(launch_resp);
         fprintf(stderr, "  UE launched: pid=%d\n", r["pid"].get<int>());
         fflush(stderr);
 
