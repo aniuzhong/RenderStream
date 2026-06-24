@@ -19,7 +19,8 @@ void ClearErrorCallback()            { g_error_fn   = nullptr; }
 void ClearVerboseCallback()          { g_verbose_fn = nullptr; }
 
 void Info(const char* fmt, ...) {
-    if (!g_info_fn) return;
+    if (!g_info_fn)
+        return;
     char buf[1024];
     va_list args;
     va_start(args, fmt);
@@ -29,7 +30,8 @@ void Info(const char* fmt, ...) {
 }
 
 void Error(const char* fmt, ...) {
-    if (!g_error_fn) return;
+    if (!g_error_fn)
+        return;
     char buf[1024];
     va_list args;
     va_start(args, fmt);
@@ -39,7 +41,8 @@ void Error(const char* fmt, ...) {
 }
 
 void Verbose(const char* fmt, ...) {
-    if (!g_verbose_fn) return;
+    if (!g_verbose_fn)
+        return;
     char buf[1024];
     va_list args;
     va_start(args, fmt);
