@@ -268,6 +268,35 @@ int main(int argc, char* argv[]) {
     fprintf(stderr, "  %zu channels, %zu scenes\n\n",
             schema["channels"].size(), schema["scenes"].size());
 
+    // Build parameter values from schema defaults
+    std::vector<float> param_values;
+    uint64_t scene_hash = 0;
+    for (const auto& scene : schema["scenes"]) {
+        scene_hash = scene.value("hash", 0ull);
+        for (const auto& param : scene["parameters"]) {
+            uint32_t type = param.value("type", 0u);
+            float defaultVal = 0.0f;
+            if (param.contains("defaultValue") && param["defaultValue"].is_number())
+                defaultVal = param["defaultValue"].get<float>();
+            switch (type) {
+            case 0: // RS_PARAMETER_NUMBER
+            case 5: // RS_PARAMETER_EVENT
+                param_values.push_back(defaultVal);
+                break;
+            case 2: // RS_PARAMETER_POSE
+            case 3: // RS_PARAMETER_TRANSFORM
+                for (int r = 0; r < 4; ++r)
+                    for (int c = 0; c < 4; ++c)
+                        param_values.push_back((r == c) ? 1.0f : 0.0f);
+                break;
+            default: break;
+            }
+        }
+        break;
+    }
+    fprintf(stderr, "  schema hash=%llu, %zu param floats\n\n",
+        static_cast<unsigned long long>(scene_hash), param_values.size());
+
     // 3. Build camera rigs
     auto rigs = BuildCameraRigs();
 
@@ -287,7 +316,7 @@ int main(int argc, char* argv[]) {
         nlohmann::json launch_body;
         launch_body["engine_exe"] = cfg.engine_exe;
         launch_body["project"]    = cfg.project_path;
-        launch_body["map"]        = "/Game/Maps/" + schema["scenes"][0].get<std::string>();
+        launch_body["map"]        = "/Game/Maps/" + schema["scenes"][0]["name"].get<std::string>();
         launch_body["node_name"]  = cfg.name;
         launch_body["ndisplay"]   = ndisplay_json;
         launch_body["streams"]    = streams_json;
@@ -320,6 +349,8 @@ int main(int argc, char* argv[]) {
         if (pids[i] == 0) continue;
         auto c = std::make_unique<Conductor>(nodes[i].ip, kTickPort, kNodes[i].name);
         c->SetRigs(rigs);
+        c->SetSchemaHash(scene_hash);
+        c->SetParameterValues(param_values);
         SetupConductorCallbacks(*c, kNodes[i].name);
         fprintf(stderr, "[%s] connecting to %s:%d...\n", kNodes[i].name, nodes[i].ip, kTickPort);
         if (!c->Connect(60)) {

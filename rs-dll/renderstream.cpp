@@ -168,7 +168,17 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_saveSchema(const char* assetPath, Sc
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_setSchema(Schema*) {
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_setSchema(Schema* schema) {
+    if (!schema)
+        return RS_ERROR_INVALID_PARAMETERS;
+
+    for (uint32_t i = 0; i < schema->scenes.nScenes; ++i) {
+        auto& scene = schema->scenes.scenes[i];
+        if (scene.hash == 0 && scene.name) {
+            scene.hash = std::hash<std::string>{}(scene.name);
+            rs::log::Info("[rs_setSchema] scene[%u] '%s' hash=%llu", i, scene.name, static_cast<unsigned long long>(scene.hash));
+        }
+    }
     return RS_ERROR_SUCCESS;
 }
 
@@ -245,11 +255,61 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameCamera(StreamHandle streamHa
     return g_link->GetCamera(streamHandle, outCameraData);
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameParameters(uint64_t, void*, uint64_t) {
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameParameters(uint64_t schemaHash, void* outParameterData, uint64_t outParameterDataSize) {
+    if (!outParameterData) {
+        if (outParameterDataSize == 0)
+            return RS_ERROR_SUCCESS;  // No params to query, null buffer is acceptable
+        return RS_ERROR_INVALID_PARAMETERS;
+    }
+    if (!g_link)
+        return RS_ERROR_UNSPECIFIED;
+
+    const auto& vals = g_link->Published().param_values;
+    if (vals.empty()) {
+        static int s_warn = 0;
+        if (++s_warn <= 5)
+            rs::log::Info("[rs_getFrameParameters] hash=%llu: no param_values in this tick", static_cast<unsigned long long>(schemaHash));
+        memset(outParameterData, 0, static_cast<size_t>(outParameterDataSize));
+        return RS_ERROR_SUCCESS;
+    }
+
+    size_t copyBytes = (std::min)(static_cast<size_t>(outParameterDataSize), vals.size() * sizeof(float));
+    std::memcpy(outParameterData, vals.data(), copyBytes);
+
+    static int s_log = 0;
+    if (++s_log <= 5 || s_log % 120 == 0)
+        rs::log::Info("[rs_getFrameParameters] hash=%llu copied %zu floats (%zu bytes) of %zu params",
+            static_cast<unsigned long long>(schemaHash),
+            copyBytes / sizeof(float), copyBytes, vals.size());
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameImageData(uint64_t, ImageFrameData*, uint64_t) {
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameImageData(uint64_t schemaHash, ImageFrameData* outParameterData, uint64_t outParameterDataCount) {
+    if (!outParameterData) {
+        if (outParameterDataCount == 0)
+            return RS_ERROR_SUCCESS;  // No images to query, null buffer is acceptable
+        return RS_ERROR_INVALID_PARAMETERS;
+    }
+    if (!g_link)
+        return RS_ERROR_UNSPECIFIED;
+
+    const auto& imgs = g_link->Published().image_refs;
+    if (imgs.empty()) {
+        static int s_warn = 0;
+        if (++s_warn <= 5)
+            rs::log::Info("[rs_getFrameImageData] hash=%llu: no image_refs in this tick", static_cast<unsigned long long>(schemaHash));
+        return RS_ERROR_SUCCESS;
+    }
+
+    uint64_t count = (std::min)(outParameterDataCount, static_cast<uint64_t>(imgs.size()));
+    for (uint64_t i = 0; i < count; ++i)
+        outParameterData[i] = imgs[i];
+
+    static int s_log = 0;
+    if (++s_log <= 5 || s_log % 120 == 0)
+        rs::log::Info("[rs_getFrameImageData] hash=%llu copied %llu image refs of %zu total",
+            static_cast<unsigned long long>(schemaHash),
+            static_cast<unsigned long long>(count), imgs.size());
     return RS_ERROR_SUCCESS;
 }
 
@@ -257,30 +317,135 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameImage2(int64_t, const Sender
     return RS_ERROR_NOTFOUND;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameText(uint64_t, uint32_t, const char**) {
-    return RS_ERROR_NOTFOUND;
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameText(uint64_t schemaHash, uint32_t textParamIndex, const char** outTextPtr) {
+    if (!outTextPtr)
+        return RS_ERROR_INVALID_PARAMETERS;
+    if (!g_link)
+        return RS_ERROR_UNSPECIFIED;
+
+    const auto& texts = g_link->Published().text_values;
+    if (textParamIndex >= texts.size()) {
+        static int s_warn = 0;
+        if (++s_warn <= 5)
+            rs::log::Info("[rs_getFrameText] hash=%llu index=%u out of range (total=%zu)",
+                static_cast<unsigned long long>(schemaHash), textParamIndex, texts.size());
+        return RS_ERROR_NOTFOUND;
+    }
+
+    *outTextPtr = texts[textParamIndex].c_str();
+
+    static int s_log = 0;
+    if (++s_log <= 5 || s_log % 120 == 0)
+        rs::log::Info("[rs_getFrameText] hash=%llu index=%u -> '%s' (len=%zu)",
+            static_cast<unsigned long long>(schemaHash), textParamIndex, *outTextPtr, texts[textParamIndex].size());
+    return RS_ERROR_SUCCESS;
 }
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_releaseImage2(const SenderFrame*) {
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointPoses(uint64_t, uint32_t, SkeletonPose*, int* numJoints) {
-    if (numJoints)
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointPoses(uint64_t schemaHash, uint32_t poseParamIndex, SkeletonPose* pose, int* numJoints) {
+    if (!numJoints)
+        return RS_ERROR_INVALID_PARAMETERS;
+    if (!g_link)
+        return RS_ERROR_UNSPECIFIED;
+
+    const auto& poses = g_link->Published().skel_poses;
+    if (poseParamIndex >= poses.size()) {
         *numJoints = 0;
-    return RS_ERROR_UNSPECIFIED;
+        return RS_ERROR_SUCCESS;  // No pose assigned is valid
+    }
+
+    const auto& sp = poses[poseParamIndex];
+    int n = static_cast<int>(sp.joints.size());
+
+    if (!pose) {
+        *numJoints = n;
+        return RS_ERROR_SUCCESS;
+    }
+
+    int count = (std::min)(*numJoints, n);
+    pose->layoutId      = sp.layout_id;
+    pose->layoutVersion = sp.layout_version;
+    pose->rootTransform = sp.root_transform;
+    for (int i = 0; i < count; ++i) {
+        pose->joints[i].id        = sp.joints[i].id;
+        pose->joints[i].transform = sp.joints[i].transform;
+    }
+    *numJoints = count;
+
+    static int s_log = 0;
+    if (++s_log <= 5 || s_log % 120 == 0)
+        rs::log::Info("[rs_getSkeletonJointPoses] hash=%llu idx=%u joints=%d layoutId=%llu",
+            static_cast<unsigned long long>(schemaHash), poseParamIndex, count,
+            static_cast<unsigned long long>(sp.layout_id));
+    return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonLayout(uint64_t, uint64_t, SkeletonLayout*, int* numJoints) {
-    if (numJoints)
-        *numJoints = 0;
-    return RS_ERROR_UNSPECIFIED;
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonLayout(uint64_t schemaHash, uint64_t layoutId, SkeletonLayout* layout, int* numJoints) {
+    if (!numJoints)
+        return RS_ERROR_INVALID_PARAMETERS;
+    if (!g_link)
+        return RS_ERROR_UNSPECIFIED;
+
+    const auto& sl = g_link->Published().skel_layout;
+    int n = static_cast<int>(sl.joints.size());
+
+    if (!layout) {
+        *numJoints = n;
+        return RS_ERROR_SUCCESS;
+    }
+
+    int count = (std::min)(*numJoints, n);
+    layout->version = sl.version;
+    for (int i = 0; i < count; ++i) {
+        layout->joints[i].id        = sl.joints[i].id;
+        layout->joints[i].parentId  = sl.joints[i].parentId;
+        layout->joints[i].transform = sl.joints[i].transform;
+    }
+    *numJoints = count;
+
+    static int s_log = 0;
+    if (++s_log <= 5 || s_log % 120 == 0)
+        rs::log::Info("[rs_getSkeletonLayout] hash=%llu layoutId=%llu joints=%d",
+            static_cast<unsigned long long>(schemaHash),
+            static_cast<unsigned long long>(layoutId), count);
+    return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointNames(uint64_t, uint64_t, const char**, int**, int* numJoints) {
-    if (numJoints)
-        *numJoints = 0;
-    return RS_ERROR_UNSPECIFIED;
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointNames(uint64_t schemaHash, uint64_t layoutId, const char** names, int** nameLengths, int* numJoints) {
+    if (!numJoints)
+        return RS_ERROR_INVALID_PARAMETERS;
+    if (!g_link)
+        return RS_ERROR_UNSPECIFIED;
+
+    const auto& joint_names = g_link->Published().joint_names;
+    int n = static_cast<int>(joint_names.size());
+    *numJoints = n;
+
+    if (n == 0) {
+        rs::log::Info("[rs_getSkeletonJointNames] WARNING: joint_names vector is EMPTY in published_");
+    }
+
+    if (nameLengths) {
+        for (int i = 0; i < n; ++i)
+            if (nameLengths[i])
+                *nameLengths[i] = static_cast<int>(joint_names[i].size());
+    }
+
+    if (names) {
+        for (int i = 0; i < n; ++i)
+            names[i] = joint_names[i].c_str();
+    }
+
+    static int s_log = 0;
+    if (++s_log <= 5 || s_log % 120 == 0)
+        rs::log::Info("[rs_getSkeletonJointNames] hash=%llu layoutId=%llu joints=%d name[0]='%s'",
+            static_cast<unsigned long long>(schemaHash),
+            static_cast<unsigned long long>(layoutId), n,
+            n > 0 ? joint_names[0].c_str() : "(empty)");
+    return RS_ERROR_SUCCESS;
 }
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_sendFrame2(StreamHandle streamHandle, const SenderFrame* frame, const FrameResponseData* frameData) {

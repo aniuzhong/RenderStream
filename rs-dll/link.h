@@ -51,6 +51,8 @@ public:
     RS_ERROR AwaitFrame(int timeoutMs, FrameData* data);
     RS_ERROR GetCamera(StreamHandle handle, CameraData* out);
 
+    const Request& Published() const { return *published_; }
+
     bool HasSession() const;
     void SetFollower(bool is_follower);
     RS_ERROR BeginFollowerFrame(double tTracked);

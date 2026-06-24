@@ -710,6 +710,109 @@ inline bool save_schema_file(const std::filesystem::path& json_path, const schem
 }
 
 // ============================================================
+// Transform / Skeleton - JSON serialization (global scope: C types)
+// ============================================================
+
+inline void to_json(nlohmann::json& j, const Transform& t) {
+    j = {{"x", t.x}, {"y", t.y}, {"z", t.z},
+         {"rx", t.rx}, {"ry", t.ry}, {"rz", t.rz}, {"rw", t.rw}};
+}
+
+inline void from_json(const nlohmann::json& j, Transform& t) {
+    t.x = j.value("x", 0.0f); t.y = j.value("y", 0.0f); t.z = j.value("z", 0.0f);
+    t.rx = j.value("rx", 0.0f); t.ry = j.value("ry", 0.0f); t.rz = j.value("rz", 0.0f); t.rw = j.value("rw", 1.0f);
+}
+
+inline void to_json(nlohmann::json& j, const SkeletonJointDesc& jd) {
+    j["id"] = jd.id;
+    j["parentId"] = jd.parentId;
+    nlohmann::json tj; to_json(tj, jd.transform); j["transform"] = std::move(tj);
+}
+
+inline void from_json(const nlohmann::json& j, SkeletonJointDesc& jd) {
+    jd.id = j.value("id", 0ull);
+    jd.parentId = j.value("parentId", 0ull);
+    jd.transform = {};
+    if (j.contains("transform")) from_json(j["transform"], jd.transform);
+}
+
+inline void to_json(nlohmann::json& j, const SkeletonJointPose& jp) {
+    j["id"] = jp.id;
+    nlohmann::json tj; to_json(tj, jp.transform); j["transform"] = std::move(tj);
+}
+
+inline void from_json(const nlohmann::json& j, SkeletonJointPose& jp) {
+    jp.id = j.value("id", 0ull);
+    jp.transform = {};
+    if (j.contains("transform")) from_json(j["transform"], jp.transform);
+}
+
+// ============================================================
+// Skeleton C++ types (rs namespace)
+// ============================================================
+
+struct skeleton_pose_data {
+    uint64_t                     layout_id      = 0;
+    uint32_t                     layout_version = 1;
+    Transform                    root_transform = {};
+    std::vector<SkeletonJointPose> joints;
+};
+
+struct skeleton_layout_data {
+    uint32_t                      version = 1;
+    std::vector<SkeletonJointDesc> joints;
+};
+
+inline void to_json(nlohmann::json& j, const skeleton_pose_data& sp) {
+    j["layoutId"]      = sp.layout_id;
+    j["layoutVersion"]  = sp.layout_version;
+    { nlohmann::json tj; to_json(tj, sp.root_transform); j["rootTransform"] = std::move(tj); }
+    auto arr = nlohmann::json::array();
+    for (const auto& jp : sp.joints) {
+        nlohmann::json jp_json;
+        to_json(jp_json, jp);
+        arr.push_back(std::move(jp_json));
+    }
+    j["joints"] = std::move(arr);
+}
+
+inline void from_json(const nlohmann::json& j, skeleton_pose_data& sp) {
+    sp.layout_id      = j.value("layoutId", 0ull);
+    sp.layout_version = j.value("layoutVersion", 1u);
+    sp.root_transform = {};
+    if (j.contains("rootTransform")) from_json(j["rootTransform"], sp.root_transform);
+    sp.joints.clear();
+    if (j.contains("joints") && j["joints"].is_array())
+        for (const auto& jt : j["joints"]) {
+            SkeletonJointPose jp{};
+            from_json(jt, jp);
+            sp.joints.push_back(jp);
+        }
+}
+
+inline void to_json(nlohmann::json& j, const skeleton_layout_data& sl) {
+    j["version"] = sl.version;
+    auto arr = nlohmann::json::array();
+    for (const auto& jd : sl.joints) {
+        nlohmann::json jd_json;
+        to_json(jd_json, jd);
+        arr.push_back(std::move(jd_json));
+    }
+    j["joints"] = std::move(arr);
+}
+
+inline void from_json(const nlohmann::json& j, skeleton_layout_data& sl) {
+    sl.version = j.value("version", 1u);
+    sl.joints.clear();
+    if (j.contains("joints") && j["joints"].is_array())
+        for (const auto& jt : j["joints"]) {
+            SkeletonJointDesc jd{};
+            from_json(jt, jd);
+            sl.joints.push_back(jd);
+        }
+}
+
+// ============================================================
 // Per-frame protocol - Request
 // ============================================================
 
@@ -722,6 +825,9 @@ struct Request {
     std::vector<float>          param_values;
     std::vector<std::string>    text_values;
     std::vector<ImageFrameData> image_refs;
+    skeleton_layout_data        skel_layout;
+    std::vector<std::string>    joint_names;
+    std::vector<skeleton_pose_data> skel_poses;
 };
 
 inline void to_json(nlohmann::json& j, const Request& r) {
@@ -746,6 +852,12 @@ inline void to_json(nlohmann::json& j, const Request& r) {
         }
         j["images"] = std::move(images);
     }
+    if (!r.joint_names.empty()) {
+        j["jointNames"]    = r.joint_names;
+        j["skeletonLayout"]= r.skel_layout;
+    }
+    if (!r.skel_poses.empty())
+        j["skeletonPoses"] = r.skel_poses;
 }
 
 inline void from_json(const nlohmann::json& j, Request& r) {
@@ -780,6 +892,22 @@ inline void from_json(const nlohmann::json& j, Request& r) {
             r.image_refs.push_back(ifd);
         }
     }
+
+    r.skel_layout = skeleton_layout_data{};
+    r.joint_names.clear();
+    if (j.contains("jointNames") && j["jointNames"].is_array()) {
+        for (const auto& n : j["jointNames"])
+            r.joint_names.push_back(n.get<std::string>());
+        r.skel_layout = j.value("skeletonLayout", skeleton_layout_data{});
+    }
+
+    r.skel_poses.clear();
+    if (j.contains("skeletonPoses") && j["skeletonPoses"].is_array())
+        for (const auto& sp : j["skeletonPoses"]) {
+            skeleton_pose_data spd{};
+            from_json(sp, spd);
+            r.skel_poses.push_back(spd);
+        }
 }
 
 }  // namespace rs

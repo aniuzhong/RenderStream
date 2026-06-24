@@ -13,6 +13,8 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
+#include <cstdint>
 #include <string>
 #include <thread>
 
@@ -242,7 +244,7 @@ int main(int argc, char* argv[]) {
         nlohmann::json launch_body;
         launch_body["engine_exe"] = kEngineExe;
         launch_body["project"]    = kProjectPath;
-        launch_body["map"]        = "/Game/Maps/" + schema["scenes"][0].get<std::string>();
+        launch_body["map"]        = "/Game/Maps/" + schema["scenes"][0]["name"].get<std::string>();
         launch_body["node_name"]  = kNodeName;
         launch_body["ndisplay"]   = ndisplay_json;
         launch_body["streams"]    = streams;
@@ -256,22 +258,162 @@ int main(int argc, char* argv[]) {
         }
         auto r = nlohmann::json::parse(launch_res->body);
         fprintf(stderr, "  UE launched: pid=%d\n", r["pid"].get<int>());
+        fflush(stderr);
 
         // 6. Build camera rigs per viewport
+        fprintf(stderr, "  Building camera rigs...\n"); fflush(stderr);
         std::vector<CameraRig> rigs;
         for (const auto& vp : vps)
             rigs.push_back(BuildCameraRig(CameraIndex(vp.channel), vp.w, vp.h));
 
-        // 7. Connect and run conductor
+        // 7. Build parameter values from schema defaults
+        fprintf(stderr, "  Building parameter values...\n"); fflush(stderr);
+        std::vector<float> param_values;
+        uint64_t scene_hash = 0;
+        try {
+            for (const auto& scene : schema["scenes"]) {
+                scene_hash = scene.value("hash", 0ull);
+                for (const auto& param : scene["parameters"]) {
+                    uint32_t type = param.value("type", 0u);
+                    float defaultVal = 0.0f;
+                    if (param.contains("defaultValue") && param["defaultValue"].is_number())
+                        defaultVal = param["defaultValue"].get<float>();
+                    switch (type) {
+                    case 0: // RS_PARAMETER_NUMBER
+                    case 5: // RS_PARAMETER_EVENT
+                        param_values.push_back(defaultVal);
+                        break;
+                    case 2: // RS_PARAMETER_POSE
+                    case 3: // RS_PARAMETER_TRANSFORM (4x4 identity)
+                        for (int r = 0; r < 4; ++r)
+                            for (int c = 0; c < 4; ++c)
+                                param_values.push_back((r == c) ? 1.0f : 0.0f);
+                        break;
+                    case 1: // RS_PARAMETER_IMAGE - handled via rs_getFrameImageData
+                    case 4: // RS_PARAMETER_TEXT  - handled via rs_getFrameText
+                        break;
+                    }
+                }
+                break; // only use first scene
+            }
+        } catch (const std::exception& e) {
+            fprintf(stderr, "  [ERROR] parameter build failed: %s\n", e.what());
+            fflush(stderr);
+        }
+        fprintf(stderr, "  schema: hash=%llu, %zu param floats\n",
+            static_cast<unsigned long long>(scene_hash), param_values.size());
+        fflush(stderr);
+
+        // 8. Connect and run conductor
         fprintf(stderr, "\n[Conductor] connecting to %s:%d...\n", n->ip, kTickPort);
+        fflush(stderr);
         Conductor conductor(n->ip, kTickPort);
         conductor.SetRigs(rigs);
+        conductor.SetSchemaHash(scene_hash);
+        conductor.SetParameterValues(param_values);
+        conductor.SetTextValues({""});  // one empty string for the Text param
+
+        // Build a simple 6-joint skeleton matching Manny's structure
+        {
+            rs::skeleton_layout_data layout;
+            layout.version = 1;
+
+            // Joints: id, parentId, bind transform (identity for simple test)
+            // parentId=0 means root, we use parentId=UINT64_MAX for no parent
+            const uint64_t NO_PARENT = UINT64_MAX;
+            Transform identity = {0,0,0, 0,0,0,1};
+
+            // 0: pelvis (root)
+            layout.joints.push_back({0, NO_PARENT, identity});
+            // 1: spine_01  (bind pose in meters)
+            layout.joints.push_back({1, 0, {0,0,0.12f, 0,0,0,1}});
+            // 2: spine_02
+            layout.joints.push_back({2, 1, {0,0,0.12f, 0,0,0,1}});
+            // 3: neck_01
+            layout.joints.push_back({3, 2, {0,0,0.08f, 0,0,0,1}});
+            // 4: clavicle_l
+            layout.joints.push_back({4, 2, {-0.08f,0,0.06f, 0,0,0,1}});
+            // 5: clavicle_r
+            layout.joints.push_back({5, 2, {0.08f,0,0.06f, 0,0,0,1}});
+
+            std::vector<std::string> jointNames = {
+                "pelvis", "spine_01", "spine_02", "neck_01", "clavicle_l", "clavicle_r"
+            };
+
+            conductor.SetSkeletonLayout(layout, jointNames);
+            conductor.SetSkeletonPoses({{}});  // one empty pose for frame 0
+
+            conductor.on_build_skeleton = [](double t, std::vector<rs::skeleton_pose_data>& poses) {
+                if (poses.empty()) poses.resize(1);
+                auto& p = poses[0];
+                p.layout_id = 0;
+                p.layout_version = 1;
+                p.root_transform = {0, 0.9f, 0, 0, 0, 0, 1};  // d3 Y=0.9m → UE Z=90cm up
+
+                p.joints.resize(6);
+                for (int i = 0; i < 6; ++i) p.joints[i].id = i;
+                // All identity pose first to verify skeleton is stable
+                for (int i = 0; i < 6; ++i) p.joints[i].transform = {0,0,0, 0,0,0,1};
+
+                // Gentle spine sway: rotate around Y (pitch) with small normalized quat
+                auto makeSway = [](float angleRad) -> Transform {
+                    float ha = angleRad * 0.5f;
+                    float qy = std::sin(ha);
+                    float qw = std::cos(ha);
+                    return {0,0,0, 0, qy, 0, qw};  // rotation around Y
+                };
+                auto makeTilt = [](float angleRad) -> Transform {
+                    float ha = angleRad * 0.5f;
+                    float qx = std::sin(ha);
+                    float qw = std::cos(ha);
+                    return {0,0,0, qx, 0, 0, qw};  // rotation around X
+                };
+
+                float sway1 = 0.25f * (float)std::sin(t * 1.5f);
+                float sway2 = 0.20f * (float)std::sin(t * 1.5f);
+                float head  = 0.30f * (float)std::sin(t * 0.8f);
+                float armL  = 1.20f * (float)std::sin(t * 2.0f);
+                float armR  = 1.20f * (float)std::sin(t * 2.0f + 3.14f);
+
+                p.joints[1].transform = makeSway(sway1);   // spine_01 sway
+                p.joints[2].transform = makeSway(sway2);   // spine_02 sway
+                p.joints[3].transform = makeTilt(head);    // neck_01 nod
+                p.joints[4].transform = makeTilt(armL);    // clavicle_l swing
+                p.joints[5].transform = makeTilt(armR);    // clavicle_r swing
+            };
+        }
+        conductor.on_build_params = [](double t, std::vector<float>& params) {
+            if (params.size() >= 5) {
+                params[0] = 0.5f + 0.5f * (float)std::sin(t * 1.5);          // r: 0-1
+                params[1] = 0.3f + 0.3f * (float)std::sin(t * 2.0 + 1.0);    // g: 0-0.6
+                params[2] = 0.7f + 0.3f * (float)std::sin(t * 3.0 + 2.0);    // b: 0.4-1.0
+                params[3] = 1.0f;                                              // a: 1
+                params[4] = 10.0f + 10.0f * (float)std::sin(t * 2.0);         // intensity: 0-20
+                static int frame = 0;
+                if (++frame <= 10 || frame % 120 == 0)
+                    fprintf(stderr, "  [params] t=%.3f rgba=%.2f,%.2f,%.2f,%.2f intensity=%.1f\n",
+                        t, params[0], params[1], params[2], params[3], params[4]);
+            }
+        };
+        conductor.on_build_texts = [](double t, std::vector<std::string>& texts) {
+            if (!texts.empty()) {
+                auto now = std::chrono::system_clock::now();
+                auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
+                auto timer = std::chrono::system_clock::to_time_t(now);
+                std::tm* tm = std::localtime(&timer);
+                char buf[64];
+                snprintf(buf, sizeof(buf), "%02d:%02d:%02d.%03lld",
+                    tm->tm_hour, tm->tm_min, tm->tm_sec, static_cast<long long>(ms.count()));
+                texts[0] = buf;
+            }
+        };
+
         if (!conductor.Connect(30)) {
             fprintf(stderr, "  [ERROR] could not connect tick socket\n");
             continue;
         }
 
-        // 8. Run tick loop (blocks until UE exits or error).
+        // 9. Run tick loop (blocks until UE exits or error).
         conductor.Run();
     }
 

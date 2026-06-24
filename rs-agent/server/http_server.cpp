@@ -245,8 +245,40 @@ void HttpServer::RegisterRoutes(router_t& router) {
             nlohmann::json j;
             j["channels"] = schema->channels;
             nlohmann::json scenes = nlohmann::json::array();
-            for (const auto& s : schema->scenes)
-                scenes.push_back(s.name);
+            for (const auto& s : schema->scenes) {
+                nlohmann::json sc;
+                sc["name"] = s.name;
+                sc["hash"] = s.hash;
+                nlohmann::json params = nlohmann::json::array();
+                for (const auto& p : s.parameters) {
+                    nlohmann::json jp;
+                    jp["key"]         = p.key;
+                    jp["displayName"] = p.display_name;
+                    jp["group"]       = p.group;
+                    jp["type"]        = static_cast<uint32_t>(p.type);
+                    jp["flags"]       = p.flags;
+                    jp["dmxOffset"]   = p.dmx_offset;
+                    jp["dmxType"]     = static_cast<uint32_t>(p.dmx);
+                    if (p.type == rs::param_type::number || p.type == rs::param_type::event) {
+                        if (auto* num = std::get_if<rs::number_defaults>(&p.defaults)) {
+                            jp["min"] = num->min;
+                            jp["max"] = num->max;
+                            jp["step"] = num->step;
+                            jp["defaultValue"] = num->default_value;
+                        }
+                    } else if (p.type == rs::param_type::text) {
+                        if (auto* txt = std::get_if<rs::text_defaults>(&p.defaults)) {
+                            jp["defaultValue"] = txt->default_value;
+                        }
+                    }
+                    if (!p.options.empty()) {
+                        jp["options"] = p.options;
+                    }
+                    params.push_back(std::move(jp));
+                }
+                sc["parameters"] = std::move(params);
+                scenes.push_back(std::move(sc));
+            }
             j["scenes"] = scenes;
 
             return json_response(req, j.dump());
