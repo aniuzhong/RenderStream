@@ -10,7 +10,7 @@ if(NOT EXISTS "${NDI_LIB}")
 endif()
 
 add_library(renderstream SHARED
-    gpgpu.cpp
+    gpu.cpp
     logging.cpp
     sender.cpp
     renderstream.cpp

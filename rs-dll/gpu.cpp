@@ -1,4 +1,4 @@
-#include "gpgpu.h"
+#include "gpu.h"
 
 #include <cassert>
 #include <cstdio>

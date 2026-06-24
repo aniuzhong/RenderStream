@@ -7,11 +7,11 @@
 
 #include "d3renderstream.h"
 #include "d3renderstream.hpp"
-#include "gpgpu.h"
+#include "gpu.h"
+#include "link.h"
 #include "logging.h"
 #include "sender.h"
 #include "streams.h"
-#include "link.h"
 
 static std::string GetArg(const wchar_t* key) {
     int argc = 0;
@@ -62,48 +62,27 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor,
         return RS_ERROR_UNSPECIFIED;
     }
 
-    rs::log::Info("[rs_initialise] done");
     return RS_ERROR_SUCCESS;
 }
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_shutdown() {
-    rs::log::Info("[rs_shutdown] >>> shutting down...");
-
-    rs::log::Info("[rs_shutdown]: destroying link...");
     g_link.reset();
-
-    rs::log::Info("[rs_shutdown]: shutting down GPU...");
     rs::GpuContext::Instance().Shutdown();
-
-    rs::log::Info("[rs_shutdown]: stopping NDI senders...");
     rs::Sender::Instance().Stop();
     NDIlib_destroy();
-
-    rs::log::Info("[rs_shutdown] <<< done");
     return RS_ERROR_SUCCESS;
 }
+
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX11Device(ID3D11Device*)     { return RS_ERROR_SUCCESS; }
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX11Resource(ID3D11Resource*) { return RS_ERROR_SUCCESS; }
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithOpenGlContexts(HGLRC, HDC)    { return RS_ERROR_SUCCESS; }
+extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithVulkanDevice(VkDevice)        { return RS_ERROR_SUCCESS; }
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_useDX12SharedHeapFlag(UseDX12SharedHeapFlag*) {
     return RS_ERROR_SUCCESS;
 }
 
 extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithoutInterop(ID3D11Device*) {
-    return RS_ERROR_SUCCESS;
-}
-
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX11Device(ID3D11Device*) {
-    return RS_ERROR_SUCCESS;
-}
-
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX11Resource(ID3D11Resource*) {
-    return RS_ERROR_SUCCESS;
-}
-
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithOpenGlContexts(HGLRC, HDC) {
-    return RS_ERROR_SUCCESS;
-}
-
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithVulkanDevice(VkDevice) {
     return RS_ERROR_SUCCESS;
 }
 
