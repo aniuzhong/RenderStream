@@ -29,7 +29,6 @@ add_executable(rs-agent WIN32
     server/lan_announcer.cpp
     server/pipe_server.cpp
     server/process_manager.cpp
-    server/registry.cpp
     server/utils/lan_net.cpp
     ${RS_AGENT_ICON_RC}
 )
@@ -47,13 +46,10 @@ target_link_libraries(rs-agent PRIVATE
 # rs-client DLL
 # ---------------------------------------------------------------------------
 
-add_library(rs_client SHARED
+add_library(rs_client STATIC
     client/rs_client.cpp
 )
-set_target_properties(rs_client PROPERTIES
-    WINDOWS_EXPORT_ALL_SYMBOLS ON
-)
-target_include_directories(rs_client PUBLIC client .)
+target_include_directories(rs_client PUBLIC client . ${CMAKE_SOURCE_DIR}/common)
 target_link_libraries(rs_client PUBLIC nlohmann_json::nlohmann_json httplib::httplib ws2_32 crypt32)
 
 # ---------------------------------------------------------------------------
