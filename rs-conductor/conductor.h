@@ -169,6 +169,7 @@ void          RS_SetCameras(RS_Session* s, RS_CameraRig** rigs, int count);
 
 void RS_OnTick(RS_Session* s, RS_OnTickFn fn, void* user);
 void RS_OnLog(RS_Session* s, RS_OnLogFn fn, void* user);
+void RS_OnProfiling(RS_Session* s, RS_OnLogFn fn, void* user);  // receives JSON profiling data
 
 // ── Run ────────────────────────────────────────────────────
 

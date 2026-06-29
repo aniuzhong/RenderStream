@@ -456,7 +456,8 @@ void RS_SetupSkeleton(RS_Session* s, const Transform* bindPoses, const uint64_t*
 }
 
 void RS_OnTick(RS_Session* s, RS_OnTickFn fn, void* user) { if (s) { s->tickFn = fn; s->tickUser = user; } }
-void RS_OnLog(RS_Session* s, RS_OnLogFn fn, void* user)    { if (s) { s->logFn = fn; s->logUser = user; } }
+void RS_OnLog(RS_Session* s, RS_OnLogFn fn, void* user)      { if (s) { s->logFn = fn; s->logUser = user; } }
+void RS_OnProfiling(RS_Session* s, RS_OnLogFn fn, void* user) { RS_OnLog(s, fn, user); }
 
 int RS_Connect(RS_Session* s, int retries) {
     if (!s || !s->launched) return -1;
@@ -531,6 +532,9 @@ int RS_Connect(RS_Session* s, int retries) {
 
     c.on_log = [s](const std::string& text) {
         if (s->logFn) s->logFn(text.c_str(), s->logUser);
+    };
+    c.on_profiling = [s](const nlohmann::json& j) {
+        if (s->logFn) s->logFn(j.dump().c_str(), s->logUser);
     };
 
     s->connected = c.Connect(retries);

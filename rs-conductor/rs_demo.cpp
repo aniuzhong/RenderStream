@@ -67,6 +67,21 @@ static std::vector<NodeEntry> g_nodes;
 static double g_lastRefresh = -99.0;
 static const double kRefreshInterval = 3.0;
 
+static char g_manualIp[64] = "";
+static char g_manualPort[8] = "9580";
+
+static void AddManualNode() {
+    std::string ip(g_manualIp);
+    int port = atoi(g_manualPort);
+    if (ip.empty() || port <= 0) return;
+    for (auto& n : g_nodes)
+        if (n.ip == ip && n.port == port) return; // already exists
+    NodeEntry ne;
+    ne.ip = ip; ne.port = port; ne.name = ip;
+    ne.Refresh();
+    if (ne.queried) g_nodes.push_back(ne);
+}
+
 static void RefreshNodes() {
     int timeout_ms = 300;
     RS_NodeList list{};
@@ -193,8 +208,6 @@ struct SchemaCache {
 
 static SchemaCache g_schema;
 static int g_selectedNode = -1;
-static char g_projectPathBuf[512] = "D:/Unreal Projects/nDisplay_Demo_57/nDisplay_Demo.uproject";
-
 // ── Camera state ──────────────────────────────────────────────────
 struct CamState { float x=0,y=1.5f,z=0, rx=0,ry=0,rz=0, fov=90; };
 static std::vector<CamState> g_cameras;
@@ -212,16 +225,23 @@ static int g_selectedJoint = 0;
 static const char* g_jointNames[] = {"pelvis","spine_01","spine_02","neck_01","clavicle_l","clavicle_r"};
 static const int g_jointCount = 6;
 static float g_rootX = 0, g_rootY = 0.9f, g_rootZ = 0;  // root position (meters, d3 Y-up)
+static float g_ueFps = 0;
+static float g_ueFrameMs = 0;
+// static int g_ueResW = 3840, g_ueResH = 2160;
+static int g_ueResW = 1920, g_ueResH = 1080;
+static bool g_forceRes = true;  // when true, use g_ueResW/H; when false, query agent
 
 // ── Session state ─────────────────────────────────────────────────
 static RS_Session* g_session = nullptr;
 static std::thread g_sessionThread;
 static bool        g_sessionRunning = false;
 
-static const char* kEngine   = "D:/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor.exe";
-static const char* kProject = "D:/Unreal Projects/nDisplay_Demo_57/nDisplay_Demo.uproject";
-static const char* kMap     = "/Game/Maps/Main";
-static const char* kNode    = "node0";
+static char g_engineBuf[512] = "D:/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor.exe";
+// static char g_engineBuf[512] = "C:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor.exe";
+static char g_projectBuf[512] = "D:/Unreal Projects/nDisplay_Demo_57/nDisplay_Demo.uproject";
+// static char g_projectBuf[512] = "C:/Users/Hido/Documents/Unreal Projects/nDisplay_Demo_57/nDisplay_Demo.uproject";
+static char g_mapBuf[256] = "/Game/Maps/Main";
+static char g_nodeBuf[64] = "node0";
 
 static void SessionThreadFunc() {
     RS_Run(g_session);
@@ -235,31 +255,34 @@ static void StartSession(const char* host) {
     InitCamerasFromSchema();
 
     // Build single-viewport stream (fullscreen on primary)
-    int sw = 1920, sh = 1080;
+    int agentPort = 9580;
     for (auto& n : g_nodes) {
-        if (n.ip == host) {
-            int sz = 0;
-            RS_GetNodeInfo(host, g_nodes[0].port, nullptr, &sz);
-            if (sz > 0) {
+        if (n.ip == host) { agentPort = n.port; break; }
+    }
+    if (!g_forceRes) {
+        // Query agent for display resolution
+        int sz = 0;
+        if (RS_GetNodeInfo(host, agentPort, nullptr, &sz) == RS_ERROR_SUCCESS && sz > 1) {
+            try {
                 std::string buf(sz-1,'\0');
-                RS_GetNodeInfo(host, g_nodes[0].port, buf.data(), &sz);
-                auto info = nlohmann::json::parse(buf);
-                if (!info["displays"].empty()) {
-                    sw = info["displays"][0].value("w", 1920);
-                    sh = info["displays"][0].value("h", 1080);
+                if (RS_GetNodeInfo(host, agentPort, buf.data(), &sz) == RS_ERROR_SUCCESS) {
+                    auto info = nlohmann::json::parse(buf);
+                    if (info.contains("displays") && !info["displays"].empty()) {
+                        g_ueResW = info["displays"][0].value("w", 3840);
+                        g_ueResH = info["displays"][0].value("h", 2160);
+                    }
                 }
-            }
-            break;
+            } catch (...) {}
         }
     }
+    int sw = g_ueResW, sh = g_ueResH;
     nlohmann::json streams = nlohmann::json::array();
     streams.push_back({{"name","vp0"},{"channel","camera0"},{"width",sw},{"height",sh},{"viewpoint",0}});
 
-    int agentPort = g_nodes[0].port;
     g_session = RS_CreateSession(host, agentPort, 9581);
     RS_SetStreams(g_session, streams.dump().c_str());
 
-    if (RS_LoadSchema(g_session, kProject) != 0) {
+    if (RS_LoadSchema(g_session, g_projectBuf) != 0) {
         fprintf(stderr, "[ERROR] schema load failed\n");
         RS_DestroySession(g_session); g_session = nullptr; return;
     }
@@ -284,7 +307,7 @@ static void StartSession(const char* host) {
     const char* jn[] = {"pelvis","spine_01","spine_02","neck_01","clavicle_l","clavicle_r"};
     RS_SetupSkeleton(g_session, bp, pids, jn, 6);
 
-    if (RS_Launch(g_session, kEngine, kMap, kNode) != 0) {
+    if (RS_Launch(g_session, g_engineBuf, g_mapBuf, g_nodeBuf) != 0) {
         fprintf(stderr, "[ERROR] launch failed\n");
         RS_DestroySession(g_session); g_session = nullptr; return;
     }
@@ -340,6 +363,19 @@ static void StartSession(const char* host) {
         }
     }, nullptr);
 
+    RS_OnLog(g_session, [](const char* text, void*) {
+        if (!text || text[0] != '{') return;
+        try {
+            auto j = nlohmann::json::parse(text);
+            if (j.contains("entries") && j["entries"].is_array()) {
+                for (auto& e : j["entries"]) {
+                    std::string n = e.value("name", "");
+                    if (n == "Frame Time")      { g_ueFrameMs = e.value("value", 0.0f); g_ueFps = g_ueFrameMs > 0 ? 1000.0f / g_ueFrameMs : 0; }
+                }
+            }
+        } catch (...) {}
+    }, nullptr);
+
     if (RS_Connect(g_session, 60) != 0) {
         fprintf(stderr, "[ERROR] connect failed\n");
         RS_DestroySession(g_session); g_session = nullptr; return;
@@ -387,6 +423,18 @@ static void DrawNodeList() {
     ImGui::Text("%zu node(s)", g_nodes.size());
     ImGui::SameLine();
     if (ImGui::Button("Refresh")) RefreshNodes();
+
+    ImGui::Separator();
+    ImGui::Text("Manual add (cross-subnet):");
+    ImGui::PushItemWidth(140);
+    ImGui::InputText("IP", g_manualIp, sizeof(g_manualIp));
+    ImGui::SameLine();
+    ImGui::PushItemWidth(60);
+    ImGui::InputText("Port", g_manualPort, sizeof(g_manualPort));
+    ImGui::PopItemWidth();
+    ImGui::PopItemWidth();
+    ImGui::SameLine();
+    if (ImGui::Button("Add node")) AddManualNode();
     ImGui::Separator();
 
     for (size_t i = 0; i < g_nodes.size(); ++i) {
@@ -428,15 +476,12 @@ static void DrawSchemaPanel() {
         ImGui::End(); return;
     }
 
-    // Project path input
-    ImGui::InputText("Project", g_projectPathBuf, sizeof(g_projectPathBuf));
-    ImGui::SameLine();
     bool canLoad = g_selectedNode >= 0 && (int)g_nodes.size() > g_selectedNode;
     if (!canLoad) ImGui::BeginDisabled();
     if (ImGui::Button("Load Schema")) {
         if (canLoad) {
             auto& n = g_nodes[g_selectedNode];
-            if (!g_schema.Load(n.ip.c_str(), n.port, g_projectPathBuf))
+            if (!g_schema.Load(n.ip.c_str(), n.port, g_projectBuf))
                 g_schema.loaded = false;
         }
     }
@@ -444,7 +489,7 @@ static void DrawSchemaPanel() {
 
     if (g_selectedNode >= 0 && (int)g_nodes.size() > g_selectedNode) {
         ImGui::SameLine();
-        ImGui::TextDisabled("<- from %s", g_nodes[g_selectedNode].name.c_str());
+        ImGui::TextDisabled("from %s", g_nodes[g_selectedNode].name.c_str());
     }
 
     ImGui::Separator();
@@ -578,13 +623,35 @@ static void DrawSessionBar() {
         ImGui::TextDisabled("No nodes discovered.");
         ImGui::End(); return;
     }
-    ImGui::Text("Host: %s", g_nodes[0].ip.c_str());
+    if (g_selectedNode < 0 || g_selectedNode >= (int)g_nodes.size()) g_selectedNode = 0;
+
+    // Node selector for session target
+    if (ImGui::BeginCombo("Target", g_nodes[g_selectedNode].name.c_str())) {
+        for (int i = 0; i < (int)g_nodes.size(); ++i)
+            if (ImGui::Selectable(g_nodes[i].name.c_str(), i == g_selectedNode))
+                g_selectedNode = i;
+        ImGui::EndCombo();
+    }
+    ImGui::Text("IP: %s | Map: %s", g_nodes[g_selectedNode].ip.c_str(), g_mapBuf);
+    ImGui::Checkbox("Force", &g_forceRes);
     ImGui::SameLine();
-    ImGui::TextDisabled("| 1 cam | %s", kMap);
+    ImGui::PushItemWidth(80);
+    if (g_forceRes) {
+        ImGui::InputInt("W", &g_ueResW, 0); ImGui::SameLine();
+        ImGui::InputInt("H", &g_ueResH, 0);
+    } else {
+        ImGui::TextDisabled("%dx%d (from agent)", g_ueResW, g_ueResH);
+    }
+    ImGui::PopItemWidth();
+
+    ImGui::InputText("Engine", g_engineBuf, sizeof(g_engineBuf));
+    ImGui::InputText("Project", g_projectBuf, sizeof(g_projectBuf));
+    ImGui::InputText("Map", g_mapBuf, sizeof(g_mapBuf));
+    ImGui::InputText("Node", g_nodeBuf, sizeof(g_nodeBuf));
 
     if (!g_sessionRunning) {
         if (ImGui::Button("Launch & Run")) {
-            if (g_schema.loaded) StartSession(g_nodes[0].ip.c_str());
+            if (g_schema.loaded) StartSession(g_nodes[g_selectedNode].ip.c_str());
         }
         ImGui::SameLine();
         ImGui::TextDisabled("Schema: %s", g_schema.loaded ? "loaded" : "not loaded");
@@ -612,8 +679,9 @@ static void DrawStatusBar() {
         if (n.state == "running") running++;
         else if (n.state == "idle") idle++;
     }
-    ImGui::Text("%zu nodes | %d running | %d idle | %.1f FPS",
-        g_nodes.size(), running, idle, ImGui::GetIO().Framerate);
+    ImGui::Text("%zu nodes | %d running | %d idle | GUI %.1f FPS | UE %dx%d %.1f FPS (%.1fms)",
+        g_nodes.size(), running, idle, ImGui::GetIO().Framerate,
+        g_ueResW, g_ueResH, g_ueFps, g_ueFrameMs);
     ImGui::End();
     ImGui::PopStyleVar();
 }
