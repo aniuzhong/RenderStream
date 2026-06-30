@@ -19,6 +19,7 @@
 #include <thread>
 #include <vector>
 
+#include <httplib.h>
 #include <nlohmann/json.hpp>
 #include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -196,12 +197,13 @@ static nlohmann::json GenerateNdisplayConfig(
 // ── Schema ───────────────────────────────────────────────────────
 
 static std::string QuerySchema(const char* ip, int port) {
-    int sz = 0;
-    if (RS_GetSchema(ip, port, kNodes[0].project_path, nullptr, &sz) != RS_ERROR_SUCCESS || sz <= 0)
-        return {};
-    std::string body(sz - 1, '\0');
-    RS_GetSchema(ip, port, kNodes[0].project_path, body.data(), &sz);
-    return body;
+    httplib::Client cli(ip, port);
+    cli.set_connection_timeout(3, 0);
+    std::string url = "/api/renderstream/schema?project=";
+    url += kNodes[0].project_path;
+    auto res = cli.Get(url.c_str());
+    if (!res || res->status != 200) return {};
+    return res->body;
 }
 
 // ── Streams JSON ─────────────────────────────────────────────────
@@ -214,10 +216,12 @@ static nlohmann::json BuildStreams() {
 
 // ── Remote UE kill ───────────────────────────────────────────────
 
-static void KillRemoteUE(const char* ip, int port, int pid) {
-    int ret = RS_KillUnreal(ip, port, pid);
-    fprintf(stderr, "  kill %s:%d pid=%d -> %s\n", ip, port, pid,
-            ret == RS_ERROR_SUCCESS ? "ok" : "failed");
+static void KillRemoteUE(const char* ip, int port) {
+    httplib::Client cli(ip, port);
+    cli.set_connection_timeout(2, 0);
+    auto res = cli.Post("/api/unreal/kill", "{}", "application/json");
+    fprintf(stderr, "  kill %s:%d -> %s\n", ip, port,
+            res ? res->body.c_str() : "no response");
 }
 
 // ── Main ─────────────────────────────────────────────────────────
@@ -231,8 +235,7 @@ int main(int argc, char* argv[]) {
 
     // 1. Discover
     fprintf(stderr, "Discovering nodes...\n");
-    RS_NodeList list{};
-    RS_DiscoverNodes(timeout_ms, &list);
+    RS_NodeList list = RS_DiscoverNodes(timeout_ms);
     fprintf(stderr, "Found %d node(s)\n\n", list.count);
     if (list.count < 1) {
         fprintf(stderr, "No nodes found.\n");
@@ -319,14 +322,15 @@ int main(int argc, char* argv[]) {
         launch_body["streams"]    = streams_json;
 
         fprintf(stderr, "Launching %s (%s)...\n", cfg.name, n.ip);
-        std::string body_json = launch_body.dump();
-        char launch_resp[512]{};
-        int launch_sz = sizeof(launch_resp);
-        if (RS_LaunchUnreal(n.ip, n.port, body_json.c_str(), launch_resp, &launch_sz) != RS_ERROR_SUCCESS) {
-            fprintf(stderr, "  FAILED\n");
+        httplib::Client cli(n.ip, n.port);
+        cli.set_connection_timeout(3, 0);
+        auto launch_res = cli.Post("/api/renderstream/launch", launch_body.dump(), "application/json");
+        if (!launch_res || launch_res->status != 200) {
+            fprintf(stderr, "  FAILED: %s\n",
+                    launch_res ? launch_res->body.c_str() : "no response");
             pids.push_back(0);
         } else {
-            auto r = nlohmann::json::parse(launch_resp);
+            auto r = nlohmann::json::parse(launch_res->body);
             DWORD pid = r["pid"].get<int>();
             fprintf(stderr, "  ok (pid=%lu)\n", static_cast<unsigned long>(pid));
             pids.push_back(pid);
@@ -384,7 +388,7 @@ int main(int argc, char* argv[]) {
     fprintf(stderr, "Killing remote UE processes...\n");
     for (size_t i = 0; i < nodes.size(); ++i) {
         if (pids[i] != 0)
-            KillRemoteUE(nodes[i].ip, nodes[i].port, pids[i]);
+            KillRemoteUE(nodes[i].ip, nodes[i].port);
     }
 
     fprintf(stderr, "\nDone.\n");

@@ -20,7 +20,16 @@ target_include_directories(single_4_viewports_example PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/common
 )
-target_link_libraries(single_4_viewports_example PRIVATE ndisplay_gen rs_client nlohmann_json::nlohmann_json asio::asio spdlog::spdlog)
+target_link_libraries(single_4_viewports_example PRIVATE ndisplay_gen rs_client nlohmann_json::nlohmann_json asio::asio spdlog::spdlog ws2_32)
+
+add_executable(node_probe_example
+    node_probe_example.cpp
+)
+target_include_directories(node_probe_example PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/common
+)
+target_link_libraries(node_probe_example PRIVATE rs_client nlohmann_json::nlohmann_json ws2_32)
 
 add_executable(cluster_example
     cluster_example.cpp
@@ -32,15 +41,3 @@ target_include_directories(cluster_example PRIVATE
     ${CMAKE_SOURCE_DIR}/common
 )
 target_link_libraries(cluster_example PRIVATE ndisplay_gen rs_client nlohmann_json::nlohmann_json asio::asio spdlog::spdlog ws2_32)
-
-add_executable(rs_demo WIN32
-    rs_demo.cpp
-    conductor.cpp
-    camera_rig.cpp
-)
-target_include_directories(rs_demo PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/common
-)
-target_include_directories(rs_demo PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/common)
-target_link_libraries(rs_demo PRIVATE ndisplay_gen imgui rs_client nlohmann_json::nlohmann_json asio::asio spdlog::spdlog ws2_32 d3d11 dxguid)
