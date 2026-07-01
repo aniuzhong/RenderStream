@@ -12,7 +12,6 @@ endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 # Suppress MSVC warnings from third-party headers
 if(MSVC)
@@ -132,27 +131,6 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(httplib)
 
-# Dear ImGui (DX11 + Win32)
-FetchContent_Declare(
-    imgui
-    GIT_REPOSITORY https://github.com/ocornut/imgui.git
-    GIT_TAG        v1.91.6
-)
-FetchContent_MakeAvailable(imgui)
-set(IMGUI_SRC_DIR "${imgui_SOURCE_DIR}")
-set(IMGUI_BACKENDS_DIR "${IMGUI_SRC_DIR}/backends")
-add_library(imgui STATIC
-    ${IMGUI_SRC_DIR}/imgui.cpp
-    ${IMGUI_SRC_DIR}/imgui_demo.cpp
-    ${IMGUI_SRC_DIR}/imgui_draw.cpp
-    ${IMGUI_SRC_DIR}/imgui_tables.cpp
-    ${IMGUI_SRC_DIR}/imgui_widgets.cpp
-    ${IMGUI_BACKENDS_DIR}/imgui_impl_win32.cpp
-    ${IMGUI_BACKENDS_DIR}/imgui_impl_dx11.cpp
-)
-target_include_directories(imgui PUBLIC ${IMGUI_SRC_DIR} ${IMGUI_BACKENDS_DIR})
-target_link_libraries(imgui PUBLIC d3d11 d3dcompiler dxguid winmm)
-
 # Enable CTest
 include(CTest)
 
@@ -161,4 +139,4 @@ include(CTest)
 # ---------------------------------------------------------------------------
 add_subdirectory(rs-dll)
 add_subdirectory(rs-agent)
-add_subdirectory(rs-conductor)
+add_subdirectory(rs-client)

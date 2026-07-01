@@ -5,10 +5,6 @@
 
 #include <nlohmann/json.hpp>
 
-// ============================================================
-// CameraRig
-// ============================================================
-
 void CameraRig::SetSensorSize(int w, int h) {
     sensorW_ = w; sensorH_ = h;
 }
@@ -52,8 +48,6 @@ float CameraRig::fov_to_focal_length(double fov_h, int sensor_w) {
     float fov_rad = static_cast<float>(fov_h * pi / 180.0);
     return static_cast<float>(sensor_w) * 0.5f / std::tan(fov_rad * 0.5f);
 }
-
-// ── Evaluate ────────────────────────────────────────────────
 
 CameraData CameraRig::lerp(const CameraData& a, const CameraData& b, float t) const {
     CameraData out = a;
@@ -104,8 +98,6 @@ CameraData CameraRig::Evaluate(double t) const {
     float f = static_cast<float>((t - prev->first) / (it->first - prev->first));
     return scale_sensor(lerp(prev->second, it->second, f));
 }
-
-// ── FromJson ────────────────────────────────────────────────
 
 CameraRig CameraRig::FromJson(const std::string& path) {
     CameraRig rig;

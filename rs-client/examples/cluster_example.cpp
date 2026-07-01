@@ -3,11 +3,10 @@
 // 1. Discovers rs-agent nodes on LAN
 // 2. Generates a shared nDisplay config with all discovered nodes
 // 3. Launches UE on each node with the same config
-// 4. Connects a Conductor to each node's DLL TCP port
+// 4. Connects a RenderStreamClient to each node's DLL TCP port
 // 5. Runs tick loops in parallel threads for 60 seconds
-// 6. Gracefully stops conductors and kills remote UE processes
+// 6. Gracefully stops clients and kills remote UE processes
 //
-// Per-node logs are written to %LOCALAPPDATA%/RenderStream/rs-conductor/.
 // Usage: cluster_example.exe [timeout_ms]
 
 #include <cstdio>
@@ -15,6 +14,7 @@
 
 #include <chrono>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
@@ -25,10 +25,9 @@
 #include <spdlog/spdlog.h>
 
 #include "camera_rig.h"
-#include "conductor.h"
 #include "ndisplay-gen/model.h"
 #include "ndisplay-gen/serialize.h"
-#include "rs_client.h"
+#include "render_stream_client.h"
 
 static constexpr int    kTickPort  = 9581;
 static constexpr double kFps       = 60.0;
@@ -49,7 +48,7 @@ static const NodeConfig kNodes[] = {
      "C:/Users/hido/Documents/Unreal Projects/nDisplay_Demo_57/nDisplay_Demo.uproject"},
 };
 
-// ── Camera rigs ─────────────────────────────────────────────────
+// ── Camera rigs ─────────────────────────────────────────────────────
 
 static std::vector<CameraRig> BuildCameraRigs() {
     std::vector<CameraRig> rigs(4);
@@ -58,22 +57,18 @@ static std::vector<CameraRig> BuildCameraRigs() {
         rig.SetSensorSize(1920, 1080);
     }
 
-    // camera0 - left-top
     rigs[0].AddSample(0.0, -2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0);
     rigs[0].AddSample(3.0,  2.00, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0);
     rigs[0].AddSample(6.0, -2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0);
 
-    // camera1 - right-top
     rigs[1].AddSample(0.0,  5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0);
     rigs[1].AddSample(3.0, -5.59, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0);
     rigs[1].AddSample(6.0,  5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0);
 
-    // camera2 - left-bottom
     rigs[2].AddSample(0.0, -11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0);
     rigs[2].AddSample(3.0, -11.395, 8.30, -5.00, -20.0, 84.1, 0.0, 90.0);
     rigs[2].AddSample(6.0, -11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0);
 
-    // camera3 - right-bottom
     rigs[3].AddSample(0.0, 12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0);
     rigs[3].AddSample(3.0, 12.40, 7.70,  7.00, -30.0, -90.0, 0.0, 90.0);
     rigs[3].AddSample(6.0, 12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0);
@@ -81,19 +76,19 @@ static std::vector<CameraRig> BuildCameraRigs() {
     return rigs;
 }
 
-// ── Log setup ───────────────────────────────────────────────────
+// ── Log setup ───────────────────────────────────────────────────────
 
 static std::string LogDir() {
     const wchar_t* appdata = nullptr;
     _wdupenv_s((wchar_t**)&appdata, nullptr, L"LOCALAPPDATA");
     std::filesystem::path p = appdata ? appdata : L".";
     free((void*)appdata);
-    p /= L"RenderStream/rs-conductor";
+    p /= L"RenderStream/rs-client";
     std::filesystem::create_directories(p);
     return p.string();
 }
 
-static void SetupConductorCallbacks(Conductor& c, const char* tag) {
+static void SetupClientCallbacks(RenderStreamClient& c, const char* tag) {
     auto dir = LogDir();
 
     // Frame ack -> file
@@ -145,14 +140,13 @@ static void SetupConductorCallbacks(Conductor& c, const char* tag) {
     };
 }
 
-// ── nDisplay config ──────────────────────────────────────────────
+// ── nDisplay config ─────────────────────────────────────────────────
 
 static nlohmann::json GenerateNdisplayConfig(
-    const std::vector<RS_NodeInfo>& nodes)
+    const std::vector<RenderStreamClient::NodeInfo>& nodes)
 {
     ndisplay::Configuration cfg;
     cfg.description = "cluster example";
-    cfg.asset_path = "";
     cfg.override_viewports_from_external_config = true;
 
     for (size_t i = 0; i < nodes.size(); ++i) {
@@ -162,10 +156,10 @@ static nlohmann::json GenerateNdisplayConfig(
         node.window = {0, 0, 1920, 1080};
 
         ndisplay::Viewport v;
-        v.name = "vp0";
-        v.region = {0, 0, 1920, 1080};
+        v.name    = "vp0";
+        v.region  = {0, 0, 1920, 1080};
         v.allow_cross_gpu_transfer = true;
-        v.projection.type = ndisplay::ProjectionType::kCustom;
+        v.projection.type        = ndisplay::ProjectionType::kCustom;
         v.projection.custom_type = "renderstream";
         node.viewports.push_back(v);
 
@@ -174,8 +168,8 @@ static nlohmann::json GenerateNdisplayConfig(
     }
 
     cfg.primary_node.id = kNodes[0].name;
-    cfg.primary_node.port_cluster_sync = 27010;
-    cfg.primary_node.port_cluster_events_json = 27012;
+    cfg.primary_node.port_cluster_sync        = 27010;
+    cfg.primary_node.port_cluster_events_json  = 27012;
     cfg.primary_node.port_cluster_events_binary = 27013;
 
     cfg.network.connect_retries_amount      = "10";
@@ -193,18 +187,7 @@ static nlohmann::json GenerateNdisplayConfig(
     return ndisplay::ToJson(cfg);
 }
 
-// ── Schema ───────────────────────────────────────────────────────
-
-static std::string QuerySchema(const char* ip, int port) {
-    int sz = 0;
-    if (RS_GetSchema(ip, port, kNodes[0].project_path, nullptr, &sz) != RS_ERROR_SUCCESS || sz <= 0)
-        return {};
-    std::string body(sz - 1, '\0');
-    RS_GetSchema(ip, port, kNodes[0].project_path, body.data(), &sz);
-    return body;
-}
-
-// ── Streams JSON ─────────────────────────────────────────────────
+// ── Streams JSON ────────────────────────────────────────────────────
 
 static nlohmann::json BuildStreams() {
     return nlohmann::json::array({
@@ -212,15 +195,7 @@ static nlohmann::json BuildStreams() {
     });
 }
 
-// ── Remote UE kill ───────────────────────────────────────────────
-
-static void KillRemoteUE(const char* ip, int port, int pid) {
-    int ret = RS_KillUnreal(ip, port, pid);
-    fprintf(stderr, "  kill %s:%d pid=%d -> %s\n", ip, port, pid,
-            ret == RS_ERROR_SUCCESS ? "ok" : "failed");
-}
-
-// ── Main ─────────────────────────────────────────────────────────
+// ── Main ────────────────────────────────────────────────────────────
 
 int main(int argc, char* argv[]) {
     int timeout_ms = (argc > 1) ? atoi(argv[1]) : 500;
@@ -231,66 +206,41 @@ int main(int argc, char* argv[]) {
 
     // 1. Discover
     fprintf(stderr, "Discovering nodes...\n");
-    RS_NodeList list{};
-    RS_DiscoverNodes(timeout_ms, &list);
-    fprintf(stderr, "Found %d node(s)\n\n", list.count);
-    if (list.count < 1) {
+    auto all_nodes = RenderStreamClient::DiscoverNodes(timeout_ms);
+    fprintf(stderr, "Found %zu node(s)\n\n", all_nodes.size());
+    if (all_nodes.empty()) {
         fprintf(stderr, "No nodes found.\n");
-        WSACleanup();
         return 1;
     }
 
-    std::vector<RS_NodeInfo> nodes(2);
+    std::vector<RenderStreamClient::NodeInfo> nodes(2);
     int assigned = 0;
-    for (int i = 0; i < list.count && assigned < 2; ++i) {
-        std::string ip(list.nodes[i].ip);
-        if (ip == "10.241.12.217")      { nodes[0] = list.nodes[i]; ++assigned; }
-        else if (ip == "10.241.12.246") { nodes[1] = list.nodes[i]; ++assigned; }
+    for (const auto& n : all_nodes) {
+        if (n.ip == "10.241.12.217")      { nodes[0] = n; ++assigned; }
+        else if (n.ip == "10.241.12.246") { nodes[1] = n; ++assigned; }
     }
     if (assigned < 2) {
         fprintf(stderr, "ERROR: need both .217 and .246, got %d\n", assigned);
-        RS_FreeNodeList(&list); WSACleanup(); return 1;
+        return 1;
     }
-    fprintf(stderr, "  node0 (primary) -> %s (%s)\n", nodes[0].name, nodes[0].ip);
-    fprintf(stderr, "  node1 (secondary) -> %s (%s)\n\n", nodes[1].name, nodes[1].ip);
+    fprintf(stderr, "  node0 (primary) -> %s (%s)\n",   nodes[0].name.c_str(), nodes[0].ip.c_str());
+    fprintf(stderr, "  node1 (secondary) -> %s (%s)\n\n", nodes[1].name.c_str(), nodes[1].ip.c_str());
 
     // 2. Schema
-    fprintf(stderr, "Querying schema from %s...\n", nodes[0].name);
-    std::string schema_body = QuerySchema(nodes[0].ip, nodes[0].port);
-    if (schema_body.empty()) {
+    fprintf(stderr, "Querying schema from %s...\n", nodes[0].name.c_str());
+    RenderStreamClient schema_client("schema");
+    schema_client.SetTarget(nodes[0]);
+    auto schema = schema_client.GetSchema(kNodes[0].project_path);
+    if (!schema) {
         fprintf(stderr, "  schema not found\n");
-        RS_FreeNodeList(&list); WSACleanup(); return 1;
+        return 1;
     }
-    auto schema = nlohmann::json::parse(schema_body);
     fprintf(stderr, "  %zu channels, %zu scenes\n\n",
-            schema["channels"].size(), schema["scenes"].size());
+            schema->channels.size(), schema->scenes.size());
 
-    // Build parameter values from schema defaults
-    std::vector<float> param_values;
-    uint64_t scene_hash = 0;
-    for (const auto& scene : schema["scenes"]) {
-        scene_hash = scene.value("hash", 0ull);
-        for (const auto& param : scene["parameters"]) {
-            uint32_t type = param.value("type", 0u);
-            float defaultVal = 0.0f;
-            if (param.contains("defaultValue") && param["defaultValue"].is_number())
-                defaultVal = param["defaultValue"].get<float>();
-            switch (type) {
-            case 0: // RS_PARAMETER_NUMBER
-            case 5: // RS_PARAMETER_EVENT
-                param_values.push_back(defaultVal);
-                break;
-            case 2: // RS_PARAMETER_POSE
-            case 3: // RS_PARAMETER_TRANSFORM
-                for (int r = 0; r < 4; ++r)
-                    for (int c = 0; c < 4; ++c)
-                        param_values.push_back((r == c) ? 1.0f : 0.0f);
-                break;
-            default: break;
-            }
-        }
-        break;
-    }
+    // Build parameter defaults
+    auto param_values = schema_client.MakeDefaultParams(0);
+    uint64_t scene_hash = schema_client.SchemaHash(0);
     fprintf(stderr, "  schema hash=%llu, %zu param floats\n\n",
         static_cast<unsigned long long>(scene_hash), param_values.size());
 
@@ -304,8 +254,7 @@ int main(int argc, char* argv[]) {
     fprintf(stderr, "nDisplay config: %zu bytes\n\n", ndisplay_json.dump().size());
 
     // 5. Launch UE on each node
-    std::vector<DWORD> pids;
-    std::vector<const char*> node_ips;
+    std::vector<int> pids;
     for (size_t i = 0; i < nodes.size(); ++i) {
         const auto& n = nodes[i];
         const auto& cfg = kNodes[i];
@@ -313,81 +262,84 @@ int main(int argc, char* argv[]) {
         nlohmann::json launch_body;
         launch_body["engine_exe"] = cfg.engine_exe;
         launch_body["project"]    = cfg.project_path;
-        launch_body["map"]        = "/Game/Maps/" + schema["scenes"][0]["name"].get<std::string>();
+        launch_body["map"]        = "/Game/Maps/" + schema->scenes[0].name;
         launch_body["node_name"]  = cfg.name;
         launch_body["ndisplay"]   = ndisplay_json;
         launch_body["streams"]    = streams_json;
 
-        fprintf(stderr, "Launching %s (%s)...\n", cfg.name, n.ip);
-        std::string body_json = launch_body.dump();
-        char launch_resp[512]{};
-        int launch_sz = sizeof(launch_resp);
-        if (RS_LaunchUnreal(n.ip, n.port, body_json.c_str(), launch_resp, &launch_sz) != RS_ERROR_SUCCESS) {
+        fprintf(stderr, "Launching %s (%s)...\n", cfg.name, n.ip.c_str());
+        RenderStreamClient launch_cli("launch");
+        launch_cli.SetTarget(n);
+        int pid = launch_cli.LaunchUE(launch_body);
+        if (pid == 0) {
             fprintf(stderr, "  FAILED\n");
-            pids.push_back(0);
         } else {
-            auto r = nlohmann::json::parse(launch_resp);
-            DWORD pid = r["pid"].get<int>();
-            fprintf(stderr, "  ok (pid=%lu)\n", static_cast<unsigned long>(pid));
-            pids.push_back(pid);
+            fprintf(stderr, "  ok (pid=%d)\n", pid);
         }
-        node_ips.push_back(n.ip);
+        pids.push_back(pid);
     }
     fprintf(stderr, "\n");
 
-    // 6. Create conductors
+    // 6. Create clients
     fprintf(stderr, "Logs -> %s\n\n", LogDir().c_str());
 
-    std::vector<std::unique_ptr<Conductor>> conductors;
+    std::vector<std::unique_ptr<RenderStreamClient>> clients;
     std::vector<std::thread> threads;
 
     for (size_t i = 0; i < nodes.size(); ++i) {
         if (pids[i] == 0) continue;
-        auto c = std::make_unique<Conductor>(nodes[i].ip, kTickPort, kNodes[i].name);
+        auto c = std::make_unique<RenderStreamClient>(kNodes[i].name);
+        c->SetTarget(nodes[i]);
         c->SetRigs(rigs);
         c->SetSchemaHash(scene_hash);
-        c->SetParameterValues(param_values);
-        SetupConductorCallbacks(*c, kNodes[i].name);
-        fprintf(stderr, "[%s] connecting to %s:%d...\n", kNodes[i].name, nodes[i].ip, kTickPort);
+        c->SetParameters(param_values);
+        c->SetFps(kFps);
+        SetupClientCallbacks(*c, kNodes[i].name);
+
+        fprintf(stderr, "[%s] connecting to %s:%d...\n",
+                kNodes[i].name, nodes[i].ip.c_str(), kTickPort);
         if (!c->Connect(60)) {
             fprintf(stderr, "[%s] WARNING: could not connect\n", kNodes[i].name);
             continue;
         }
-        conductors.push_back(std::move(c));
+        clients.push_back(std::move(c));
     }
 
-    if (conductors.empty()) {
-        fprintf(stderr, "No conductors connected.\n");
-        RS_FreeNodeList(&list);
-        WSACleanup();
+    if (clients.empty()) {
+        fprintf(stderr, "No clients connected.\n");
         return 1;
     }
 
     // 7. Start tick loops
-    fprintf(stderr, "\nStarting %zu conductor(s) for %d seconds...\n\n", conductors.size(), kRunSecs);
-    for (auto& c : conductors)
+    fprintf(stderr, "\nStarting %zu client(s) for %d seconds...\n\n",
+            clients.size(), kRunSecs);
+    for (auto& c : clients)
         threads.emplace_back([&c] { c->Run(); });
 
     // 8. Wait, then graceful shutdown
     std::this_thread::sleep_for(std::chrono::seconds(kRunSecs));
-    fprintf(stderr, "\n--- %ds elapsed, stopping conductors ---\n", kRunSecs);
+    fprintf(stderr, "\n--- %ds elapsed, stopping clients ---\n", kRunSecs);
 
-    for (auto& c : conductors)
+    for (auto& c : clients)
         c->Stop();
 
     for (auto& t : threads)
         t.join();
 
-    fprintf(stderr, "All conductors stopped.\n\n");
+    fprintf(stderr, "All clients stopped.\n\n");
 
     // 9. Kill remote UEs
     fprintf(stderr, "Killing remote UE processes...\n");
     for (size_t i = 0; i < nodes.size(); ++i) {
-        if (pids[i] != 0)
-            KillRemoteUE(nodes[i].ip, nodes[i].port, pids[i]);
+        if (pids[i] != 0) {
+            RenderStreamClient kill_cli("kill");
+            kill_cli.SetTarget(nodes[i]);
+            bool ok = kill_cli.KillUE(pids[i]);
+            fprintf(stderr, "  kill %s:%d (pid=%d) -> %s\n",
+                    nodes[i].ip.c_str(), nodes[i].port, pids[i], ok ? "ok" : "fail");
+        }
     }
 
     fprintf(stderr, "\nDone.\n");
-    RS_FreeNodeList(&list);
     return 0;
 }

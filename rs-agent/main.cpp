@@ -12,17 +12,12 @@
 #include <spdlog/spdlog.h>
 
 #include "resource.h"
-#include "server/http_server.h"
-#include "server/lan_announcer.h"
-#include "server/logger.h"
-#include "server/pipe_server.h"
-#include "server/process_manager.h"
-#include "server/utils/encoding.h"
-#include "server/lan_announcer.h"
-#include "server/logger.h"
-#include "server/pipe_server.h"
-#include "server/process_manager.h"
-#include "server/utils/encoding.h"
+#include "http_server.h"
+#include "lan_announcer.h"
+#include "logger.h"
+#include "pipe_server.h"
+#include "process_manager.h"
+#include "utils/encoding.h"
 
 #define WM_TRAYICON (WM_APP + 1)
 
