@@ -1,4 +1,4 @@
-#include "server/lan_announcer.h"
+#include "lan_announcer.h"
 
 #include <atomic>
 #include <chrono>

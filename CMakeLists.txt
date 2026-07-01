@@ -139,4 +139,4 @@ include(CTest)
 # ---------------------------------------------------------------------------
 add_subdirectory(rs-dll)
 add_subdirectory(rs-agent)
-add_subdirectory(rs-conductor)
+add_subdirectory(rs-client)

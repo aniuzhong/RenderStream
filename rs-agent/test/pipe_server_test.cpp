@@ -1,4 +1,4 @@
-#include "server/pipe_server.h"
+#include "pipe_server.h"
 
 #include <atomic>
 #include <chrono>

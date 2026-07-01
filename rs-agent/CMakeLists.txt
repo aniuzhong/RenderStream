@@ -11,7 +11,7 @@ endif()
 # Generate .rc resource file to embed the icon
 set(RS_AGENT_GEN_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${RS_AGENT_GEN_DIR}")
-set(RS_AGENT_ICON_SRC "${CMAKE_CURRENT_SOURCE_DIR}/server/icons/rs.ico")
+set(RS_AGENT_ICON_SRC "${CMAKE_CURRENT_SOURCE_DIR}/icons/rs.ico")
 if(EXISTS "${RS_AGENT_ICON_SRC}")
     string(REPLACE "/" "\\\\" RS_AGENT_ICON_RC_PATH "${RS_AGENT_ICON_SRC}")
     set(RS_AGENT_ICON_RC "${RS_AGENT_GEN_DIR}/rs-agent-icon.rc")
@@ -24,12 +24,12 @@ else()
 endif()
 
 add_executable(rs-agent WIN32
-    server/main.cpp
-    server/http_server.cpp
-    server/lan_announcer.cpp
-    server/pipe_server.cpp
-    server/process_manager.cpp
-    server/utils/lan_net.cpp
+    main.cpp
+    http_server.cpp
+    lan_announcer.cpp
+    pipe_server.cpp
+    process_manager.cpp
+    utils/lan_net.cpp
     ${RS_AGENT_ICON_RC}
 )
 target_include_directories(rs-agent PRIVATE . ${RS_AGENT_GEN_DIR} ${CMAKE_SOURCE_DIR}/common)
@@ -41,19 +41,6 @@ target_link_libraries(rs-agent PRIVATE
     nlohmann_json::nlohmann_json
     advapi32 ws2_32 crypt32 iphlpapi
 )
-
-# ---------------------------------------------------------------------------
-# rs-client DLL
-# ---------------------------------------------------------------------------
-
-add_library(rs_client SHARED
-    client/rs_client.cpp
-)
-set_target_properties(rs_client PROPERTIES
-    WINDOWS_EXPORT_ALL_SYMBOLS ON
-)
-target_include_directories(rs_client PUBLIC client .)
-target_link_libraries(rs_client PUBLIC nlohmann_json::nlohmann_json httplib::httplib ws2_32 crypt32)
 
 # ---------------------------------------------------------------------------
 # Tests
@@ -81,21 +68,21 @@ if(BUILD_TESTING)
 
     add_rs_agent_test(process_manager_test
         test/process_manager_test.cpp
-        server/process_manager.cpp
+        process_manager.cpp
     )
     target_link_libraries(process_manager_test PRIVATE asio::asio spdlog::spdlog ws2_32)
 
     add_rs_agent_test(pipe_server_test
         test/pipe_server_test.cpp
-        server/pipe_server.cpp
+        pipe_server.cpp
     )
     target_link_libraries(pipe_server_test PRIVATE asio::asio spdlog::spdlog ws2_32)
     target_compile_definitions(pipe_server_test PRIVATE NOMINMAX)
 
     add_rs_agent_test(lan_announcer_test
         test/lan_announcer_test.cpp
-        server/lan_announcer.cpp
-        server/utils/lan_net.cpp
+        lan_announcer.cpp
+        utils/lan_net.cpp
     )
     target_link_libraries(lan_announcer_test PRIVATE
         asio::asio spdlog::spdlog nlohmann_json::nlohmann_json ws2_32 iphlpapi advapi32
@@ -103,9 +90,9 @@ if(BUILD_TESTING)
 
     add_rs_agent_test(http_server_test
         test/http_server_test.cpp
-        server/http_server.cpp
-        server/process_manager.cpp
-        server/pipe_server.cpp
+        http_server.cpp
+        process_manager.cpp
+        pipe_server.cpp
     )
     target_link_libraries(http_server_test PRIVATE
         asio::asio restinio::restinio httplib::httplib

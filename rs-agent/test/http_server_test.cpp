@@ -1,4 +1,4 @@
-#include "server/http_server.h"
+#include "http_server.h"
 
 #include <atomic>
 #include <chrono>
@@ -13,8 +13,8 @@
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 
-#include "server/process_manager.h"
-#include "server/pipe_server.h"
+#include "process_manager.h"
+#include "pipe_server.h"
 
 using namespace std::chrono_literals;
 
