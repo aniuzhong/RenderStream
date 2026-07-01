@@ -6,17 +6,14 @@
     - [common](#common)
     - [rs-dll (RenderStream DLL)](#rs-dll-renderstream-dll)
     - [rs-agent](#rs-agent)
-      - [server](#server)
-      - [client](#client)
       - [test 🗑️](#test-️)
-    - [rs-conductor](#rs-conductor)
+    - [rs-client](#rs-client)
 
 ## Concept
 
 ```mermaid
 flowchart LR
-    subgraph Conductor Node
-        rs-conductor
+    subgraph RenderStream Client Node
         rs-client
     end
 
@@ -35,9 +32,9 @@ flowchart LR
     end
 
 rs-client -- HTTP --> rs-agent_NodeA
-rs-conductor <-- TCP --> renderstream.dll_NodeA
+rs-client <-- TCP --> renderstream.dll_NodeA
 rs-client -- HTTP --> rs-agent_NodeB
-rs-conductor <-- TCP --> renderstream.dll_NodeB
+rs-client <-- TCP --> renderstream.dll_NodeB
 
 rs-agent_NodeA --> UE5.x_NodeA
 UE5.x_NodeA --> RenderStream-UE_NodeA
@@ -73,10 +70,11 @@ RenderStream-UE_NodeB -- LoadLibrary --> renderstream.dll_NodeB
 
 ### rs-agent
 
-#### server
-
-#### client
+- 🔄 **`http_server.h`** / **`http_server.cpp`**
+- 🔄 **`lan_announcer.h`** / **`lan_announcer.cpp`**
+- 🔄 **`pipe_server.h`** / **`pipe_server.cpp`**
+- 🔄 **`process_manager.h`** / **`process_manager.cpp`**
 
 #### test 🗑️
 
-### rs-conductor
+### rs-client
