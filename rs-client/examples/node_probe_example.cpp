@@ -31,7 +31,7 @@ int main(int argc, char* argv[]) {
         const auto& n = nodes[i];
         fprintf(stderr, "=== %s (%s:%d) ===\n", n.name.c_str(), n.ip.c_str(), n.port);
 
-        RenderStreamClient client(n.name);
+        RenderStreamClient client;
         client.SetTarget(n);
 
         // Health

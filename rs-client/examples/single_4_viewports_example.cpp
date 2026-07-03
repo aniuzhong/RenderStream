@@ -179,6 +179,7 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "-- Node %zu: %s (%s:%d) --\n", i, n.name.c_str(), n.ip.c_str(), n.port);
 
         RenderStreamClient client;
+        client.EnableDefaultLogging("RenderStream");
         client.SetTarget(n);
 
         // 2. Query node info
@@ -345,7 +346,7 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "\n[RenderStreamClient] connecting to %s:%d...\n", n.ip.c_str(), kTickPort);
         fflush(stderr);
 
-        if (!client.Connect(30)) {
+        if (!client.Connect(n.ip, 30)) {
             fprintf(stderr, "  [ERROR] could not connect tick socket\n");
             continue;
         }

@@ -14,16 +14,17 @@
 #include <ws2tcpip.h>
 #include <Windows.h>
 
-// =========================================================================
-// Construction / destruction
-// =========================================================================
+RenderStreamClient::RenderStreamClient() {
+}
 
-RenderStreamClient::RenderStreamClient(const std::string& tag)
-    : tag_(tag) {
+RenderStreamClient::~RenderStreamClient() {
+    Disconnect();
+}
 
-    auto out = spdlog::get(tag_);
+void RenderStreamClient::EnableDefaultLogging(const std::string& tag) {
+    auto out = spdlog::get(tag);
     if (!out) {
-        out = spdlog::stdout_color_mt(tag_);
+        out = spdlog::stdout_color_mt(tag);
         out->set_pattern("[%n] %v");
         out->set_level(spdlog::level::info);
     }
@@ -54,16 +55,6 @@ RenderStreamClient::RenderStreamClient(const std::string& tag)
             frame_time, fps, gpu_time, await_time);
     };
 }
-
-RenderStreamClient::~RenderStreamClient() {
-    Disconnect();
-}
-
-// =========================================================================
-// Phase 1 — Agent (UDP discovery + HTTP to rs-agent)
-// =========================================================================
-
-// ── Discovery ────────────────────────────────────────────────────────────
 
 /*static*/ std::vector<RenderStreamClient::NodeInfo>
 RenderStreamClient::DiscoverNodes(int timeout_ms) {
@@ -133,8 +124,6 @@ RenderStreamClient::DiscoverNodes(int timeout_ms) {
     return nodes;
 }
 
-// ── Target ────────────────────────────────────────────────────────────────
-
 void RenderStreamClient::SetTarget(const std::string& host, int port) {
     node_ip_   = host;
     node_port_ = port;
@@ -144,8 +133,6 @@ void RenderStreamClient::SetTarget(const NodeInfo& node) {
     SetTarget(node.ip, node.port);
 }
 
-// ── HTTP helpers ──────────────────────────────────────────────────────────
-
 static httplib::Client MakeClient(const std::string& host, int port) {
     httplib::Client cli(host.c_str(), port);
     cli.set_connection_timeout(3, 0);
@@ -153,14 +140,10 @@ static httplib::Client MakeClient(const std::string& host, int port) {
     return cli;
 }
 
-// ── Health ────────────────────────────────────────────────────────────────
-
 bool RenderStreamClient::Health() {
     auto res = MakeClient(node_ip_, node_port_).Get("/api/health");
     return res && res->status == 200;
 }
-
-// ── Node info ─────────────────────────────────────────────────────────────
 
 nlohmann::json RenderStreamClient::GetNodeInfo() {
     auto res = MakeClient(node_ip_, node_port_).Get("/api/node/info");
@@ -169,25 +152,20 @@ nlohmann::json RenderStreamClient::GetNodeInfo() {
     return nlohmann::json::parse(res->body);
 }
 
-// ── Schema ────────────────────────────────────────────────────────────────
-
 std::optional<rs::schema> RenderStreamClient::GetSchema(const std::string& project_path) {
     std::string url = "/api/renderstream/schema?project=" + project_path;
     auto res = MakeClient(node_ip_, node_port_).Get(url.c_str());
-    if (!res || res->status != 200) {
-        spdlog::get(tag_)->error("schema not found for: {}", project_path);
+    if (!res || res->status != 200)
         return std::nullopt;
-    }
+
     try {
         schema_ = nlohmann::json::parse(res->body).get<rs::schema>();
         return schema_;
     } catch (const std::exception& e) {
-        spdlog::get(tag_)->error("schema parse error: {}", e.what());
+        if (on_log) on_log(std::string("schema parse error: ") + e.what());
         return std::nullopt;
     }
 }
-
-// ── Session ───────────────────────────────────────────────────────────────
 
 RenderStreamClient::SessionStatus RenderStreamClient::GetSessionStatus() {
     SessionStatus st;
@@ -207,8 +185,6 @@ RenderStreamClient::SessionStatus RenderStreamClient::GetSessionStatus() {
     }
     return st;
 }
-
-// ── Launch / Kill UE ──────────────────────────────────────────────────────
 
 int RenderStreamClient::LaunchUE(const nlohmann::json& config) {
     auto res = MakeClient(node_ip_, node_port_)
@@ -235,8 +211,6 @@ bool RenderStreamClient::KillUE(int pid) {
     }
 }
 
-// ── Parameter helpers ─────────────────────────────────────────────────────
-
 int RenderStreamClient::ParamSlotCount(int scene_index) const {
     if (scene_index < 0 || static_cast<size_t>(scene_index) >= schema_.scenes.size())
         return 0;
@@ -249,7 +223,7 @@ int RenderStreamClient::ParamSlotCount(int scene_index) const {
             break;
         case rs::param_type::pose:
         case rs::param_type::transform:
-            slots += 16;  // 4x4 matrix
+            slots += 16;
             break;
         default:
             break;
@@ -274,7 +248,6 @@ std::vector<float> RenderStreamClient::MakeDefaultParams(int scene_index) const 
             break;
         case rs::param_type::pose:
         case rs::param_type::transform:
-            // 4x4 identity
             for (int r = 0; r < 4; ++r)
                 for (int c = 0; c < 4; ++c)
                     vals.push_back((r == c) ? 1.0f : 0.0f);
@@ -292,12 +265,6 @@ uint64_t RenderStreamClient::SchemaHash(int scene_index) const {
     return schema_.scenes[scene_index].hash;
 }
 
-// =========================================================================
-// Phase 2 — Conductor (TCP tick source to renderstream.dll)
-// =========================================================================
-
-// ── Setters ───────────────────────────────────────────────────────────────
-
 void RenderStreamClient::SetRigs(std::vector<CameraRig> rigs) {
     rigs_ = std::move(rigs);
 }
@@ -310,13 +277,9 @@ void RenderStreamClient::SetTexts(std::vector<std::string> values) {
     text_values_ = std::move(values);
 }
 
-void RenderStreamClient::SetImages(std::vector<ImageFrameData> refs) {
-    image_refs_ = std::move(refs);
-}
-
 void RenderStreamClient::SetSkeleton(const rs::skeleton_layout_data& layout,
-                                      std::vector<std::string> joint_names,
-                                      std::vector<rs::skeleton_pose_data> poses) {
+                                     std::vector<std::string> joint_names,
+                                     std::vector<rs::skeleton_pose_data> poses) {
     skel_layout_ = layout;
     joint_names_ = std::move(joint_names);
     skel_poses_  = std::move(poses);
@@ -330,11 +293,14 @@ void RenderStreamClient::SetFps(double fps) {
     tick_interval_ = 1.0 / fps;
 }
 
-// ── Connect / Disconnect ──────────────────────────────────────────────────
+RenderStreamClient::State RenderStreamClient::GetState() const {
+    return state_;
+}
 
-bool RenderStreamClient::Connect(int retries, int tick_port) {
+bool RenderStreamClient::Connect(const std::string& host, int retries, int tick_port) {
     tick_port_ = tick_port;
-    auto log = spdlog::get(tag_);
+    node_ip_   = host;
+    state_     = State::Connecting;
     using asio::ip::tcp;
 
     for (int i = 0; i < retries; ++i) {
@@ -342,15 +308,17 @@ bool RenderStreamClient::Connect(int retries, int tick_port) {
             tcp::resolver resolver(io_);
             auto endpoints = resolver.resolve(node_ip_, std::to_string(tick_port_));
             asio::connect(sock_, endpoints);
-            log->info("connected to {}:{}", node_ip_, tick_port_);
+            state_ = State::Running;
+            if (on_log) on_log(std::string("connected to ") + node_ip_ + ":" + std::to_string(tick_port_));
             return true;
         } catch (const std::exception& e) {
             sock_.close();
-            log->warn("connect attempt {}/{}: {}", i + 1, retries, e.what());
+            if (on_log) on_log(std::string("connect retry ") + std::to_string(i + 1) + "/" + std::to_string(retries) + ": " + e.what());
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
     }
-    log->error("failed to connect after {} retries", retries);
+    state_ = State::Error;
+    if (on_log) on_log("failed to connect after " + std::to_string(retries) + " retries");
     return false;
 }
 
@@ -358,13 +326,12 @@ void RenderStreamClient::Disconnect() {
     Stop();
     if (sock_.is_open())
         sock_.close();
+    state_ = State::Ready;
 }
 
-// ── Run loop ──────────────────────────────────────────────────────────────
-
 void RenderStreamClient::Run() {
-    auto log = spdlog::get(tag_);
     running_ = true;
+    state_ = State::Running;
     t_ = 0.0;
     frame_seq_ = 0;
 
@@ -372,26 +339,25 @@ void RenderStreamClient::Run() {
     begin_tick();
     begin_recv();
 
-    log->info("loop started at {} fps", 1.0 / tick_interval_);
+    if (on_log) on_log("loop started at " + std::to_string(1.0 / tick_interval_) + " fps");
 
     try {
         io_.run();
     } catch (const std::exception& e) {
-        log->error("io loop exception: {}", e.what());
+        if (on_log) on_log(std::string("io loop exception: ") + e.what());
     }
 
     running_ = false;
-    log->info("loop ended (frames={})", frame_seq_);
+    if (on_log) on_log("loop ended (frames=" + std::to_string(frame_seq_) + ")");
 }
 
 void RenderStreamClient::Stop() {
     if (!running_) return;
     running_ = false;
+    state_ = State::Stopping;
     tick_timer_.cancel();
     io_.stop();
 }
-
-// ── Tick timer ────────────────────────────────────────────────────────────
 
 void RenderStreamClient::begin_tick() {
     tick_timer_.async_wait([this](const std::error_code& ec) { on_tick(ec); });
@@ -410,8 +376,6 @@ void RenderStreamClient::on_tick(const std::error_code& ec) {
     begin_tick();
 }
 
-// ── Recv — dispatch to callbacks ──────────────────────────────────────────
-
 void RenderStreamClient::begin_recv() {
     asio::async_read_until(sock_, recv_buf_, '\n',
         [this](const std::error_code& ec, size_t n) { on_recv(ec, n); });
@@ -419,7 +383,7 @@ void RenderStreamClient::begin_recv() {
 
 void RenderStreamClient::on_recv(const std::error_code& ec, size_t /*n*/) {
     if (ec) {
-        spdlog::get(tag_)->error("recv disconnected: {}", ec.message());
+        if (on_log) on_log(std::string("recv disconnected: ") + ec.message());
         Stop();
         return;
     }
@@ -433,28 +397,29 @@ void RenderStreamClient::on_recv(const std::error_code& ec, size_t /*n*/) {
         std::string type = j.value("type", "");
 
         if (type == "FrameResponseData") {
-            on_frame_ack(j.get<CameraResponseData>());
+            if (on_frame_ack)
+                on_frame_ack(j.get<CameraResponseData>());
 
         } else if (type == "Status") {
-            on_status(j.value("text", std::string{}));
+            if (on_status)
+                on_status(j.value("text", std::string{}));
 
         } else if (type == "ProfilingData") {
-            on_profiling(j);
+            if (on_profiling)
+                on_profiling(j);
 
         } else if (type == "Log") {
-            on_log(j.value("text", std::string{}));
+            if (on_log)
+                on_log(j.value("text", std::string{}));
 
-        } else {
-            spdlog::get(tag_)->debug("unknown: {}", line);
         }
     } catch (const std::exception& e) {
-        spdlog::get(tag_)->warn("parse error: {}  raw: {}", e.what(), line);
+        if (on_log)
+            on_log(std::string("parse error: ") + e.what());
     }
 
     begin_recv();
 }
-
-// ── Build & Send ──────────────────────────────────────────────────────────
 
 void RenderStreamClient::build_and_send(double t) {
     last_cameras_.clear();
@@ -481,7 +446,6 @@ void RenderStreamClient::build_and_send(double t) {
     req.cameras      = last_cameras_;
     req.param_values = param_values_;
     req.text_values  = text_values_;
-    req.image_refs   = image_refs_;
     req.skel_layout  = skel_layout_;
     req.joint_names  = joint_names_;
     req.skel_poses   = skel_poses_;
@@ -492,7 +456,7 @@ void RenderStreamClient::build_and_send(double t) {
     asio::async_write(sock_, asio::buffer(*msg),
         [this, msg](const std::error_code& err, size_t) {
             if (err) {
-                spdlog::get(tag_)->error("send error: {}", err.message());
+                if (on_log) on_log(std::string("send error: ") + err.message());
                 Stop();
             }
         });

@@ -228,7 +228,7 @@ int main(int argc, char* argv[]) {
 
     // 2. Schema
     fprintf(stderr, "Querying schema from %s...\n", nodes[0].name.c_str());
-    RenderStreamClient schema_client("schema");
+    RenderStreamClient schema_client;
     schema_client.SetTarget(nodes[0]);
     auto schema = schema_client.GetSchema(kNodes[0].project_path);
     if (!schema) {
@@ -268,7 +268,7 @@ int main(int argc, char* argv[]) {
         launch_body["streams"]    = streams_json;
 
         fprintf(stderr, "Launching %s (%s)...\n", cfg.name, n.ip.c_str());
-        RenderStreamClient launch_cli("launch");
+        RenderStreamClient launch_cli;
         launch_cli.SetTarget(n);
         int pid = launch_cli.LaunchUE(launch_body);
         if (pid == 0) {
@@ -288,7 +288,7 @@ int main(int argc, char* argv[]) {
 
     for (size_t i = 0; i < nodes.size(); ++i) {
         if (pids[i] == 0) continue;
-        auto c = std::make_unique<RenderStreamClient>(kNodes[i].name);
+        auto c = std::make_unique<RenderStreamClient>();
         c->SetTarget(nodes[i]);
         c->SetRigs(rigs);
         c->SetSchemaHash(scene_hash);
@@ -298,7 +298,7 @@ int main(int argc, char* argv[]) {
 
         fprintf(stderr, "[%s] connecting to %s:%d...\n",
                 kNodes[i].name, nodes[i].ip.c_str(), kTickPort);
-        if (!c->Connect(60)) {
+        if (!c->Connect(nodes[i].ip, 60)) {
             fprintf(stderr, "[%s] WARNING: could not connect\n", kNodes[i].name);
             continue;
         }
@@ -332,7 +332,7 @@ int main(int argc, char* argv[]) {
     fprintf(stderr, "Killing remote UE processes...\n");
     for (size_t i = 0; i < nodes.size(); ++i) {
         if (pids[i] != 0) {
-            RenderStreamClient kill_cli("kill");
+            RenderStreamClient kill_cli;
             kill_cli.SetTarget(nodes[i]);
             bool ok = kill_cli.KillUE(pids[i]);
             fprintf(stderr, "  kill %s:%d (pid=%d) -> %s\n",
