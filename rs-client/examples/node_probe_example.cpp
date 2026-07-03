@@ -72,8 +72,8 @@ int main(int argc, char* argv[]) {
         // Session status
         RSStatus st{};
         if (client->GetSessionStatus(&st)) {
-            const char* state_names[] = {"idle", "launching", "running", "stopping"};
-            const char* s = (st.state >= 0 && st.state <= 3) ? state_names[st.state] : "?";
+            const char* state_names[] = {"idle", "launching", "running"};
+            const char* s = (st.state >= 0 && st.state <= 2) ? state_names[st.state] : "?";
             fprintf(stderr, "  session: state=%s pid=%d\n", s, st.pid);
         } else {
             fprintf(stderr, "  session: (failed)\n");

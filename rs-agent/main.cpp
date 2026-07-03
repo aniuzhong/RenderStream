@@ -173,8 +173,6 @@ void RunServer() {
             UpdateTrayStatus(L"idle");
         } else if (ps.LastConnectTime() > 0) {
             UpdateTrayStatus(L"running");
-        } else if (pm.IsStopping(pids[0])) {
-            UpdateTrayStatus(L"stopping");
         } else {
             UpdateTrayStatus(L"launching");
         }

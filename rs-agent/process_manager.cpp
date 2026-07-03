@@ -101,41 +101,17 @@ bool ProcessManager::Kill(DWORD pid) {
     if (it == processes_.end())
         return false;
 
-    if (it->stopping)
-        return true;  // already in graceful shutdown
+    TerminateProcess(it->handle, 1);
+    WaitForSingleObject(it->handle, 5000);
 
-    it->stopping = true;
-    it->stop_deadline_ms = NowMs() + 10000;  // 10s grace period
-
-    // Try graceful: find the top-level window and send WM_CLOSE
-    struct EnumData { DWORD pid; HWND found; };
-    EnumData data{pid, nullptr};
-    EnumWindows([](HWND hwnd, LPARAM lParam) -> BOOL {
-        auto* d = reinterpret_cast<EnumData*>(lParam);
-        DWORD wpid = 0;
-        GetWindowThreadProcessId(hwnd, &wpid);
-        if (wpid == d->pid && IsWindowVisible(hwnd)) {
-            d->found = hwnd;
-            return FALSE;
-        }
-        return TRUE;
-    }, reinterpret_cast<LPARAM>(&data));
-
-    if (data.found) {
-        PostMessageW(data.found, WM_CLOSE, 0, 0);
-    } else {
-        // No visible window — force-kill immediately
-        TerminateProcess(it->handle, 1);
-        DWORD exit_code = 0;
-        GetExitCodeProcess(it->handle, &exit_code);
-        last_exited_pid_ = it->pid;
-        last_exit_code_ = exit_code;
-        last_exit_time_ms_ = NowMs();
-        SaveLastExit(it->pid, exit_code, last_exit_time_ms_);
-        CloseHandle(it->handle);
-        processes_.erase(it);
-    }
-
+    DWORD exit_code = 0;
+    GetExitCodeProcess(it->handle, &exit_code);
+    last_exited_pid_ = it->pid;
+    last_exit_code_ = exit_code;
+    last_exit_time_ms_ = NowMs();
+    SaveLastExit(it->pid, exit_code, last_exit_time_ms_);
+    CloseHandle(it->handle);
+    processes_.erase(it);
     return true;
 }
 
@@ -175,13 +151,6 @@ int64_t ProcessManager::GetLaunchTimeMs(DWORD pid) const {
     return 0;
 }
 
-bool ProcessManager::IsStopping(DWORD pid) const {
-    std::lock_guard<std::mutex> lock(mutex_);
-    for (const auto& p : processes_)
-        if (p.pid == pid)
-            return p.stopping;
-    return false;
-}
 
 int64_t ProcessManager::GetExitTimeMs(DWORD pid) const {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -202,25 +171,7 @@ void ProcessManager::OnPoll(const std::error_code& ec) {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = processes_.begin();
         while (it != processes_.end()) {
-            // Force-kill if stopping deadline expired
-            if (it->stopping && it->stop_deadline_ms > 0 &&
-                NowMs() >= it->stop_deadline_ms) {
-                TerminateProcess(it->handle, 1);
-
-                DWORD exit_code = 0;
-                GetExitCodeProcess(it->handle, &exit_code);
-                last_exited_pid_ = it->pid;
-                last_exit_code_ = exit_code;
-                last_exit_time_ms_ = NowMs();
-                SaveLastExit(it->pid, exit_code, last_exit_time_ms_);
-
-                CloseHandle(it->handle);
-                it = processes_.erase(it);
-                continue;
-            }
-
             if (WaitForSingleObject(it->handle, 0) == WAIT_OBJECT_0) {
-                // Collect exit code before closing handle
                 DWORD exit_code = 0;
                 GetExitCodeProcess(it->handle, &exit_code);
 

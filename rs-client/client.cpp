@@ -229,7 +229,6 @@ int RenderStreamClient::GetSessionStatus(RSStatus* out) {
 
         if (state_str == "launching")      out->state = 1;
         else if (state_str == "running")   out->state = 2;
-        else if (state_str == "stopping")  out->state = 3;
         else                               out->state = 0;
 
         return 1;
@@ -488,6 +487,7 @@ void RenderStreamClient::SetCallbacks(const RSCallbacks* cb) {
             sp.joint_count    = static_cast<uint32_t>(p.joints.size());
             sp.joints         = p.joints.data();
             fn(t, &sp, data);
+            p.root_transform = sp.root_transform;  // write back value changes
         };
     }
 }
@@ -666,6 +666,16 @@ void RenderStreamClient::build_and_send(double t) {
     req.skel_layout  = skel_layout_;
     req.joint_names  = joint_names_;
     req.skel_poses   = skel_poses_;
+
+    // Log first 3 frames of skeleton data for debugging
+    if (frame_seq_ < 3 && !req.skel_poses.empty()) {
+        const auto& p = req.skel_poses[0];
+        fprintf(stderr, "  [skel_debug] frame=%d layout_id=%llu nJoints=%zu "
+                "rootPos=(%.3f, %.3f, %.3f) nJointNames=%zu nLayoutJoints=%zu\n",
+                frame_seq_, (unsigned long long)p.layout_id, p.joints.size(),
+                p.root_transform.x, p.root_transform.y, p.root_transform.z,
+                req.joint_names.size(), req.skel_layout.joints.size());
+    }
 
     auto msg = std::make_shared<std::string>(
         nlohmann::json(req).dump() + "\n");

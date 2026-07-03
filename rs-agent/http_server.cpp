@@ -186,9 +186,7 @@ void HttpServer::RegisterRoutes(router_t& router) {
                 j["pid"] = pids[0];
                 j["launched_at"] = pm_.GetLaunchTimeMs(pids[0]);
 
-                if (pm_.IsStopping(pids[0])) {
-                    j["state"] = "stopping";
-                } else if (ps_.LastConnectTime() > 0) {
+                if (ps_.LastConnectTime() > 0) {
                     j["state"] = "running";
                 } else {
                     j["state"] = "launching";

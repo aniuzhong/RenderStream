@@ -11,6 +11,7 @@
 #include <cstdlib>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -29,9 +30,10 @@ static constexpr int    kTickPort = 9581;
 static constexpr double kFps      = 60.0;
 
 const char* kEngineExe =
-    "C:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor.exe";
+    // "C:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor.exe";
+    "D:/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor.exe";
 const char* kProjectPath =
-    "C:/Users/hido/Documents/Unreal Projects/nDisplay_Demo_57/nDisplay_Demo.uproject";
+    "D:/Unreal Projects/nDisplay_Demo_57/nDisplay_Demo.uproject";
 const char* kNodeName = "node0";
 
 // -- Viewport layout (2x2 grid) ----------------------------------------
@@ -136,7 +138,7 @@ static void OnBuildTexts(double t, char** texts, uint32_t count, void*) {
 static void OnBuildSkeleton(double t, RSSkeletonPose* pose, void*) {
     pose->layout_id = 0;
     pose->layout_version = 1;
-    pose->root_transform = {0, 0.9f, 0, 0, 0, 0, 1};
+    pose->root_transform = {0, 1.5f, 0, 0, 0, 0, 1};
 
     for (uint32_t j = 0; j < pose->joint_count && j < 6; ++j) {
         pose->joints[j].id = j;
@@ -283,18 +285,14 @@ int main(int argc, char* argv[]) {
         auto scenes   = schema.value("scenes",   nlohmann::json::array());
         client->FreeString(schema_json);
 
-        // 4. Validate channels
-        bool channel_ok = true;
+        // 4. Validate channels (non-fatal warning)
         for (const auto& vp : vps) {
             bool found = false;
             for (const auto& ch : channels)
                 if (ch.get<std::string>() == vp.channel) { found = true; break; }
-            if (!found) {
-                fprintf(stderr, "  [ERROR] channel '%s' not in schema\n", vp.channel.c_str());
-                channel_ok = false;
-            }
+            if (!found)
+                fprintf(stderr, "  [WARN] channel '%s' not in schema\n", vp.channel.c_str());
         }
-        if (!channel_ok) continue;
 
         // 5. Build streams + launch
         nlohmann::json streams = nlohmann::json::array();
@@ -368,7 +366,14 @@ int main(int argc, char* argv[]) {
             const char* joint_names[] = {
                 "pelvis", "spine_01", "spine_02", "neck_01", "clavicle_l", "clavicle_r"
             };
-            RSSkeletonPose skel_pose = {0, 1, identity, 0, nullptr};
+            // Pre-allocate joints so SetSkeleton creates a pose entry —
+            // otherwise the per-frame OnBuildSkeleton callback never fires.
+            SkeletonJointPose initial_poses[6] = {};
+            for (int i = 0; i < 6; ++i) {
+                initial_poses[i].id = i;
+                initial_poses[i].transform = identity;
+            }
+            RSSkeletonPose skel_pose = {0, 1, identity, 6, initial_poses};
             client->SetSkeleton(&skel_layout, joint_names, &skel_pose);
         }
 

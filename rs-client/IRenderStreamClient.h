@@ -29,7 +29,7 @@ typedef struct {
     int      exit_code;
     int64_t  launched_at;
     int64_t  pipe_connected_at;
-    int      state;   // 0=idle  1=launching  2=running  3=stopping
+    int      state;   // 0=idle  1=launching  2=running
 } RSStatus;
 
 // -- Camera rig --------------------------------------------------------
