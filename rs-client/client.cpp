@@ -1,4 +1,4 @@
-#include "render_stream_client.h"
+#include "client.h"
 
 #include <httplib.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
@@ -14,12 +14,32 @@
 #include <ws2tcpip.h>
 #include <Windows.h>
 
+// ============================================================
+// Factory
+// ============================================================
+
+extern "C" __declspec(dllexport) IRenderStreamClient* CreateRenderStreamClient() {
+    return new RenderStreamClient();
+}
+
+extern "C" __declspec(dllexport) void DestroyRenderStreamClient(IRenderStreamClient* p) {
+    delete p;
+}
+
+// ============================================================
+// Construction / Destruction
+// ============================================================
+
 RenderStreamClient::RenderStreamClient() {
 }
 
 RenderStreamClient::~RenderStreamClient() {
     Disconnect();
 }
+
+// ============================================================
+// Default logging (convenience, not in interface)
+// ============================================================
 
 void RenderStreamClient::EnableDefaultLogging(const std::string& tag) {
     auto out = spdlog::get(tag);
@@ -29,20 +49,20 @@ void RenderStreamClient::EnableDefaultLogging(const std::string& tag) {
         out->set_level(spdlog::level::info);
     }
 
-    on_frame_ack = [out](const CameraResponseData& ack) {
+    on_frame_ack_ = [out](const CameraResponseData& ack) {
         out->debug("t={:.3f} camera(id={} x={:.2f} y={:.2f} z={:.2f})",
             ack.tTracked, ack.camera.id, ack.camera.x, ack.camera.y, ack.camera.z);
     };
 
-    on_status = [out](const std::string& text) {
+    on_status_ = [out](const std::string& text) {
         out->info("Status: {}", text);
     };
 
-    on_log = [out](const std::string& text) {
+    on_log_ = [out](const std::string& text) {
         out->info("{}", text);
     };
 
-    on_profiling = [out](const nlohmann::json& j) {
+    on_profiling_ = [out](const nlohmann::json& j) {
         float frame_time = 0, gpu_time = 0, await_time = 0;
         for (const auto& e : j["entries"]) {
             std::string name = e.value("name", "");
@@ -56,18 +76,21 @@ void RenderStreamClient::EnableDefaultLogging(const std::string& tag) {
     };
 }
 
-/*static*/ std::vector<RenderStreamClient::NodeInfo>
-RenderStreamClient::DiscoverNodes(int timeout_ms) {
-    std::vector<NodeInfo> nodes;
+// ============================================================
+// Discovery
+// ============================================================
+
+uint32_t RenderStreamClient::Discover(int timeout_ms, RSNode* out, uint32_t max) {
+    uint32_t count = 0;
 
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
-        return nodes;
+        return 0;
 
     SOCKET sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock == INVALID_SOCKET) {
         WSACleanup();
-        return nodes;
+        return 0;
     }
 
     BOOL reuse = TRUE;
@@ -80,7 +103,7 @@ RenderStreamClient::DiscoverNodes(int timeout_ms) {
     if (bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
         closesocket(sock);
         WSACleanup();
-        return nodes;
+        return 0;
     }
 
     DWORD timeout = static_cast<DWORD>((std::max)(timeout_ms, 100));
@@ -90,10 +113,11 @@ RenderStreamClient::DiscoverNodes(int timeout_ms) {
     std::set<std::string> seen;
 
     char buf[2048];
-    while (std::chrono::steady_clock::now() < deadline) {
+    while (std::chrono::steady_clock::now() < deadline && count < max) {
         sockaddr_in from{};
         int from_len = sizeof(from);
-        int n = recvfrom(sock, buf, sizeof(buf) - 1, 0, reinterpret_cast<sockaddr*>(&from), &from_len);
+        int n = recvfrom(sock, buf, sizeof(buf) - 1, 0,
+                         reinterpret_cast<sockaddr*>(&from), &from_len);
         if (n <= 0) {
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
             continue;
@@ -110,28 +134,41 @@ RenderStreamClient::DiscoverNodes(int timeout_ms) {
             char ip[INET_ADDRSTRLEN]{};
             inet_ntop(AF_INET, &from.sin_addr, ip, sizeof(ip));
 
-            NodeInfo node;
-            node.name = name;
-            node.ip   = j.value("ip", ip);
-            node.port = j.value("port", 9580);
-            nodes.push_back(node);
+            std::string node_ip = j.value("ip", ip);
+            int node_port = j.value("port", 9580);
+
+            out[count].name = _strdup(name.c_str());
+            out[count].ip   = _strdup(node_ip.c_str());
+            out[count].port = node_port;
+            ++count;
         } catch (...) {
         }
     }
 
     closesocket(sock);
     WSACleanup();
-    return nodes;
+    return count;
 }
 
-void RenderStreamClient::SetTarget(const std::string& host, int port) {
+void RenderStreamClient::FreeNodes(RSNode* nodes, uint32_t count) {
+    for (uint32_t i = 0; i < count; ++i) {
+        free(nodes[i].name);
+        free(nodes[i].ip);
+    }
+}
+
+// ============================================================
+// Target
+// ============================================================
+
+void RenderStreamClient::SetTarget(const char* host, int port) {
     node_ip_   = host;
     node_port_ = port;
 }
 
-void RenderStreamClient::SetTarget(const NodeInfo& node) {
-    SetTarget(node.ip, node.port);
-}
+// ============================================================
+// HTTP helpers
+// ============================================================
 
 static httplib::Client MakeClient(const std::string& host, int port) {
     httplib::Client cli(host.c_str(), port);
@@ -140,55 +177,74 @@ static httplib::Client MakeClient(const std::string& host, int port) {
     return cli;
 }
 
-bool RenderStreamClient::Health() {
+// ============================================================
+// Queries
+// ============================================================
+
+int RenderStreamClient::Health() {
     auto res = MakeClient(node_ip_, node_port_).Get("/api/health");
-    return res && res->status == 200;
+    return (res && res->status == 200) ? 1 : 0;
 }
 
-nlohmann::json RenderStreamClient::GetNodeInfo() {
+char* RenderStreamClient::GetNodeInfo() {
     auto res = MakeClient(node_ip_, node_port_).Get("/api/node/info");
     if (!res || res->status != 200)
-        return {};
-    return nlohmann::json::parse(res->body);
+        return nullptr;
+    return _strdup(res->body.c_str());
 }
 
-std::optional<rs::schema> RenderStreamClient::GetSchema(const std::string& project_path) {
-    std::string url = "/api/renderstream/schema?project=" + project_path;
+char* RenderStreamClient::GetSchema(const char* project_path) {
+    std::string url = "/api/renderstream/schema?project=" + std::string(project_path);
     auto res = MakeClient(node_ip_, node_port_).Get(url.c_str());
     if (!res || res->status != 200)
-        return std::nullopt;
+        return nullptr;
 
     try {
         schema_ = nlohmann::json::parse(res->body).get<rs::schema>();
-        return schema_;
+        return _strdup(res->body.c_str());
     } catch (const std::exception& e) {
-        if (on_log) on_log(std::string("schema parse error: ") + e.what());
-        return std::nullopt;
+        if (on_log_)
+            on_log_(std::string("schema parse error: ") + e.what());
+        return nullptr;
     }
 }
 
-RenderStreamClient::SessionStatus RenderStreamClient::GetSessionStatus() {
-    SessionStatus st;
+int RenderStreamClient::GetSessionStatus(RSStatus* out) {
+    if (!out) return 0;
+
     auto res = MakeClient(node_ip_, node_port_).Get("/api/unreal/status");
     if (!res || res->status != 200)
-        return st;
+        return 0;
 
     try {
         auto j = nlohmann::json::parse(res->body);
-        st.state  = j.value("state", "idle");
-        st.pid    = j.value("pid", 0);
+        std::string state_str = j.value("state", "idle");
+
+        out->pid    = j.value("pid", 0);
+        out->exit_code = -1;
         if (!j["exit_code"].is_null())
-            st.exit_code = j["exit_code"].get<int>();
-        st.launched_at        = j.value("launched_at", int64_t{0});
-        st.pipe_connected_at  = j.value("pipe_connected_at", int64_t{0});
+            out->exit_code = j["exit_code"].get<int>();
+        out->launched_at        = j.value("launched_at", int64_t{0});
+        out->pipe_connected_at  = j.value("pipe_connected_at", int64_t{0});
+
+        if (state_str == "launching")      out->state = 1;
+        else if (state_str == "running")   out->state = 2;
+        else if (state_str == "stopping")  out->state = 3;
+        else                               out->state = 0;
+
+        return 1;
     } catch (...) {
+        return 0;
     }
-    return st;
 }
 
-int RenderStreamClient::LaunchUE(const nlohmann::json& config) {
+// ============================================================
+// Session
+// ============================================================
+
+int RenderStreamClient::LaunchUE(const char* config_json) {
     auto res = MakeClient(node_ip_, node_port_)
-        .Post("/api/renderstream/launch", config.dump(), "application/json");
+        .Post("/api/renderstream/launch", config_json, "application/json");
     if (!res || res->status != 200)
         return 0;
     try {
@@ -198,24 +254,28 @@ int RenderStreamClient::LaunchUE(const nlohmann::json& config) {
     }
 }
 
-bool RenderStreamClient::KillUE(int pid) {
+int RenderStreamClient::KillUE(int pid) {
     nlohmann::json body = {{"pid", pid}};
     auto res = MakeClient(node_ip_, node_port_)
         .Post("/api/unreal/kill", body.dump(), "application/json");
     if (!res || res->status != 200)
-        return false;
+        return 0;
     try {
-        return nlohmann::json::parse(res->body).value("success", false);
+        return nlohmann::json::parse(res->body).value("success", false) ? 1 : 0;
     } catch (...) {
-        return false;
+        return 0;
     }
 }
 
-int RenderStreamClient::ParamSlotCount(int scene_index) const {
-    if (scene_index < 0 || static_cast<size_t>(scene_index) >= schema_.scenes.size())
+// ============================================================
+// Frame data
+// ============================================================
+
+uint32_t RenderStreamClient::ParamSlotCount() {
+    if (schema_.scenes.empty())
         return 0;
     int slots = 0;
-    for (const auto& p : schema_.scenes[scene_index].parameters) {
+    for (const auto& p : schema_.scenes[0].parameters) {
         switch (p.type) {
         case rs::param_type::number:
         case rs::param_type::event:
@@ -229,34 +289,40 @@ int RenderStreamClient::ParamSlotCount(int scene_index) const {
             break;
         }
     }
-    return slots;
+    return static_cast<uint32_t>(slots);
 }
 
-std::vector<float> RenderStreamClient::MakeDefaultParams(int scene_index) const {
-    std::vector<float> vals;
-    if (scene_index < 0 || static_cast<size_t>(scene_index) >= schema_.scenes.size())
-        return vals;
+uint32_t RenderStreamClient::MakeDefaultParams(float* out, uint32_t max) {
+    if (schema_.scenes.empty() || !out || max == 0)
+        return 0;
 
-    for (const auto& p : schema_.scenes[scene_index].parameters) {
+    uint32_t idx = 0;
+    for (const auto& p : schema_.scenes[0].parameters) {
         switch (p.type) {
         case rs::param_type::number:
         case rs::param_type::event:
+            if (idx >= max) return idx;
             if (auto* nd = std::get_if<rs::number_defaults>(&p.defaults))
-                vals.push_back(nd->default_value);
+                out[idx] = nd->default_value;
             else
-                vals.push_back(0.0f);
+                out[idx] = 0.0f;
+            ++idx;
             break;
         case rs::param_type::pose:
         case rs::param_type::transform:
-            for (int r = 0; r < 4; ++r)
-                for (int c = 0; c < 4; ++c)
-                    vals.push_back((r == c) ? 1.0f : 0.0f);
+            for (int r = 0; r < 4; ++r) {
+                for (int c = 0; c < 4; ++c) {
+                    if (idx >= max) return idx;
+                    out[idx] = (r == c) ? 1.0f : 0.0f;
+                    ++idx;
+                }
+            }
             break;
         default:
             break;
         }
     }
-    return vals;
+    return idx;
 }
 
 uint64_t RenderStreamClient::SchemaHash(int scene_index) const {
@@ -265,24 +331,74 @@ uint64_t RenderStreamClient::SchemaHash(int scene_index) const {
     return schema_.scenes[scene_index].hash;
 }
 
-void RenderStreamClient::SetRigs(std::vector<CameraRig> rigs) {
-    rigs_ = std::move(rigs);
+uint64_t RenderStreamClient::SchemaHash() const {
+    return SchemaHash(0);
 }
 
-void RenderStreamClient::SetParameters(std::vector<float> values) {
-    param_values_ = std::move(values);
+void RenderStreamClient::SetRigs(const RSCameraRig* rigs, uint32_t count) {
+    rigs_.clear();
+    for (uint32_t i = 0; i < count; ++i) {
+        const auto& cr = rigs[i];
+        CameraRig rig;
+        rig.SetSensorSize(cr.sensor_w, cr.sensor_h);
+        rig.SetLoop(cr.loop != 0);
+        for (uint32_t k = 0; k < cr.keyframe_count; ++k) {
+            const auto& kf = cr.keyframes[k];
+            rig.AddSample(kf.t,
+                          static_cast<double>(kf.x),
+                          static_cast<double>(kf.y),
+                          static_cast<double>(kf.z),
+                          static_cast<double>(kf.rx),
+                          static_cast<double>(kf.ry),
+                          static_cast<double>(kf.rz),
+                          static_cast<double>(kf.fov));
+        }
+        rigs_.push_back(std::move(rig));
+    }
 }
 
-void RenderStreamClient::SetTexts(std::vector<std::string> values) {
-    text_values_ = std::move(values);
+void RenderStreamClient::SetParams(const float* values, uint32_t count) {
+    param_values_.assign(values, values + count);
 }
 
-void RenderStreamClient::SetSkeleton(const rs::skeleton_layout_data& layout,
-                                     std::vector<std::string> joint_names,
-                                     std::vector<rs::skeleton_pose_data> poses) {
-    skel_layout_ = layout;
-    joint_names_ = std::move(joint_names);
-    skel_poses_  = std::move(poses);
+void RenderStreamClient::SetTexts(const char* const* values, uint32_t count) {
+    text_values_.clear();
+    for (uint32_t i = 0; i < count; ++i)
+        text_values_.emplace_back(values[i] ? values[i] : "");
+}
+
+void RenderStreamClient::SetSkeleton(const RSSkeletonLayout* layout,
+                                      const char* const* joint_names,
+                                      const RSSkeletonPose* pose) {
+    skel_layout_ = rs::skeleton_layout_data{};
+    joint_names_.clear();
+    skel_poses_.clear();
+
+    if (!layout || !layout->joints)
+        return;
+
+    skel_layout_.version = 1;
+    for (uint32_t i = 0; i < layout->joint_count; ++i) {
+        const auto& cj = layout->joints[i];
+        SkeletonJointDesc jd;
+        jd.id        = cj.id;
+        jd.parentId  = cj.parentId;
+        jd.transform = cj.transform;
+        skel_layout_.joints.push_back(jd);
+    }
+
+    for (uint32_t i = 0; i < layout->joint_count; ++i)
+        joint_names_.emplace_back(joint_names && joint_names[i] ? joint_names[i] : "");
+
+    if (pose && pose->joints) {
+        rs::skeleton_pose_data sp;
+        sp.layout_id      = pose->layout_id;
+        sp.layout_version = pose->layout_version;
+        sp.root_transform = pose->root_transform;
+        for (uint32_t i = 0; i < pose->joint_count; ++i)
+            sp.joints.push_back(pose->joints[i]);
+        skel_poses_.push_back(std::move(sp));
+    }
 }
 
 void RenderStreamClient::SetSchemaHash(uint64_t hash) {
@@ -293,14 +409,108 @@ void RenderStreamClient::SetFps(double fps) {
     tick_interval_ = 1.0 / fps;
 }
 
-RenderStreamClient::State RenderStreamClient::GetState() const {
-    return state_;
+// ============================================================
+// Callbacks
+// ============================================================
+
+void RenderStreamClient::SetCallbacks(const RSCallbacks* cb) {
+    if (!cb) return;
+    void* data = cb->userdata;
+
+    if (cb->on_frame_ack) {
+        auto fn = cb->on_frame_ack;
+        on_frame_ack_ = [fn, data](const CameraResponseData& ack) {
+            fn(&ack, data);
+        };
+    }
+    if (cb->on_status) {
+        auto fn = cb->on_status;
+        on_status_ = [fn, data](const std::string& text) {
+            fn(text.c_str(), data);
+        };
+    }
+    if (cb->on_log) {
+        auto fn = cb->on_log;
+        on_log_ = [fn, data](const std::string& text) {
+            fn(text.c_str(), data);
+        };
+    }
+    if (cb->on_profiling) {
+        auto fn = cb->on_profiling;
+        on_profiling_ = [fn, data](const nlohmann::json& j) {
+            float frame_time = 0, gpu_time = 0, await_time = 0;
+            if (j.contains("entries") && j["entries"].is_array()) {
+                for (const auto& e : j["entries"]) {
+                    std::string name = e.value("name", "");
+                    if (name == "Frame Time")      frame_time = e.value("value", 0.0f);
+                    else if (name == "GPU Time")   gpu_time  = e.value("value", 0.0f);
+                    else if (name == "Await Time") await_time = e.value("value", 0.0f);
+                }
+            }
+            RSProfiling p;
+            p.frame_time_ms = frame_time;
+            p.gpu_time_ms   = gpu_time;
+            p.await_time_ms = await_time;
+            p.fps           = frame_time > 0.0f ? 1000.0f / frame_time : 0.0f;
+            fn(&p, data);
+        };
+    }
+    if (cb->on_build_params) {
+        auto fn = cb->on_build_params;
+        on_build_params_ = [fn, data](double t, std::vector<float>& vals) {
+            fn(t, vals.data(), static_cast<uint32_t>(vals.size()), data);
+        };
+    }
+    if (cb->on_build_texts) {
+        auto fn = cb->on_build_texts;
+        on_build_texts_ = [fn, data](double t, std::vector<std::string>& texts) {
+            std::vector<std::string> bufs(texts.size());
+            std::vector<char*> ptrs(texts.size());
+            for (size_t i = 0; i < texts.size(); ++i) {
+                bufs[i].assign(texts[i].begin(), texts[i].end());
+                bufs[i].resize(256, '\0');
+                ptrs[i] = bufs[i].data();
+            }
+            fn(t, ptrs.data(), static_cast<uint32_t>(ptrs.size()), data);
+            for (size_t i = 0; i < texts.size(); ++i)
+                texts[i] = ptrs[i];
+        };
+    }
+    if (cb->on_build_skeleton) {
+        auto fn = cb->on_build_skeleton;
+        on_build_skeleton_ = [fn, data](double t, std::vector<rs::skeleton_pose_data>& poses) {
+            if (poses.empty()) return;
+            auto& p = poses[0];
+            RSSkeletonPose sp;
+            sp.layout_id      = p.layout_id;
+            sp.layout_version = p.layout_version;
+            sp.root_transform = p.root_transform;
+            sp.joint_count    = static_cast<uint32_t>(p.joints.size());
+            sp.joints         = p.joints.data();
+            fn(t, &sp, data);
+        };
+    }
 }
 
-bool RenderStreamClient::Connect(const std::string& host, int retries, int tick_port) {
+// ============================================================
+// Connection & Run
+// ============================================================
+
+int RenderStreamClient::GetState() {
+    switch (state_) {
+    case Ready:       return 0;
+    case Connecting:  return 1;
+    case Running:     return 2;
+    case Stopping:    return 3;
+    case Error:       return 4;
+    default:          return 0;
+    }
+}
+
+int RenderStreamClient::Connect(const char* host, int retries, int tick_port) {
     tick_port_ = tick_port;
     node_ip_   = host;
-    state_     = State::Connecting;
+    state_     = Connecting;
     using asio::ip::tcp;
 
     for (int i = 0; i < retries; ++i) {
@@ -308,30 +518,33 @@ bool RenderStreamClient::Connect(const std::string& host, int retries, int tick_
             tcp::resolver resolver(io_);
             auto endpoints = resolver.resolve(node_ip_, std::to_string(tick_port_));
             asio::connect(sock_, endpoints);
-            state_ = State::Running;
-            if (on_log) on_log(std::string("connected to ") + node_ip_ + ":" + std::to_string(tick_port_));
-            return true;
+            state_ = Running;
+            if (on_log_)
+                on_log_(std::string("connected to ") + node_ip_ + ":" + std::to_string(tick_port_));
+            return 1;
         } catch (const std::exception& e) {
             sock_.close();
-            if (on_log) on_log(std::string("connect retry ") + std::to_string(i + 1) + "/" + std::to_string(retries) + ": " + e.what());
+            if (on_log_)
+                on_log_(std::string("connect retry ") + std::to_string(i + 1) + "/" + std::to_string(retries) + ": " + e.what());
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
     }
-    state_ = State::Error;
-    if (on_log) on_log("failed to connect after " + std::to_string(retries) + " retries");
-    return false;
+    state_ = Error;
+    if (on_log_)
+        on_log_("failed to connect after " + std::to_string(retries) + " retries");
+    return 0;
 }
 
 void RenderStreamClient::Disconnect() {
     Stop();
     if (sock_.is_open())
         sock_.close();
-    state_ = State::Ready;
+    state_ = Ready;
 }
 
 void RenderStreamClient::Run() {
     running_ = true;
-    state_ = State::Running;
+    state_ = Running;
     t_ = 0.0;
     frame_seq_ = 0;
 
@@ -339,22 +552,25 @@ void RenderStreamClient::Run() {
     begin_tick();
     begin_recv();
 
-    if (on_log) on_log("loop started at " + std::to_string(1.0 / tick_interval_) + " fps");
+    if (on_log_)
+        on_log_("loop started at " + std::to_string(1.0 / tick_interval_) + " fps");
 
     try {
         io_.run();
     } catch (const std::exception& e) {
-        if (on_log) on_log(std::string("io loop exception: ") + e.what());
+        if (on_log_)
+            on_log_(std::string("io loop exception: ") + e.what());
     }
 
     running_ = false;
-    if (on_log) on_log("loop ended (frames=" + std::to_string(frame_seq_) + ")");
+    if (on_log_)
+        on_log_("loop ended (frames=" + std::to_string(frame_seq_) + ")");
 }
 
 void RenderStreamClient::Stop() {
     if (!running_) return;
     running_ = false;
-    state_ = State::Stopping;
+    state_ = Stopping;
     tick_timer_.cancel();
     io_.stop();
 }
@@ -383,7 +599,8 @@ void RenderStreamClient::begin_recv() {
 
 void RenderStreamClient::on_recv(const std::error_code& ec, size_t /*n*/) {
     if (ec) {
-        if (on_log) on_log(std::string("recv disconnected: ") + ec.message());
+        if (on_log_)
+            on_log_(std::string("recv disconnected: ") + ec.message());
         Stop();
         return;
     }
@@ -397,25 +614,25 @@ void RenderStreamClient::on_recv(const std::error_code& ec, size_t /*n*/) {
         std::string type = j.value("type", "");
 
         if (type == "FrameResponseData") {
-            if (on_frame_ack)
-                on_frame_ack(j.get<CameraResponseData>());
+            if (on_frame_ack_)
+                on_frame_ack_(j.get<CameraResponseData>());
 
         } else if (type == "Status") {
-            if (on_status)
-                on_status(j.value("text", std::string{}));
+            if (on_status_)
+                on_status_(j.value("text", std::string{}));
 
         } else if (type == "ProfilingData") {
-            if (on_profiling)
-                on_profiling(j);
+            if (on_profiling_)
+                on_profiling_(j);
 
         } else if (type == "Log") {
-            if (on_log)
-                on_log(j.value("text", std::string{}));
+            if (on_log_)
+                on_log_(j.value("text", std::string{}));
 
         }
     } catch (const std::exception& e) {
-        if (on_log)
-            on_log(std::string("parse error: ") + e.what());
+        if (on_log_)
+            on_log_(std::string("parse error: ") + e.what());
     }
 
     begin_recv();
@@ -431,12 +648,12 @@ void RenderStreamClient::build_and_send(double t) {
     for (size_t i = 0; i < last_cameras_.size(); ++i)
         last_cameras_[i].id = static_cast<uint64_t>(i + 1);
 
-    if (on_build_params)
-        on_build_params(t, param_values_);
-    if (on_build_texts)
-        on_build_texts(t, text_values_);
-    if (on_build_skeleton)
-        on_build_skeleton(t, skel_poses_);
+    if (on_build_params_)
+        on_build_params_(t, param_values_);
+    if (on_build_texts_)
+        on_build_texts_(t, text_values_);
+    if (on_build_skeleton_)
+        on_build_skeleton_(t, skel_poses_);
 
     rs::Request req;
     req.t            = t;
@@ -456,8 +673,17 @@ void RenderStreamClient::build_and_send(double t) {
     asio::async_write(sock_, asio::buffer(*msg),
         [this, msg](const std::error_code& err, size_t) {
             if (err) {
-                if (on_log) on_log(std::string("send error: ") + err.message());
+                if (on_log_)
+                    on_log_(std::string("send error: ") + err.message());
                 Stop();
             }
         });
+}
+
+// ============================================================
+// Memory
+// ============================================================
+
+void RenderStreamClient::FreeString(char* str) {
+    free(str);
 }

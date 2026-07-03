@@ -2,84 +2,65 @@
 
 #include <cstdint>
 #include <functional>
-#include <optional>
 #include <string>
 #include <vector>
 
 #include <asio.hpp>
 #include <nlohmann/json.hpp>
 
+#include "IRenderStreamClient.h"
 #include "d3renderstream.hpp"
 #include "camera_rig.h"
 
-class RenderStreamClient {
+class RenderStreamClient : public IRenderStreamClient {
 public:
-    struct NodeInfo {
-        std::string name;
-        std::string ip;
-        int         port = 9580;
-    };
-
-    struct SessionStatus {
-        std::string state;          // "idle" | "launching" | "running" | "stopping"
-        int         pid = 0;
-        int         exit_code = -1;
-        int64_t     launched_at = 0;
-        int64_t     pipe_connected_at = 0;
-    };
-
-    enum class State { Ready, Connecting, Running, Stopping, Error };
-
     RenderStreamClient();
-    ~RenderStreamClient();
+    ~RenderStreamClient() override;
 
     RenderStreamClient(const RenderStreamClient&) = delete;
     RenderStreamClient& operator=(const RenderStreamClient&) = delete;
 
+    // -- IRenderStreamClient implementation -----
+
+    uint32_t Discover(int timeout_ms, RSNode* out, uint32_t max) override;
+    void     FreeNodes(RSNode* nodes, uint32_t count) override;
+
+    void   SetTarget(const char* host, int port) override;
+    int    Health() override;
+    char*  GetNodeInfo() override;
+    char*  GetSchema(const char* project_path) override;
+    int    GetSessionStatus(RSStatus* out) override;
+
+    int  LaunchUE(const char* config_json) override;
+    int  KillUE(int pid) override;
+
+    void     SetRigs(const RSCameraRig* rigs, uint32_t count) override;
+    void     SetParams(const float* values, uint32_t count) override;
+    void     SetTexts(const char* const* values, uint32_t count) override;
+    void     SetSkeleton(const RSSkeletonLayout* layout,
+                         const char* const* joint_names,
+                         const RSSkeletonPose* pose) override;
+    void     SetSchemaHash(uint64_t hash) override;
+    void     SetFps(double fps) override;
+    uint32_t ParamSlotCount() override;
+    uint32_t MakeDefaultParams(float* out, uint32_t max) override;
+    uint64_t SchemaHash() const override;
+
+    void SetCallbacks(const RSCallbacks* cb) override;
+
+    int  Connect(const char* host, int retries, int tick_port) override;
+    void Disconnect() override;
+    void Run() override;
+    void Stop() override;
+    int  GetState() override;
+
+    void FreeString(char* str) override;
+
+    // -- Convenience (not in interface) ----------
+
+    uint64_t SchemaHash(int scene_index) const;
+
     void EnableDefaultLogging(const std::string& tag);
-
-    static std::vector<NodeInfo> DiscoverNodes(int timeout_ms = 500);
-
-    void SetTarget(const std::string& host, int port = 9580);
-    void SetTarget(const NodeInfo& node);
-
-    bool              Health();
-    nlohmann::json    GetNodeInfo();
-    std::optional<rs::schema> GetSchema(const std::string& project_path);
-    SessionStatus     GetSessionStatus();
-
-    int  LaunchUE(const nlohmann::json& config);
-    bool KillUE(int pid);
-
-    int                ParamSlotCount(int scene_index = 0) const;
-    std::vector<float> MakeDefaultParams(int scene_index = 0) const;
-    uint64_t           SchemaHash(int scene_index = 0) const;
-
-    bool Connect(const std::string& host, int retries = 30, int tick_port = 9581);
-    void Disconnect();
-
-    void Run();          // blocking — runs until Stop() or error / disconnect
-    void Stop();         // thread-safe
-
-    State GetState() const;
-
-    void SetRigs(std::vector<CameraRig> rigs);
-    void SetParameters(std::vector<float> values);
-    void SetTexts(std::vector<std::string> values);
-    void SetSkeleton(const rs::skeleton_layout_data& layout,
-                     std::vector<std::string> joint_names,
-                     std::vector<rs::skeleton_pose_data> poses);
-    void SetSchemaHash(uint64_t hash);
-    void SetFps(double fps);
-
-    std::function<void(double t, std::vector<float>&)>                   on_build_params;
-    std::function<void(double t, std::vector<std::string>&)>             on_build_texts;
-    std::function<void(double t, std::vector<rs::skeleton_pose_data>&)>  on_build_skeleton;
-
-    std::function<void(const CameraResponseData&)> on_frame_ack;
-    std::function<void(const std::string&)>        on_status;
-    std::function<void(const std::string&)>        on_log;
-    std::function<void(const nlohmann::json&)>     on_profiling;
 
 private:
     void begin_tick();
@@ -108,9 +89,19 @@ private:
     asio::steady_timer       tick_timer_{io_};
     asio::streambuf          recv_buf_;
     bool                     running_ = false;
-    State                    state_ = State::Ready;
+    enum { Ready, Connecting, Running, Stopping, Error } state_ = Ready;
 
     double                  t_ = 0.0;
     int                     frame_seq_ = 0;
     std::vector<CameraData> last_cameras_;
+
+    // -- std::function callbacks (wired from RSCallbacks) --
+
+    std::function<void(const CameraResponseData&)> on_frame_ack_;
+    std::function<void(const std::string&)>        on_status_;
+    std::function<void(const std::string&)>        on_log_;
+    std::function<void(const nlohmann::json&)>     on_profiling_;
+    std::function<void(double, std::vector<float>&)>                  on_build_params_;
+    std::function<void(double, std::vector<std::string>&)>            on_build_texts_;
+    std::function<void(double, std::vector<rs::skeleton_pose_data>&)> on_build_skeleton_;
 };

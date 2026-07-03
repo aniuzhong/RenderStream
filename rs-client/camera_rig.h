@@ -12,7 +12,7 @@ public:
     void SetSensorSize(int w, int h);
     void SetLoop(bool loop);
 
-    // ── Add samples ──────────────────────────────
+    // -- Add samples ------------------------------
 
     void AddSample(double t, CameraData sample);                  // full control
     void AddSample(double t,                                      // convenience:
@@ -20,12 +20,12 @@ public:
                    double rx, double ry, double rz,               //   gives sensible
                    double fov);                                   //   defaults
 
-    // ── Evaluate ─────────────────────────────────
+    // -- Evaluate ---------------------------------
 
     CameraData Evaluate(double t) const;
     bool IsEmpty() const;
 
-    // ── Factory ──────────────────────────────────
+    // -- Factory ----------------------------------
 
     static CameraRig FromJson(const std::string& path);
 

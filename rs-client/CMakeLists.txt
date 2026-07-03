@@ -11,9 +11,9 @@ add_library(ndisplay_gen STATIC
 target_include_directories(ndisplay_gen PUBLIC ndisplay-gen)
 target_link_libraries(ndisplay_gen PUBLIC nlohmann_json::nlohmann_json)
 
-# rs_client static library
-add_library(rs_client STATIC
-    render_stream_client.cpp
+# rs_client shared library (DLL)
+add_library(rs_client SHARED
+    client.cpp
     camera_rig.cpp
 )
 target_include_directories(rs_client PUBLIC
@@ -28,7 +28,7 @@ target_link_libraries(rs_client PUBLIC
     ws2_32
 )
 
-# ── Examples ────────────────────────────────────────────────────────
+# -- Examples --------------------------------------------------------
 
 add_executable(node_probe_example
     examples/node_probe_example.cpp
