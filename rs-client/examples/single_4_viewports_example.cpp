@@ -336,20 +336,15 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "  Building camera rigs...\n"); fflush(stderr);
         auto rigs = BuildCameraRigs(vps);
 
-        // 7. Build parameter defaults from schema
-        uint32_t slot_count = client->ParamSlotCount();
-        auto* param_values = new float[slot_count];
-        uint32_t pv_count = client->MakeDefaultParams(param_values, slot_count);
+        // 7. Frame data
         uint64_t scene_hash = client->SchemaHash();
-        fprintf(stderr, "  schema: hash=%llu, %u param floats\n",
-            static_cast<unsigned long long>(scene_hash), pv_count);
+        fprintf(stderr, "  schema hash=%llu\n",
+            static_cast<unsigned long long>(scene_hash));
         fflush(stderr);
 
-        // 8. Frame data
         client->SetCameras(nullptr, static_cast<uint32_t>(rigs.size()));
         // CameraRig evaluation is done in on_build_cameras callback below
         client->SetSchemaHash(scene_hash);
-        client->SetParams(param_values, pv_count);
         const char* text_init[] = {""};
         client->SetTexts(text_init, 1);
         client->SetFps(kFps);
@@ -404,16 +399,13 @@ int main(int argc, char* argv[]) {
 
         if (!client->Connect(n.ip.c_str(), 30, kTickPort)) {
             fprintf(stderr, "  [ERROR] could not connect tick socket\n");
-            delete[] param_values;
             continue;
         }
 
         client->Run();
-        delete[] param_values;
     }
 
     DestroyRenderStreamClient(client);
-
     fprintf(stderr, "\nDone.\n");
     return 0;
 }

@@ -1,10 +1,8 @@
 #pragma once
 
 #include <stdint.h>
-#include "d3renderstream.h"
 
-typedef int  (*RS_OnNodeDiscovered)(const char* name, const char* ip, int port, void* userdata);
-typedef void (*RS_OnSchemaLoaded)(const char* json, void* userdata);
+#include "d3renderstream.h"
 
 typedef struct {
     int      pid;
@@ -34,6 +32,8 @@ typedef struct {
     SkeletonJointPose* joints;
 } RS_SkeletonPose;
 
+typedef int  (*RS_OnNodeDiscovered)(const char* name, const char* ip, int port, void* userdata);
+typedef void (*RS_OnSchemaLoaded)(const char* json, void* userdata);
 typedef void (*RS_OnFrameAckFn)(const CameraResponseData* ack, void* userdata);
 typedef void (*RS_OnStatusFn)(const char* text, void* userdata);
 typedef void (*RS_OnLogFn)(const char* text, void* userdata);
@@ -79,14 +79,12 @@ public:
     // Frame data
 
     virtual void     SetCameras(const CameraData* cameras, uint32_t count) = 0;
-    virtual void     SetParams(const float* values, uint32_t count) = 0;
+    virtual void     SetParameters(const char* key, const float* values, uint32_t count) = 0;
     virtual void     SetTexts(const char* const* values, uint32_t count) = 0;
     virtual void     SetSkeleton(const RS_SkeletonLayout* layout, const char* const* joint_names, const RS_SkeletonPose* pose) = 0;
     virtual void     SetSchemaHash(uint64_t hash) = 0;
     virtual uint64_t SchemaHash() const = 0;
     virtual void     SetFps(double fps) = 0;
-    virtual uint32_t ParamSlotCount() = 0;
-    virtual uint32_t MakeDefaultParams(float* out, uint32_t max) = 0;
 
     // -- Callbacks ------------------------------
 

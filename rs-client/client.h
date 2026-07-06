@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -33,15 +34,13 @@ public:
     int  KillUnrealEditor(const char* host, int port, int pid) override;
 
     void     SetCameras(const CameraData* cameras, uint32_t count) override;
-    void     SetParams(const float* values, uint32_t count) override;
+    void     SetParameters(const char* key, const float* values, uint32_t count) override;
     void     SetTexts(const char* const* values, uint32_t count) override;
     void     SetSkeleton(const RS_SkeletonLayout* layout,
                          const char* const* joint_names,
                          const RS_SkeletonPose* pose) override;
     void     SetSchemaHash(uint64_t hash) override;
     void     SetFps(double fps) override;
-    uint32_t ParamSlotCount() override;
-    uint32_t MakeDefaultParams(float* out, uint32_t max) override;
     uint64_t SchemaHash() const override;
 
     void SetCallbacks(const RS_Callbacks* cb) override;
@@ -75,6 +74,7 @@ private:
     std::vector<CameraData>              cameras_;
     uint64_t                            schema_hash_ = 0;
     std::vector<float>                  param_values_;
+    std::map<std::string, size_t>       param_map_;
     std::vector<std::string>            text_values_;
     rs::skeleton_layout_data            skel_layout_;
     std::vector<std::string>            joint_names_;

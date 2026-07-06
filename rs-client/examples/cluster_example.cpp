@@ -290,12 +290,9 @@ int main(int argc, char* argv[]) {
         DestroyRenderStreamClient(client);
         return 1;
     }
-    uint32_t pv_count = schema_cli->ParamSlotCount();
-    auto* param_values = new float[pv_count];
-    schema_cli->MakeDefaultParams(param_values, pv_count);
     uint64_t scene_hash = schema_cli->SchemaHash();
-    fprintf(stderr, "  schema hash=%llu, %u param floats\n\n",
-        static_cast<unsigned long long>(scene_hash), pv_count);
+    fprintf(stderr, "  schema hash=%llu\n\n",
+        static_cast<unsigned long long>(scene_hash));
     DestroyRenderStreamClient(schema_cli);
 
     // 3. Build camera rigs
@@ -349,9 +346,7 @@ int main(int argc, char* argv[]) {
         auto* c = CreateRenderStreamClient();
         c->SetCameras(nullptr, static_cast<uint32_t>(rigs.size()));
         c->SetSchemaHash(scene_hash);
-        c->SetParams(param_values, pv_count);
         c->SetFps(kFps);
-
         auto* ctx = SetupClientCallbacks(c, kNodes[i].name, &rigs);
         log_ctxs.push_back(ctx);
 
@@ -367,7 +362,6 @@ int main(int argc, char* argv[]) {
 
     if (clients.empty()) {
         fprintf(stderr, "No clients connected.\n");
-        delete[] param_values;
         DestroyRenderStreamClient(client);
         return 1;
     }
@@ -407,7 +401,6 @@ int main(int argc, char* argv[]) {
         DestroyRenderStreamClient(c);
     for (auto* ctx : log_ctxs)
         delete ctx;
-    delete[] param_values;
     DestroyRenderStreamClient(client);
 
     fprintf(stderr, "\nDone.\n");

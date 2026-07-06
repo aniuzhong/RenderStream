@@ -190,6 +190,47 @@ int RenderStreamClient::LoadSchema(const char* host, int port, const char* proje
 
     try {
         schema_ = nlohmann::json::parse(res->body).get<rs::schema>();
+
+        // Build parameter name→offset map and fill defaults
+        param_map_.clear();
+        size_t offset = 0;
+        if (!schema_.scenes.empty()) {
+            for (const auto& p : schema_.scenes[0].parameters) {
+                param_map_[p.key] = offset;
+                switch (p.type) {
+                case rs::param_type::pose:
+                case rs::param_type::transform: offset += 16; break;
+                case rs::param_type::number:
+                case rs::param_type::event: offset += 1; break;
+                default: break;
+                }
+            }
+        }
+        param_values_.resize(offset, 0.0f);
+        // Fill defaults
+        if (!schema_.scenes.empty()) {
+            size_t i = 0;
+            for (const auto& p : schema_.scenes[0].parameters) {
+                switch (p.type) {
+                case rs::param_type::number:
+                case rs::param_type::event:
+                    if (auto* nd = std::get_if<rs::number_defaults>(&p.defaults))
+                        param_values_[i] = nd->default_value;
+                    else
+                        param_values_[i] = 0.0f;
+                    ++i;
+                    break;
+                case rs::param_type::pose:
+                case rs::param_type::transform:
+                    for (int r = 0; r < 4; ++r)
+                        for (int c = 0; c < 4; ++c)
+                            param_values_[i++] = (r == c) ? 1.0f : 0.0f;
+                    break;
+                default: break;
+                }
+            }
+        }
+
         on_schema(res->body.c_str(), userdata);
         return 1;
     } catch (const std::exception& e) {
@@ -260,59 +301,6 @@ int RenderStreamClient::KillUnrealEditor(const char* host, int port, int pid) {
 // Frame data
 // ============================================================
 
-uint32_t RenderStreamClient::ParamSlotCount() {
-    if (schema_.scenes.empty())
-        return 0;
-    int slots = 0;
-    for (const auto& p : schema_.scenes[0].parameters) {
-        switch (p.type) {
-        case rs::param_type::number:
-        case rs::param_type::event:
-            slots += 1;
-            break;
-        case rs::param_type::pose:
-        case rs::param_type::transform:
-            slots += 16;
-            break;
-        default:
-            break;
-        }
-    }
-    return static_cast<uint32_t>(slots);
-}
-
-uint32_t RenderStreamClient::MakeDefaultParams(float* out, uint32_t max) {
-    if (schema_.scenes.empty() || !out || max == 0)
-        return 0;
-
-    uint32_t idx = 0;
-    for (const auto& p : schema_.scenes[0].parameters) {
-        switch (p.type) {
-        case rs::param_type::number:
-        case rs::param_type::event:
-            if (idx >= max) return idx;
-            if (auto* nd = std::get_if<rs::number_defaults>(&p.defaults))
-                out[idx] = nd->default_value;
-            else
-                out[idx] = 0.0f;
-            ++idx;
-            break;
-        case rs::param_type::pose:
-        case rs::param_type::transform:
-            for (int r = 0; r < 4; ++r) {
-                for (int c = 0; c < 4; ++c) {
-                    if (idx >= max) return idx;
-                    out[idx] = (r == c) ? 1.0f : 0.0f;
-                    ++idx;
-                }
-            }
-            break;
-        default:
-            break;
-        }
-    }
-    return idx;
-}
 
 uint64_t RenderStreamClient::SchemaHash(int scene_index) const {
     if (scene_index < 0 || static_cast<size_t>(scene_index) >= schema_.scenes.size())
@@ -330,8 +318,11 @@ void RenderStreamClient::SetCameras(const CameraData* cameras, uint32_t count) {
         memcpy(cameras_.data(), cameras, count * sizeof(CameraData));
 }
 
-void RenderStreamClient::SetParams(const float* values, uint32_t count) {
-    param_values_.assign(values, values + count);
+void RenderStreamClient::SetParameters(const char* key, const float* values, uint32_t count) {
+    auto it = param_map_.find(key);
+    if (it == param_map_.end() || it->second + count > param_values_.size())
+        return;
+    memcpy(param_values_.data() + it->second, values, count * sizeof(float));
 }
 
 void RenderStreamClient::SetTexts(const char* const* values, uint32_t count) {
