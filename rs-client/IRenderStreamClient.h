@@ -3,7 +3,8 @@
 #include <stdint.h>
 #include "d3renderstream.h"
 
-typedef int (*RS_OnNodeDiscovered)(const char* name, const char* ip, int port, void* userdata);
+typedef int  (*RS_OnNodeDiscovered)(const char* name, const char* ip, int port, void* userdata);
+typedef void (*RS_OnSchemaLoaded)(const char* json, void* userdata);
 
 typedef struct {
     int      pid;
@@ -79,7 +80,8 @@ public:
 
     // Project
 
-    virtual char* LoadSchema(const char* host, int port, const char* project_path) = 0;
+    virtual int LoadSchema(const char* host, int port, const char* project_path,
+                           RS_OnSchemaLoaded on_schema, void* userdata) = 0;
 
     // Session
 
@@ -109,10 +111,7 @@ public:
     virtual void Disconnect() = 0;
     virtual void Run() = 0;      // blocking tick loop
     virtual void Stop() = 0;     // thread-safe stop signal
-    virtual int  GetState() = 0; // 0=ready 1=connecting 2=running 3=stopping 4=error
-
-    // -- Memory ---------------------------------
-
+    virtual int  GetState() = 0;
     virtual void FreeString(char* str) = 0;
 };
 

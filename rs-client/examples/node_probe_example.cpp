@@ -72,19 +72,21 @@ int main(int argc, char* argv[]) {
         }
 
         // Schema
-        char* schema_json = client->LoadSchema(host, port, project_path);
-        if (schema_json) {
-            auto schema = nlohmann::json::parse(schema_json);
-            auto channels = schema.value("channels", nlohmann::json::array());
-            auto scenes   = schema.value("scenes",   nlohmann::json::array());
-            fprintf(stderr, "  schema:  %zu channels, %zu scenes\n",
-                    channels.size(), scenes.size());
-            for (size_t j = 0; j < channels.size(); ++j)
-                fprintf(stderr, "    channel[%zu]: %s\n", j, channels[j].get<std::string>().c_str());
-            client->FreeString(schema_json);
-        } else {
+        bool schema_ok = false;
+        client->LoadSchema(host, port, project_path,
+            [](const char* json, void* ctx) {
+                auto* ok = static_cast<bool*>(ctx);
+                auto schema = nlohmann::json::parse(json);
+                auto channels = schema.value("channels", nlohmann::json::array());
+                auto scenes   = schema.value("scenes",   nlohmann::json::array());
+                fprintf(stderr, "  schema:  %zu channels, %zu scenes\n",
+                        channels.size(), scenes.size());
+                for (size_t j = 0; j < channels.size(); ++j)
+                    fprintf(stderr, "    channel[%zu]: %s\n", j, channels[j].get<std::string>().c_str());
+                *ok = true;
+            }, &schema_ok);
+        if (!schema_ok)
             fprintf(stderr, "  schema: not found\n");
-        }
 
         // Session status
         RS_Status st{};

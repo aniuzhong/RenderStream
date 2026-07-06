@@ -179,19 +179,23 @@ char* RenderStreamClient::GetNodeInfo(const char* host, int port) {
     return _strdup(res->body.c_str());
 }
 
-char* RenderStreamClient::LoadSchema(const char* host, int port, const char* project_path) {
+int RenderStreamClient::LoadSchema(const char* host, int port, const char* project_path,
+                                     RS_OnSchemaLoaded on_schema, void* userdata) {
+    if (!on_schema) return 0;
+
     std::string url = "/api/renderstream/schema?project=" + std::string(project_path);
     auto res = MakeClient(host, port).Get(url.c_str());
     if (!res || res->status != 200)
-        return nullptr;
+        return 0;
 
     try {
         schema_ = nlohmann::json::parse(res->body).get<rs::schema>();
-        return _strdup(res->body.c_str());
+        on_schema(res->body.c_str(), userdata);
+        return 1;
     } catch (const std::exception& e) {
         if (on_log_)
             on_log_(std::string("schema parse error: ") + e.what());
-        return nullptr;
+        return 0;
     }
 }
 

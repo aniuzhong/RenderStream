@@ -265,22 +265,29 @@ int main(int argc, char* argv[]) {
     // 2. Schema
     fprintf(stderr, "Querying schema from %s...\n", nodes[0].name.c_str());
     auto* schema_cli = CreateRenderStreamClient();
-    char* schema_json = schema_cli->LoadSchema(nodes[0].ip.c_str(), nodes[0].port, kNodes[0].project_path);
-    if (!schema_json) {
+    nlohmann::json scenes;
+    bool schema_ok = false;
+    struct Ctx { nlohmann::json* sc; bool* ok; };
+    Ctx ctx{&scenes, &schema_ok};
+    schema_cli->LoadSchema(nodes[0].ip.c_str(), nodes[0].port, kNodes[0].project_path,
+        [](const char* json, void* p) {
+            auto* c = static_cast<Ctx*>(p);
+            auto schema = nlohmann::json::parse(json);
+            *c->sc = schema.value("scenes", nlohmann::json::array());
+            *c->ok = true;
+        }, &ctx);
+    if (!schema_ok) {
         fprintf(stderr, "  schema not found\n");
         DestroyRenderStreamClient(schema_cli);
         DestroyRenderStreamClient(client);
         return 1;
     }
-    auto schema = nlohmann::json::parse(schema_json);
-    auto scenes = schema.value("scenes", nlohmann::json::array());
     uint32_t pv_count = schema_cli->ParamSlotCount();
     auto* param_values = new float[pv_count];
     schema_cli->MakeDefaultParams(param_values, pv_count);
     uint64_t scene_hash = schema_cli->SchemaHash();
     fprintf(stderr, "  schema hash=%llu, %u param floats\n\n",
         static_cast<unsigned long long>(scene_hash), pv_count);
-    schema_cli->FreeString(schema_json);
     DestroyRenderStreamClient(schema_cli);
 
     // 3. Build camera rigs

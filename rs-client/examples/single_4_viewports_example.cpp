@@ -283,18 +283,24 @@ int main(int argc, char* argv[]) {
         auto vps = BuildViewports(screen_w, screen_h);
 
         // 3. Query schema + build defaults
-        char* schema_json = client->LoadSchema(host, port, kProjectPath);
-        if (!schema_json) continue;
-
-        auto schema = nlohmann::json::parse(schema_json);
-        auto channels = schema.value("channels", nlohmann::json::array());
-        auto scenes   = schema.value("scenes",   nlohmann::json::array());
-        client->FreeString(schema_json);
+        nlohmann::json schema_channels, schema_scenes;
+        bool schema_ok = false;
+        struct Ctx { nlohmann::json* ch; nlohmann::json* sc; bool* ok; };
+        Ctx ctx{&schema_channels, &schema_scenes, &schema_ok};
+        client->LoadSchema(host, port, kProjectPath,
+            [](const char* json, void* p) {
+                auto* c = static_cast<Ctx*>(p);
+                auto schema = nlohmann::json::parse(json);
+                *c->ch = schema.value("channels", nlohmann::json::array());
+                *c->sc = schema.value("scenes",   nlohmann::json::array());
+                *c->ok = true;
+            }, &ctx);
+        if (!schema_ok) continue;
 
         // 4. Validate channels (non-fatal warning)
         for (const auto& vp : vps) {
             bool found = false;
-            for (const auto& ch : channels)
+            for (const auto& ch : schema_channels)
                 if (ch.get<std::string>() == vp.channel) { found = true; break; }
             if (!found)
                 fprintf(stderr, "  [WARN] channel '%s' not in schema\n", vp.channel.c_str());
@@ -315,8 +321,8 @@ int main(int argc, char* argv[]) {
         auto ndisplay_json = GenerateNdisplayConfig(vps);
 
         std::string scene_name = "Main";
-        if (!scenes.empty())
-            scene_name = scenes[0].value("name", "Main");
+        if (!schema_scenes.empty())
+            scene_name = schema_scenes[0].value("name", "Main");
 
         nlohmann::json launch_body;
         launch_body["engine_exe"] = kEngineExe;
