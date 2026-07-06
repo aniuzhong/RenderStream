@@ -39,6 +39,8 @@ const char* kNodeName = "node0";
 
 // -- Viewport layout (2x2 grid) ----------------------------------------
 
+struct NodeInfoCtx { int* w; int* h; bool* ok; };
+
 struct Viewport {
     std::string name;
     std::string channel;
@@ -261,16 +263,21 @@ int main(int argc, char* argv[]) {
         int port = n.port;
 
         // 2. Query node info
-        char* info_json = client->GetNodeInfo(host, port);
-        if (!info_json) {
+        int screen_w = 0, screen_h = 0;
+        bool info_ok = false;
+        NodeInfoCtx ni_ctx{&screen_w, &screen_h, &info_ok};
+        client->LoadNodeInfo(host, port,
+            [](const char* json, void* p) {
+                auto* c = static_cast<NodeInfoCtx*>(p);
+                auto info = nlohmann::json::parse(json);
+                *c->w = info["displays"][0]["w"];
+                *c->h = info["displays"][0]["h"];
+                *c->ok = true;
+            }, &ni_ctx);
+        if (!info_ok) {
             fprintf(stderr, "  [ERROR] failed to get node info\n");
             continue;
         }
-        auto info = nlohmann::json::parse(info_json);
-        client->FreeString(info_json);
-
-        int screen_w = info["displays"][0]["w"];
-        int screen_h = info["displays"][0]["h"];
         auto vps = BuildViewports(screen_w, screen_h);
 
         // 3. Query schema + build defaults
@@ -399,7 +406,7 @@ int main(int argc, char* argv[]) {
             continue;
         }
 
-        client->Run();
+        client->Start();
     }
 
     DestroyRenderStreamClient(client);

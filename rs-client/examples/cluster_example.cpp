@@ -362,7 +362,7 @@ int main(int argc, char* argv[]) {
     fprintf(stderr, "\nStarting %zu client(s) for %d seconds...\n\n",
             clients.size(), kRunSecs);
     for (auto* c : clients)
-        threads.emplace_back([c] { c->Run(); });
+        threads.emplace_back([c] { c->Start(); });
 
     // 8. Wait, then graceful shutdown
     std::this_thread::sleep_for(std::chrono::seconds(kRunSecs));

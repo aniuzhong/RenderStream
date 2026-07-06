@@ -34,6 +34,7 @@ typedef struct {
 
 typedef int  (*RS_OnNodeDiscovered)(const char* name, const char* ip, int port, void* userdata);
 typedef void (*RS_OnSchemaLoaded)(const char* json, void* userdata);
+typedef void (*RS_OnNodeInfo)(const char* json, void* userdata);
 typedef void (*RS_OnFrameAck)(const CameraResponseData* ack, void* userdata);
 typedef void (*RS_OnStatus)(const char* text, void* userdata);
 typedef void (*RS_OnLog)(const char* text, void* userdata);
@@ -51,7 +52,7 @@ public:
     // Node
 
     virtual int   Discover(int timeout_ms, RS_OnNodeDiscovered on_node, void* userdata) = 0;
-    virtual char* GetNodeInfo(const char* host, int port) = 0;
+    virtual int   LoadNodeInfo(const char* host, int port, RS_OnNodeInfo on_info, void* userdata) = 0;
 
     // Project
 
@@ -88,10 +89,9 @@ public:
 
     virtual int  Connect(const char* host, int retries, int tick_port) = 0;
     virtual void Disconnect() = 0;
-    virtual void Run() = 0;
+    virtual void Start() = 0;
     virtual void Stop() = 0;
     virtual int  GetState() = 0;
-    virtual void FreeString(char* str) = 0;
 };
 
 extern "C" {

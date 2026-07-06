@@ -24,8 +24,8 @@ public:
 
     int  Discover(int timeout_ms, RS_OnNodeDiscovered on_node, void* userdata) override;
 
-    char*  GetNodeInfo(const char* host, int port) override;
-    int    LoadSchema(const char* host, int port, const char* project_path, RS_OnSchemaLoaded on_schema, void* userdata) override;
+    int  LoadNodeInfo(const char* host, int port, RS_OnNodeInfo on_info, void* userdata) override;
+    int  LoadSchema(const char* host, int port, const char* project_path, RS_OnSchemaLoaded on_schema, void* userdata) override;
     int    GetSessionStatus(const char* host, int port, RS_Status* out) override;
 
     int  LaunchUnrealEditor(const char* host, int port, const char* config_json) override;
@@ -49,10 +49,9 @@ public:
 
     int  Connect(const char* host, int retries, int tick_port) override;
     void Disconnect() override;
-    void Run() override;
+    void Start() override;
     void Stop() override;
     int  GetState() override;
-    void FreeString(char* str) override;
 
     // -- Convenience (not in interface) ----------
 

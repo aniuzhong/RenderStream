@@ -55,18 +55,19 @@ int main(int argc, char* argv[]) {
         int port = ctx.ports[i];
 
         // Node info
-        char* info_json = client->GetNodeInfo(host, port);
-        if (info_json) {
-            auto info = nlohmann::json::parse(info_json);
-            fprintf(stderr, "  hostname: %s\n", info.value("hostname", "?").c_str());
-            if (info.contains("displays") && info["displays"].is_array() && !info["displays"].empty()) {
-                auto& d = info["displays"][0];
-                fprintf(stderr, "  display:  %dx%d\n", d.value("w", 0), d.value("h", 0));
-            }
-            client->FreeString(info_json);
-        } else {
+        bool info_ok = false;
+        client->LoadNodeInfo(host, port,
+            [](const char* json, void* ctx) {
+                *static_cast<bool*>(ctx) = true;
+                auto info = nlohmann::json::parse(json);
+                fprintf(stderr, "  hostname: %s\n", info.value("hostname", "?").c_str());
+                if (info.contains("displays") && info["displays"].is_array() && !info["displays"].empty()) {
+                    auto& d = info["displays"][0];
+                    fprintf(stderr, "  display:  %dx%d\n", d.value("w", 0), d.value("h", 0));
+                }
+            }, &info_ok);
+        if (!info_ok)
             fprintf(stderr, "  info: (null)\n");
-        }
 
         // Schema
         bool schema_ok = false;

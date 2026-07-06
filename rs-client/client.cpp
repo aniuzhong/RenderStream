@@ -167,11 +167,13 @@ static httplib::Client MakeClient(const std::string& host, int port) {
 // Queries
 // ============================================================
 
-char* RenderStreamClient::GetNodeInfo(const char* host, int port) {
+int RenderStreamClient::LoadNodeInfo(const char* host, int port, RS_OnNodeInfo on_info, void* userdata) {
+    if (!on_info) return 0;
     auto res = MakeClient(host, port).Get("/api/node/info");
     if (!res || res->status != 200)
-        return nullptr;
-    return _strdup(res->body.c_str());
+        return 0;
+    on_info(res->body.c_str(), userdata);
+    return 1;
 }
 
 int RenderStreamClient::LoadSchema(const char* host, int port, const char* project_path,
@@ -497,7 +499,7 @@ void RenderStreamClient::Disconnect() {
     state_ = Ready;
 }
 
-void RenderStreamClient::Run() {
+void RenderStreamClient::Start() {
     running_ = true;
     state_ = Running;
     t_ = 0.0;
@@ -643,10 +645,3 @@ void RenderStreamClient::build_and_send(double t) {
         });
 }
 
-// ============================================================
-// Memory
-// ============================================================
-
-void RenderStreamClient::FreeString(char* str) {
-    free(str);
-}
