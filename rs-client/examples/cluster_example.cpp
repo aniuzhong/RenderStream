@@ -83,12 +83,20 @@ static void OnLog(const char* text, void* userdata) {
     ctx->ue_log->info("{}", text);
 }
 
-static void OnProfiling(const RS_Profiling* p, void* userdata) {
+static void OnProfiling(const char* json, void* userdata) {
     auto* ctx = static_cast<ClientLogCtx*>(userdata);
     ctx->prof_counter = (ctx->prof_counter + 1) % 120;
     if (ctx->prof_counter != 1) return;
-    ctx->prof_out->info("frame={:.1f}ms ({:.0f}fps) gpu={:.1f}ms await={:.1f}ms",
-        p->frame_time_ms, p->fps, p->gpu_time_ms, p->await_time_ms);
+    auto j = nlohmann::json::parse(json);
+    float ft = 0, gt = 0, at = 0;
+    for (const auto& e : j["entries"]) {
+        std::string n = e.value("name", "");
+        if (n == "Frame Time")      ft = e.value("value", 0.0f);
+        else if (n == "GPU Time")   gt = e.value("value", 0.0f);
+        else if (n == "Await Time") at = e.value("value", 0.0f);
+    }
+    float fps = ft > 0.0f ? 1000.0f / ft : 0.0f;
+    ctx->prof_out->info("frame={:.1f}ms ({:.0f}fps) gpu={:.1f}ms await={:.1f}ms", ft, fps, gt, at);
 }
 
 // ── Discovery callback ─────────────────────────────────────────────────

@@ -12,38 +12,17 @@ typedef struct {
     int      state;   // 0=idle  1=launching  2=running
 } RS_Status;
 
-typedef struct {
-    float frame_time_ms;
-    float gpu_time_ms;
-    float await_time_ms;
-    float fps;
-} RS_Profiling;
-
-typedef struct {
-    uint32_t           joint_count;
-    SkeletonJointDesc* joints;
-} RS_SkeletonLayout;
-
-typedef struct {
-    uint64_t           layout_id;
-    uint32_t           layout_version;
-    Transform          root_transform;
-    uint32_t           joint_count;
-    SkeletonJointPose* joints;
-} RS_SkeletonPose;
-
 typedef int  (*RS_OnNodeDiscovered)(const char* name, const char* ip, int port, void* userdata);
 typedef void (*RS_OnSchemaLoaded)(const char* json, void* userdata);
 typedef void (*RS_OnNodeInfo)(const char* json, void* userdata);
 typedef void (*RS_OnFrameAck)(const CameraResponseData* ack, void* userdata);
 typedef void (*RS_OnStatus)(const char* text, void* userdata);
 typedef void (*RS_OnLog)(const char* text, void* userdata);
-typedef void (*RS_OnProfiling)(const RS_Profiling* p, void* userdata);
+typedef void (*RS_OnProfiling)(const char* json, void* userdata);
 typedef void (*RS_OnBuildParams)(double t, float* values, uint32_t count, void* userdata);
 typedef void (*RS_OnBuildTexts)(double t, char** texts, uint32_t count, void* userdata);
-typedef void (*RS_OnBuildSkeleton)(double t, RS_SkeletonPose* pose, void* userdata);
+typedef void (*RS_OnBuildSkeleton)(double t, SkeletonPose* pose, uint32_t joint_count, void* userdata);
 typedef void (*RS_OnBuildCameras)(double t, CameraData* cameras, uint32_t count, void* userdata);
-
 
 class IRenderStreamClient {
 public:
@@ -69,7 +48,7 @@ public:
     virtual void     SetCameras(const CameraData* cameras, uint32_t count) = 0;
     virtual void     SetParameters(const char* key, const float* values, uint32_t count) = 0;
     virtual void     SetTexts(const char* const* values, uint32_t count) = 0;
-    virtual void     SetSkeleton(const RS_SkeletonLayout* layout, const char* const* joint_names, const RS_SkeletonPose* pose) = 0;
+    virtual void     SetSkeleton(const SkeletonLayout* layout, uint32_t layout_joint_count, const char* const* joint_names, const SkeletonPose* pose, uint32_t pose_joint_count) = 0;
     virtual void     SetSchemaHash(uint64_t hash) = 0;
     virtual uint64_t SchemaHash() const = 0;
     virtual void     SetFps(double fps) = 0;

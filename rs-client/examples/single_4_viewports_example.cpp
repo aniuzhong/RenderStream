@@ -128,12 +128,12 @@ static void OnBuildTexts(double t, char** texts, uint32_t count, void*) {
     }
 }
 
-static void OnBuildSkeleton(double t, RS_SkeletonPose* pose, void*) {
-    pose->layout_id = 0;
-    pose->layout_version = 1;
-    pose->root_transform = {0, 1.5f, 0, 0, 0, 0, 1};
+static void OnBuildSkeleton(double t, SkeletonPose* pose, uint32_t joint_count, void*) {
+    pose->layoutId = 0;
+    pose->layoutVersion = 1;
+    pose->rootTransform = {0, 1.5f, 0, 0, 0, 0, 1};
 
-    for (uint32_t j = 0; j < pose->joint_count && j < 6; ++j) {
+    for (uint32_t j = 0; j < joint_count && j < 6; ++j) {
         pose->joints[j].id = j;
         pose->joints[j].transform = {0,0,0, 0,0,0,1};
     }
@@ -153,11 +153,11 @@ static void OnBuildSkeleton(double t, RS_SkeletonPose* pose, void*) {
     float armL  = 1.20f * (float)std::sin(t * 2.0f);
     float armR  = 1.20f * (float)std::sin(t * 2.0f + 3.14f);
 
-    if (pose->joint_count > 1) pose->joints[1].transform = makeSway(sway1);
-    if (pose->joint_count > 2) pose->joints[2].transform = makeSway(sway2);
-    if (pose->joint_count > 3) pose->joints[3].transform = makeTilt(head);
-    if (pose->joint_count > 4) pose->joints[4].transform = makeTilt(armL);
-    if (pose->joint_count > 5) pose->joints[5].transform = makeTilt(armR);
+    if (joint_count > 1) pose->joints[1].transform = makeSway(sway1);
+    if (joint_count > 2) pose->joints[2].transform = makeSway(sway2);
+    if (joint_count > 3) pose->joints[3].transform = makeTilt(head);
+    if (joint_count > 4) pose->joints[4].transform = makeTilt(armL);
+    if (joint_count > 5) pose->joints[5].transform = makeTilt(armR);
 }
 
 static void OnFrameAck(const CameraResponseData* ack, void*) {
@@ -167,11 +167,20 @@ static void OnFrameAck(const CameraResponseData* ack, void*) {
             ack->tTracked, ack->camera.id, ack->camera.x, ack->camera.y, ack->camera.z);
 }
 
-static void OnProfiling(const RS_Profiling* p, void*) {
+static void OnProfiling(const char* json, void*) {
     static int counter = 0;
-    if (++counter % 120 == 1)
-        fprintf(stderr, "  [prof] frame=%.1fms (%.0ffps) gpu=%.1fms await=%.1fms\n",
-            p->frame_time_ms, p->fps, p->gpu_time_ms, p->await_time_ms);
+    if (++counter % 120 != 1) return;
+    auto j = nlohmann::json::parse(json);
+    float ft = 0, gt = 0, at = 0;
+    for (const auto& e : j["entries"]) {
+        std::string n = e.value("name", "");
+        if (n == "Frame Time")      ft = e.value("value", 0.0f);
+        else if (n == "GPU Time")   gt = e.value("value", 0.0f);
+        else if (n == "Await Time") at = e.value("value", 0.0f);
+    }
+    float fps = ft > 0.0f ? 1000.0f / ft : 0.0f;
+    fprintf(stderr, "  [prof] frame=%.1fms (%.0ffps) gpu=%.1fms await=%.1fms\n",
+        ft, fps, gt, at);
 }
 
 // -- nDisplay config ----------------------------------------------------
@@ -368,19 +377,17 @@ int main(int argc, char* argv[]) {
             joints[4] = {4, 2, {-0.08f,0,0.06f, 0,0,0,1}};
             joints[5] = {5, 2, {0.08f,0,0.06f, 0,0,0,1}};
 
-            RS_SkeletonLayout skel_layout = {6, joints};
+            SkeletonLayout skel_layout = {1, joints};
             const char* joint_names[] = {
                 "pelvis", "spine_01", "spine_02", "neck_01", "clavicle_l", "clavicle_r"
             };
-            // Pre-allocate joints so SetSkeleton creates a pose entry —
-            // otherwise the per-frame OnBuildSkeleton callback never fires.
             SkeletonJointPose initial_poses[6] = {};
             for (int i = 0; i < 6; ++i) {
                 initial_poses[i].id = i;
                 initial_poses[i].transform = identity;
             }
-            RS_SkeletonPose skel_pose = {0, 1, identity, 6, initial_poses};
-            client->SetSkeleton(&skel_layout, joint_names, &skel_pose);
+            SkeletonPose skel_pose = {0, 1, {0}, identity, initial_poses};
+            client->SetSkeleton(&skel_layout, 6, joint_names, &skel_pose, 6);
         }
 
         // 9. Set callbacks

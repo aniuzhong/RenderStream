@@ -62,7 +62,8 @@ void RenderStreamClient::EnableDefaultLogging(const std::string& tag) {
         out->info("{}", text);
     };
 
-    on_profiling_ = [out](const nlohmann::json& j) {
+    on_profiling_ = [out](const std::string& json) {
+        auto j = nlohmann::json::parse(json);
         float frame_time = 0, gpu_time = 0, await_time = 0;
         for (const auto& e : j["entries"]) {
             std::string name = e.value("name", "");
@@ -328,9 +329,9 @@ void RenderStreamClient::SetTexts(const char* const* values, uint32_t count) {
         text_values_.emplace_back(values[i] ? values[i] : "");
 }
 
-void RenderStreamClient::SetSkeleton(const RS_SkeletonLayout* layout,
+void RenderStreamClient::SetSkeleton(const SkeletonLayout* layout, uint32_t layout_joint_count,
                                       const char* const* joint_names,
-                                      const RS_SkeletonPose* pose) {
+                                      const SkeletonPose* pose, uint32_t pose_joint_count) {
     skel_layout_ = rs::skeleton_layout_data{};
     joint_names_.clear();
     skel_poses_.clear();
@@ -339,7 +340,7 @@ void RenderStreamClient::SetSkeleton(const RS_SkeletonLayout* layout,
         return;
 
     skel_layout_.version = 1;
-    for (uint32_t i = 0; i < layout->joint_count; ++i) {
+    for (uint32_t i = 0; i < layout_joint_count; ++i) {
         const auto& cj = layout->joints[i];
         SkeletonJointDesc jd;
         jd.id        = cj.id;
@@ -348,15 +349,15 @@ void RenderStreamClient::SetSkeleton(const RS_SkeletonLayout* layout,
         skel_layout_.joints.push_back(jd);
     }
 
-    for (uint32_t i = 0; i < layout->joint_count; ++i)
+    for (uint32_t i = 0; i < layout_joint_count; ++i)
         joint_names_.emplace_back(joint_names && joint_names[i] ? joint_names[i] : "");
 
     if (pose && pose->joints) {
         rs::skeleton_pose_data sp;
-        sp.layout_id      = pose->layout_id;
-        sp.layout_version = pose->layout_version;
-        sp.root_transform = pose->root_transform;
-        for (uint32_t i = 0; i < pose->joint_count; ++i)
+        sp.layout_id      = pose->layoutId;
+        sp.layout_version = pose->layoutVersion;
+        sp.root_transform = pose->rootTransform;
+        for (uint32_t i = 0; i < pose_joint_count; ++i)
             sp.joints.push_back(pose->joints[i]);
         skel_poses_.push_back(std::move(sp));
     }
@@ -387,24 +388,8 @@ void RenderStreamClient::SetLogCallback(RS_OnLog fn, void* ctx) {
     else    on_log_ = nullptr;
 }
 void RenderStreamClient::SetProfilingCallback(RS_OnProfiling fn, void* ctx) {
-    if (fn) on_profiling_ = [fn, ctx](const nlohmann::json& j) {
-        float frame_time = 0, gpu_time = 0, await_time = 0;
-        if (j.contains("entries") && j["entries"].is_array()) {
-            for (const auto& e : j["entries"]) {
-                std::string name = e.value("name", "");
-                if (name == "Frame Time")      frame_time = e.value("value", 0.0f);
-                else if (name == "GPU Time")   gpu_time  = e.value("value", 0.0f);
-                else if (name == "Await Time") await_time = e.value("value", 0.0f);
-            }
-        }
-        RS_Profiling p;
-        p.frame_time_ms = frame_time;
-        p.gpu_time_ms   = gpu_time;
-        p.await_time_ms = await_time;
-        p.fps           = frame_time > 0.0f ? 1000.0f / frame_time : 0.0f;
-        fn(&p, ctx);
-    };
-    else on_profiling_ = nullptr;
+    if (fn) on_profiling_ = [fn, ctx](const std::string& json) { fn(json.c_str(), ctx); };
+    else    on_profiling_ = nullptr;
 }
 void RenderStreamClient::SetBuildParamsCallback(RS_OnBuildParams fn, void* ctx) {
     if (fn) on_build_params_ = [fn, ctx](double t, std::vector<float>& vals) {
@@ -431,14 +416,13 @@ void RenderStreamClient::SetBuildSkeletonCallback(RS_OnBuildSkeleton fn, void* c
     if (fn) on_build_skeleton_ = [fn, ctx](double t, std::vector<rs::skeleton_pose_data>& poses) {
         if (poses.empty()) return;
         auto& p = poses[0];
-        RS_SkeletonPose sp;
-        sp.layout_id      = p.layout_id;
-        sp.layout_version = p.layout_version;
-        sp.root_transform = p.root_transform;
-        sp.joint_count    = static_cast<uint32_t>(p.joints.size());
-        sp.joints         = p.joints.data();
-        fn(t, &sp, ctx);
-        p.root_transform = sp.root_transform;
+        SkeletonPose sp;
+        sp.layoutId      = p.layout_id;
+        sp.layoutVersion = p.layout_version;
+        sp.rootTransform  = p.root_transform;
+        sp.joints        = p.joints.data();
+        fn(t, &sp, static_cast<uint32_t>(p.joints.size()), ctx);
+        p.root_transform = sp.rootTransform;
     };
     else on_build_skeleton_ = nullptr;
 }
@@ -580,7 +564,7 @@ void RenderStreamClient::on_recv(const std::error_code& ec, size_t /*n*/) {
 
         } else if (type == "ProfilingData") {
             if (on_profiling_)
-                on_profiling_(j);
+                on_profiling_(line);
 
         } else if (type == "Log") {
             if (on_log_)

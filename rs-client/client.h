@@ -33,7 +33,8 @@ public:
 
     void     SetCameras(const CameraData* cameras, uint32_t count) override;
     void     SetParameters(const char* key, const float* values, uint32_t count) override;
-    void     SetTexts(const char* const* values, uint32_t count) override; void     SetSkeleton(const RS_SkeletonLayout* layout, const char* const* joint_names, const RS_SkeletonPose* pose) override;
+    void     SetTexts(const char* const* values, uint32_t count) override;
+    void     SetSkeleton(const SkeletonLayout* layout, uint32_t layout_joint_count, const char* const* joint_names, const SkeletonPose* pose, uint32_t pose_joint_count) override;
     void     SetSchemaHash(uint64_t hash) override;
     void     SetFps(double fps) override;
     uint64_t SchemaHash() const override;
@@ -94,7 +95,7 @@ private:
     std::function<void(const CameraResponseData&)> on_frame_ack_;
     std::function<void(const std::string&)>        on_status_;
     std::function<void(const std::string&)>        on_log_;
-    std::function<void(const nlohmann::json&)>     on_profiling_;
+    std::function<void(const std::string&)>        on_profiling_;
     std::function<void(double, std::vector<float>&)>                  on_build_params_;
     std::function<void(double, std::vector<std::string>&)>            on_build_texts_;
     std::function<void(double, std::vector<rs::skeleton_pose_data>&)> on_build_skeleton_;
