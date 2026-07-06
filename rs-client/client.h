@@ -24,10 +24,8 @@ public:
 
     int  Discover(int timeout_ms, RS_OnNodeDiscovered on_node, void* userdata) override;
 
-    int    Health(const char* host, int port) override;
     char*  GetNodeInfo(const char* host, int port) override;
-    int    LoadSchema(const char* host, int port, const char* project_path,
-                      RS_OnSchemaLoaded on_schema, void* userdata) override;
+    int    LoadSchema(const char* host, int port, const char* project_path, RS_OnSchemaLoaded on_schema, void* userdata) override;
     int    GetSessionStatus(const char* host, int port, RS_Status* out) override;
 
     int  LaunchUnrealEditor(const char* host, int port, const char* config_json) override;
@@ -35,10 +33,7 @@ public:
 
     void     SetCameras(const CameraData* cameras, uint32_t count) override;
     void     SetParameters(const char* key, const float* values, uint32_t count) override;
-    void     SetTexts(const char* const* values, uint32_t count) override;
-    void     SetSkeleton(const RS_SkeletonLayout* layout,
-                         const char* const* joint_names,
-                         const RS_SkeletonPose* pose) override;
+    void     SetTexts(const char* const* values, uint32_t count) override; void     SetSkeleton(const RS_SkeletonLayout* layout, const char* const* joint_names, const RS_SkeletonPose* pose) override;
     void     SetSchemaHash(uint64_t hash) override;
     void     SetFps(double fps) override;
     uint64_t SchemaHash() const override;

@@ -54,9 +54,6 @@ int main(int argc, char* argv[]) {
         const char* host = ctx.ips[i].c_str();
         int port = ctx.ports[i];
 
-        // Health
-        fprintf(stderr, "  health: %d\n", client->Health(host, port) ? 0 : -1);
-
         // Node info
         char* info_json = client->GetNodeInfo(host, port);
         if (info_json) {

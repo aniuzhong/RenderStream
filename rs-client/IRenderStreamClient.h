@@ -62,7 +62,6 @@ public:
     // Node
 
     virtual int   Discover(int timeout_ms, RS_OnNodeDiscovered on_node, void* userdata) = 0;
-    virtual int   Health(const char* host, int port) = 0;
     virtual char* GetNodeInfo(const char* host, int port) = 0;
 
     // Project

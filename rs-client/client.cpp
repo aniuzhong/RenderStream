@@ -167,11 +167,6 @@ static httplib::Client MakeClient(const std::string& host, int port) {
 // Queries
 // ============================================================
 
-int RenderStreamClient::Health(const char* host, int port) {
-    auto res = MakeClient(host, port).Get("/api/health");
-    return (res && res->status == 200) ? 1 : 0;
-}
-
 char* RenderStreamClient::GetNodeInfo(const char* host, int port) {
     auto res = MakeClient(host, port).Get("/api/node/info");
     if (!res || res->status != 200)
