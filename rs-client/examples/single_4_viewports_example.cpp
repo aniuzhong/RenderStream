@@ -66,32 +66,32 @@ static int CameraIndex(const std::string& channel) {
 
 // -- Camera rigs --------------------------------------------------------
 
-static std::vector<RSCameraRig> BuildCameraRigs(const std::vector<Viewport>& vps) {
-    static RSKeyframe kf0[] = {
+static std::vector<RS_CameraRig> BuildCameraRigs(const std::vector<Viewport>& vps) {
+    static RS_Keyframe kf0[] = {
         {0, -2.94f,   1.50f, -7.69f,   0.0f,   0.0f, 0, 90},
         {3,  2.00f,   1.50f, -7.69f,   0.0f,   0.0f, 0, 90},
         {6, -2.94f,   1.50f, -7.69f,   0.0f,   0.0f, 0, 90},
     };
-    static RSKeyframe kf1[] = {
+    static RS_Keyframe kf1[] = {
         {0,  5.71f,   1.36f,  6.50f,   0.0f, 179.71f, 0, 90},
         {3, -5.59f,   1.36f,  6.50f,   0.0f, 179.71f, 0, 90},
         {6,  5.71f,   1.36f,  6.50f,   0.0f, 179.71f, 0, 90},
     };
-    static RSKeyframe kf2[] = {
+    static RS_Keyframe kf2[] = {
         {0, -11.395f, 8.30f,  7.40f, -20.0f,  84.1f,  0, 90},
         {3, -11.395f, 8.30f, -5.00f, -20.0f,  84.1f,  0, 90},
         {6, -11.395f, 8.30f,  7.40f, -20.0f,  84.1f,  0, 90},
     };
-    static RSKeyframe kf3[] = {
+    static RS_Keyframe kf3[] = {
         {0, 12.40f,   7.70f, -8.60f, -30.0f, -90.0f,  0, 90},
         {3, 12.40f,   7.70f,  7.00f, -30.0f, -90.0f,  0, 90},
         {6, 12.40f,   7.70f, -8.60f, -30.0f, -90.0f,  0, 90},
     };
 
-    std::vector<RSCameraRig> rigs;
+    std::vector<RS_CameraRig> rigs;
     for (const auto& vp : vps) {
         int idx = CameraIndex(vp.channel);
-        RSCameraRig r;
+        RS_CameraRig r;
         r.sensor_w = vp.w;
         r.sensor_h = vp.h;
         r.loop = 1;
@@ -135,7 +135,7 @@ static void OnBuildTexts(double t, char** texts, uint32_t count, void*) {
     }
 }
 
-static void OnBuildSkeleton(double t, RSSkeletonPose* pose, void*) {
+static void OnBuildSkeleton(double t, RS_SkeletonPose* pose, void*) {
     pose->layout_id = 0;
     pose->layout_version = 1;
     pose->root_transform = {0, 1.5f, 0, 0, 0, 0, 1};
@@ -174,7 +174,7 @@ static void OnFrameAck(const CameraResponseData* ack, void*) {
             ack->tTracked, ack->camera.id, ack->camera.x, ack->camera.y, ack->camera.z);
 }
 
-static void OnProfiling(const RSProfiling* p, void*) {
+static void OnProfiling(const RS_Profiling* p, void*) {
     static int counter = 0;
     if (++counter % 120 == 1)
         fprintf(stderr, "  [prof] frame=%.1fms (%.0ffps) gpu=%.1fms await=%.1fms\n",
@@ -367,7 +367,7 @@ int main(int argc, char* argv[]) {
             joints[4] = {4, 2, {-0.08f,0,0.06f, 0,0,0,1}};
             joints[5] = {5, 2, {0.08f,0,0.06f, 0,0,0,1}};
 
-            RSSkeletonLayout skel_layout = {6, joints};
+            RS_SkeletonLayout skel_layout = {6, joints};
             const char* joint_names[] = {
                 "pelvis", "spine_01", "spine_02", "neck_01", "clavicle_l", "clavicle_r"
             };
@@ -378,13 +378,13 @@ int main(int argc, char* argv[]) {
                 initial_poses[i].id = i;
                 initial_poses[i].transform = identity;
             }
-            RSSkeletonPose skel_pose = {0, 1, identity, 6, initial_poses};
+            RS_SkeletonPose skel_pose = {0, 1, identity, 6, initial_poses};
             client->SetSkeleton(&skel_layout, joint_names, &skel_pose);
         }
 
         // 9. Set callbacks
         {
-            RSCallbacks cb = {};
+            RS_Callbacks cb = {};
             cb.on_build_params   = OnBuildParams;
             cb.on_build_texts    = OnBuildTexts;
             cb.on_build_skeleton = OnBuildSkeleton;

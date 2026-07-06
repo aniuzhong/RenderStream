@@ -82,7 +82,7 @@ static void OnLog(const char* text, void* userdata) {
     ctx->ue_log->info("{}", text);
 }
 
-static void OnProfiling(const RSProfiling* p, void* userdata) {
+static void OnProfiling(const RS_Profiling* p, void* userdata) {
     auto* ctx = static_cast<ClientLogCtx*>(userdata);
     ctx->prof_counter = (ctx->prof_counter + 1) % 120;
     if (ctx->prof_counter != 1) return;
@@ -100,29 +100,29 @@ static int OnNodeDiscovered(const char* name, const char* ip, int port, void* us
 
 // ── Camera rigs ────────────────────────────────────────────────────────
 
-static std::vector<RSCameraRig> BuildCameraRigs() {
-    static RSKeyframe kf0[] = {
+static std::vector<RS_CameraRig> BuildCameraRigs() {
+    static RS_Keyframe kf0[] = {
         {0.0, -2.94f, 1.50f, -7.69f,  0.0f,   0.0f, 0.0f, 90.0f},
         {3.0,  2.00f, 1.50f, -7.69f,  0.0f,   0.0f, 0.0f, 90.0f},
         {6.0, -2.94f, 1.50f, -7.69f,  0.0f,   0.0f, 0.0f, 90.0f},
     };
-    static RSKeyframe kf1[] = {
+    static RS_Keyframe kf1[] = {
         {0.0,  5.71f, 1.36f,  6.50f,  0.0f, 179.71f, 0.0f, 90.0f},
         {3.0, -5.59f, 1.36f,  6.50f,  0.0f, 179.71f, 0.0f, 90.0f},
         {6.0,  5.71f, 1.36f,  6.50f,  0.0f, 179.71f, 0.0f, 90.0f},
     };
-    static RSKeyframe kf2[] = {
+    static RS_Keyframe kf2[] = {
         {0.0, -11.395f, 8.30f,  7.40f, -20.0f, 84.1f, 0.0f, 90.0f},
         {3.0, -11.395f, 8.30f, -5.00f, -20.0f, 84.1f, 0.0f, 90.0f},
         {6.0, -11.395f, 8.30f,  7.40f, -20.0f, 84.1f, 0.0f, 90.0f},
     };
-    static RSKeyframe kf3[] = {
+    static RS_Keyframe kf3[] = {
         {0.0, 12.40f, 7.70f, -8.60f, -30.0f, -90.0f, 0.0f, 90.0f},
         {3.0, 12.40f, 7.70f,  7.00f, -30.0f, -90.0f, 0.0f, 90.0f},
         {6.0, 12.40f, 7.70f, -8.60f, -30.0f, -90.0f, 0.0f, 90.0f},
     };
 
-    std::vector<RSCameraRig> rigs(4);
+    std::vector<RS_CameraRig> rigs(4);
     rigs[0] = {kf0, 3, 1920, 1080, 1};
     rigs[1] = {kf1, 3, 1920, 1080, 1};
     rigs[2] = {kf2, 3, 1920, 1080, 1};
@@ -162,7 +162,7 @@ static ClientLogCtx* SetupClientCallbacks(IRenderStreamClient* c, const char* ta
     ctx->stat_out = spdlog::stdout_color_mt(fmt::format("{}_stat", tag));
     ctx->stat_out->set_pattern(fmt::format("[%n] %v"));
 
-    RSCallbacks cb = {};
+    RS_Callbacks cb = {};
     cb.on_frame_ack = OnFrameAck;
     cb.on_status    = OnStatus;
     cb.on_log       = OnLog;

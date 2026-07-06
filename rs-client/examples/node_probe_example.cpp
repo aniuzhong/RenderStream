@@ -86,7 +86,7 @@ int main(int argc, char* argv[]) {
         }
 
         // Session status
-        RSStatus st{};
+        RS_Status st{};
         if (client->GetSessionStatus(&st)) {
             const char* state_names[] = {"idle", "launching", "running", "stopping"};
             const char* s = (st.state >= 0 && st.state <= 3) ? state_names[st.state] : "?";

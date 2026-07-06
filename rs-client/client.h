@@ -22,30 +22,30 @@ public:
 
     // -- IRenderStreamClient implementation -----
 
-    int  Discover(int timeout_ms, RSOnNodeDiscovered on_node, void* userdata) override;
+    int  Discover(int timeout_ms, RS_OnNodeDiscovered on_node, void* userdata) override;
 
     void SetTarget(const char* host, int port) override;
     int    Health() override;
     char*  GetNodeInfo() override;
     char*  GetSchema(const char* project_path) override;
-    int    GetSessionStatus(RSStatus* out) override;
+    int    GetSessionStatus(RS_Status* out) override;
 
     int  LaunchUE(const char* config_json) override;
     int  KillUE(int pid) override;
 
-    void     SetRigs(const RSCameraRig* rigs, uint32_t count) override;
+    void     SetRigs(const RS_CameraRig* rigs, uint32_t count) override;
     void     SetParams(const float* values, uint32_t count) override;
     void     SetTexts(const char* const* values, uint32_t count) override;
-    void     SetSkeleton(const RSSkeletonLayout* layout,
+    void     SetSkeleton(const RS_SkeletonLayout* layout,
                          const char* const* joint_names,
-                         const RSSkeletonPose* pose) override;
+                         const RS_SkeletonPose* pose) override;
     void     SetSchemaHash(uint64_t hash) override;
     void     SetFps(double fps) override;
     uint32_t ParamSlotCount() override;
     uint32_t MakeDefaultParams(float* out, uint32_t max) override;
     uint64_t SchemaHash() const override;
 
-    void SetCallbacks(const RSCallbacks* cb) override;
+    void SetCallbacks(const RS_Callbacks* cb) override;
 
     int  Connect(const char* host, int retries, int tick_port) override;
     void Disconnect() override;
@@ -94,7 +94,7 @@ private:
     int                     frame_seq_ = 0;
     std::vector<CameraData> last_cameras_;
 
-    // -- std::function callbacks (wired from RSCallbacks) --
+    // -- std::function callbacks (wired from RS_Callbacks) --
 
     std::function<void(const CameraResponseData&)> on_frame_ack_;
     std::function<void(const std::string&)>        on_status_;

@@ -1,21 +1,9 @@
-// IRenderStreamClient.h — DLL-safe C++ interface for RenderStream conductor.
-//
-// Only this header + d3renderstream.h are needed to link against rs-client.dll.
-// No STL types cross the DLL boundary — all data uses C structs and arrays.
-// Virtual dispatch is safe within a single MSVC toolchain version.
-
 #pragma once
 
 #include <stdint.h>
 #include "d3renderstream.h"
 
-// -- Node discovery ----------------------------------------------------
-
-// Called for each discovered node.  name/ip are valid only during the call.
-// Return non-zero to stop discovery early.
-typedef int (*RSOnNodeDiscovered)(const char* name, const char* ip, int port, void* userdata);
-
-// -- Session status ----------------------------------------------------
+typedef int (*RS_OnNodeDiscovered)(const char* name, const char* ip, int port, void* userdata);
 
 typedef struct {
     int      pid;
@@ -23,43 +11,34 @@ typedef struct {
     int64_t  launched_at;
     int64_t  pipe_connected_at;
     int      state;   // 0=idle  1=launching  2=running
-} RSStatus;
-
-// -- Camera rig --------------------------------------------------------
+} RS_Status;
 
 typedef struct {
     double t;
     float  x, y, z;
     float  rx, ry, rz;
     float  fov;
-} RSKeyframe;
+} RS_Keyframe;
 
 typedef struct {
-    RSKeyframe* keyframes;
+    RS_Keyframe* keyframes;
     uint32_t    keyframe_count;
     int         sensor_w;
     int         sensor_h;
     int         loop;       // 0=clamp  1=loop
-} RSCameraRig;
-
-// -- Profiling ---------------------------------------------------------
+} RS_CameraRig;
 
 typedef struct {
     float frame_time_ms;
     float gpu_time_ms;
     float await_time_ms;
     float fps;
-} RSProfiling;
-
-// -- Skeleton (C structs with explicit counts) -------------------------
-//
-// d3renderstream.h defines SkeletonJointDesc / SkeletonJointPose without
-// array counts.  These wrappers carry the count alongside the pointer.
+} RS_Profiling;
 
 typedef struct {
     uint32_t           joint_count;
     SkeletonJointDesc* joints;
-} RSSkeletonLayout;
+} RS_SkeletonLayout;
 
 typedef struct {
     uint64_t           layout_id;
@@ -67,30 +46,26 @@ typedef struct {
     Transform          root_transform;
     uint32_t           joint_count;
     SkeletonJointPose* joints;
-} RSSkeletonPose;
+} RS_SkeletonPose;
 
-// -- Callbacks ---------------------------------------------------------
-
-typedef void (*RSOnFrameAckFn)(const CameraResponseData* ack, void* userdata);
-typedef void (*RSOnStatusFn)(const char* text, void* userdata);
-typedef void (*RSOnLogFn)(const char* text, void* userdata);
-typedef void (*RSOnProfilingFn)(const RSProfiling* p, void* userdata);
-typedef void (*RSOnBuildParamsFn)(double t, float* values, uint32_t count, void* userdata);
-typedef void (*RSOnBuildTextsFn)(double t, char** texts, uint32_t count, void* userdata);
-typedef void (*RSOnBuildSkeletonFn)(double t, RSSkeletonPose* pose, void* userdata);
+typedef void (*RS_OnFrameAckFn)(const CameraResponseData* ack, void* userdata);
+typedef void (*RS_OnStatusFn)(const char* text, void* userdata);
+typedef void (*RS_OnLogFn)(const char* text, void* userdata);
+typedef void (*RS_OnProfilingFn)(const RS_Profiling* p, void* userdata);
+typedef void (*RS_OnBuildParamsFn)(double t, float* values, uint32_t count, void* userdata);
+typedef void (*RS_OnBuildTextsFn)(double t, char** texts, uint32_t count, void* userdata);
+typedef void (*RS_OnBuildSkeletonFn)(double t, RS_SkeletonPose* pose, void* userdata);
 
 typedef struct {
-    RSOnFrameAckFn      on_frame_ack;
-    RSOnStatusFn        on_status;
-    RSOnLogFn           on_log;
-    RSOnProfilingFn     on_profiling;
-    RSOnBuildParamsFn   on_build_params;
-    RSOnBuildTextsFn    on_build_texts;
-    RSOnBuildSkeletonFn on_build_skeleton;
+    RS_OnFrameAckFn      on_frame_ack;
+    RS_OnStatusFn        on_status;
+    RS_OnLogFn           on_log;
+    RS_OnProfilingFn     on_profiling;
+    RS_OnBuildParamsFn   on_build_params;
+    RS_OnBuildTextsFn    on_build_texts;
+    RS_OnBuildSkeletonFn on_build_skeleton;
     void*               userdata;
-} RSCallbacks;
-
-// -- Interface ---------------------------------------------------------
+} RS_Callbacks;
 
 class IRenderStreamClient {
 public:
@@ -98,7 +73,7 @@ public:
 
     // Discovery
 
-    virtual int Discover(int timeout_ms, RSOnNodeDiscovered on_node, void* userdata) = 0;
+    virtual int Discover(int timeout_ms, RS_OnNodeDiscovered on_node, void* userdata) = 0;
 
     // -- Target ---------------------------------
 
@@ -109,7 +84,7 @@ public:
     virtual int   Health() = 0;
     virtual char* GetNodeInfo() = 0;                         // JSON, caller frees with FreeString
     virtual char* GetSchema(const char* project_path) = 0;   // JSON, caller frees with FreeString
-    virtual int   GetSessionStatus(RSStatus* out) = 0;       // returns 0 on failure
+    virtual int   GetSessionStatus(RS_Status* out) = 0;       // returns 0 on failure
 
     // -- Session --------------------------------
 
@@ -118,12 +93,12 @@ public:
 
     // -- Frame data -----------------------------
 
-    virtual void SetRigs(const RSCameraRig* rigs, uint32_t count) = 0;
+    virtual void SetRigs(const RS_CameraRig* rigs, uint32_t count) = 0;
     virtual void SetParams(const float* values, uint32_t count) = 0;
     virtual void SetTexts(const char* const* values, uint32_t count) = 0;
-    virtual void SetSkeleton(const RSSkeletonLayout* layout,
+    virtual void SetSkeleton(const RS_SkeletonLayout* layout,
                              const char* const* joint_names,
-                             const RSSkeletonPose* pose) = 0;
+                             const RS_SkeletonPose* pose) = 0;
     virtual void     SetSchemaHash(uint64_t hash) = 0;
     virtual uint64_t SchemaHash() const = 0;
     virtual void     SetFps(double fps) = 0;
@@ -132,7 +107,7 @@ public:
 
     // -- Callbacks ------------------------------
 
-    virtual void SetCallbacks(const RSCallbacks* cb) = 0;
+    virtual void SetCallbacks(const RS_Callbacks* cb) = 0;
 
     // -- Connection & Run -----------------------
 

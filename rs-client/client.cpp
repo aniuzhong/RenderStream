@@ -80,7 +80,7 @@ void RenderStreamClient::EnableDefaultLogging(const std::string& tag) {
 // Discovery
 // ============================================================
 
-int RenderStreamClient::Discover(int timeout_ms, RSOnNodeDiscovered on_node, void* userdata) {
+int RenderStreamClient::Discover(int timeout_ms, RS_OnNodeDiscovered on_node, void* userdata) {
     if (!on_node) return 0;
 
     int reported = 0;
@@ -204,7 +204,7 @@ char* RenderStreamClient::GetSchema(const char* project_path) {
     }
 }
 
-int RenderStreamClient::GetSessionStatus(RSStatus* out) {
+int RenderStreamClient::GetSessionStatus(RS_Status* out) {
     if (!out) return 0;
 
     auto res = MakeClient(node_ip_, node_port_).Get("/api/unreal/status");
@@ -329,7 +329,7 @@ uint64_t RenderStreamClient::SchemaHash() const {
     return SchemaHash(0);
 }
 
-void RenderStreamClient::SetRigs(const RSCameraRig* rigs, uint32_t count) {
+void RenderStreamClient::SetRigs(const RS_CameraRig* rigs, uint32_t count) {
     rigs_.clear();
     for (uint32_t i = 0; i < count; ++i) {
         const auto& cr = rigs[i];
@@ -361,9 +361,9 @@ void RenderStreamClient::SetTexts(const char* const* values, uint32_t count) {
         text_values_.emplace_back(values[i] ? values[i] : "");
 }
 
-void RenderStreamClient::SetSkeleton(const RSSkeletonLayout* layout,
+void RenderStreamClient::SetSkeleton(const RS_SkeletonLayout* layout,
                                       const char* const* joint_names,
-                                      const RSSkeletonPose* pose) {
+                                      const RS_SkeletonPose* pose) {
     skel_layout_ = rs::skeleton_layout_data{};
     joint_names_.clear();
     skel_poses_.clear();
@@ -407,7 +407,7 @@ void RenderStreamClient::SetFps(double fps) {
 // Callbacks
 // ============================================================
 
-void RenderStreamClient::SetCallbacks(const RSCallbacks* cb) {
+void RenderStreamClient::SetCallbacks(const RS_Callbacks* cb) {
     if (!cb) return;
     void* data = cb->userdata;
 
@@ -441,7 +441,7 @@ void RenderStreamClient::SetCallbacks(const RSCallbacks* cb) {
                     else if (name == "Await Time") await_time = e.value("value", 0.0f);
                 }
             }
-            RSProfiling p;
+            RS_Profiling p;
             p.frame_time_ms = frame_time;
             p.gpu_time_ms   = gpu_time;
             p.await_time_ms = await_time;
@@ -475,7 +475,7 @@ void RenderStreamClient::SetCallbacks(const RSCallbacks* cb) {
         on_build_skeleton_ = [fn, data](double t, std::vector<rs::skeleton_pose_data>& poses) {
             if (poses.empty()) return;
             auto& p = poses[0];
-            RSSkeletonPose sp;
+            RS_SkeletonPose sp;
             sp.layout_id      = p.layout_id;
             sp.layout_version = p.layout_version;
             sp.root_transform = p.root_transform;
