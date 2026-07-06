@@ -22,10 +22,9 @@ public:
 
     // -- IRenderStreamClient implementation -----
 
-    uint32_t Discover(int timeout_ms, RSNode* out, uint32_t max) override;
-    void     FreeNodes(RSNode* nodes, uint32_t count) override;
+    int  Discover(int timeout_ms, RSOnNodeDiscovered on_node, void* userdata) override;
 
-    void   SetTarget(const char* host, int port) override;
+    void SetTarget(const char* host, int port) override;
     int    Health() override;
     char*  GetNodeInfo() override;
     char*  GetSchema(const char* project_path) override;

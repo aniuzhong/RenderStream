@@ -3,10 +3,27 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 #include <nlohmann/json.hpp>
+#include <string>
+#include <vector>
 
 #include "IRenderStreamClient.h"
+
+struct ProbeCtx {
+    std::vector<std::string> names;
+    std::vector<std::string> ips;
+    std::vector<int>         ports;
+};
+
+static int OnNode(const char* name, const char* ip, int port, void* userdata) {
+    auto* ctx = static_cast<ProbeCtx*>(userdata);
+    ctx->names.push_back(name);
+    ctx->ips.push_back(ip);
+    ctx->ports.push_back(port);
+    return 0;  // collect all
+}
 
 int main(int argc, char* argv[]) {
     int timeout_ms = (argc > 1) ? atoi(argv[1]) : 500;
@@ -21,9 +38,9 @@ int main(int argc, char* argv[]) {
     auto* client = CreateRenderStreamClient();
 
     fprintf(stderr, "Discovering nodes...\n");
-    RSNode nodes[64];
-    uint32_t node_count = client->Discover(timeout_ms, nodes, 64);
-    fprintf(stderr, "Found %u node(s)\n\n", node_count);
+    ProbeCtx ctx;
+    int node_count = client->Discover(timeout_ms, OnNode, &ctx);
+    fprintf(stderr, "Found %d node(s)\n\n", node_count);
 
     if (node_count == 0) {
         fprintf(stderr, "No nodes found.\n");
@@ -31,11 +48,10 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    for (uint32_t i = 0; i < node_count; ++i) {
-        const auto& n = nodes[i];
-        fprintf(stderr, "=== %s (%s:%d) ===\n", n.name, n.ip, n.port);
+    for (int i = 0; i < node_count; ++i) {
+        fprintf(stderr, "=== %s (%s:%d) ===\n", ctx.names[i].c_str(), ctx.ips[i].c_str(), ctx.ports[i]);
 
-        client->SetTarget(n.ip, n.port);
+        client->SetTarget(ctx.ips[i].c_str(), ctx.ports[i]);
 
         // Health
         fprintf(stderr, "  health: %d\n", client->Health() ? 0 : -1);
@@ -72,8 +88,8 @@ int main(int argc, char* argv[]) {
         // Session status
         RSStatus st{};
         if (client->GetSessionStatus(&st)) {
-            const char* state_names[] = {"idle", "launching", "running"};
-            const char* s = (st.state >= 0 && st.state <= 2) ? state_names[st.state] : "?";
+            const char* state_names[] = {"idle", "launching", "running", "stopping"};
+            const char* s = (st.state >= 0 && st.state <= 3) ? state_names[st.state] : "?";
             fprintf(stderr, "  session: state=%s pid=%d\n", s, st.pid);
         } else {
             fprintf(stderr, "  session: (failed)\n");
@@ -81,9 +97,7 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "\n");
     }
 
-    client->FreeNodes(nodes, node_count);
     DestroyRenderStreamClient(client);
-
     fprintf(stderr, "Done.\n");
     return 0;
 }

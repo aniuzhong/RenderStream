@@ -11,16 +11,9 @@
 
 // -- Node discovery ----------------------------------------------------
 
-typedef struct {
-    char* name;
-    char* ip;
-    int   port;
-} RSNode;
-
-typedef struct {
-    uint32_t count;
-    RSNode*  nodes;
-} RSNodeList;
+// Called for each discovered node.  name/ip are valid only during the call.
+// Return non-zero to stop discovery early.
+typedef int (*RSOnNodeDiscovered)(const char* name, const char* ip, int port, void* userdata);
 
 // -- Session status ----------------------------------------------------
 
@@ -103,10 +96,9 @@ class IRenderStreamClient {
 public:
     virtual ~IRenderStreamClient() = default;
 
-    // -- Discovery ------------------------------
+    // Discovery
 
-    virtual uint32_t Discover(int timeout_ms, RSNode* out, uint32_t max) = 0;
-    virtual void     FreeNodes(RSNode* nodes, uint32_t count) = 0;
+    virtual int Discover(int timeout_ms, RSOnNodeDiscovered on_node, void* userdata) = 0;
 
     // -- Target ---------------------------------
 

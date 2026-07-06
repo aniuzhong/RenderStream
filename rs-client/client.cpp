@@ -80,8 +80,10 @@ void RenderStreamClient::EnableDefaultLogging(const std::string& tag) {
 // Discovery
 // ============================================================
 
-uint32_t RenderStreamClient::Discover(int timeout_ms, RSNode* out, uint32_t max) {
-    uint32_t count = 0;
+int RenderStreamClient::Discover(int timeout_ms, RSOnNodeDiscovered on_node, void* userdata) {
+    if (!on_node) return 0;
+
+    int reported = 0;
 
     WSADATA wsa;
     if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
@@ -113,7 +115,7 @@ uint32_t RenderStreamClient::Discover(int timeout_ms, RSNode* out, uint32_t max)
     std::set<std::string> seen;
 
     char buf[2048];
-    while (std::chrono::steady_clock::now() < deadline && count < max) {
+    while (std::chrono::steady_clock::now() < deadline) {
         sockaddr_in from{};
         int from_len = sizeof(from);
         int n = recvfrom(sock, buf, sizeof(buf) - 1, 0,
@@ -137,24 +139,17 @@ uint32_t RenderStreamClient::Discover(int timeout_ms, RSNode* out, uint32_t max)
             std::string node_ip = j.value("ip", ip);
             int node_port = j.value("port", 9580);
 
-            out[count].name = _strdup(name.c_str());
-            out[count].ip   = _strdup(node_ip.c_str());
-            out[count].port = node_port;
-            ++count;
+            ++reported;
+            int stop = on_node(name.c_str(), node_ip.c_str(), node_port, userdata);
+            if (stop != 0)
+                break;
         } catch (...) {
         }
     }
 
     closesocket(sock);
     WSACleanup();
-    return count;
-}
-
-void RenderStreamClient::FreeNodes(RSNode* nodes, uint32_t count) {
-    for (uint32_t i = 0; i < count; ++i) {
-        free(nodes[i].name);
-        free(nodes[i].ip);
-    }
+    return reported;
 }
 
 // ============================================================

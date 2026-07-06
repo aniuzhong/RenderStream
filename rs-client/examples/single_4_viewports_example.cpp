@@ -247,9 +247,14 @@ int main(int argc, char* argv[]) {
 
     // 1. Discover nodes
     fprintf(stderr, "Discovering nodes (timeout=%dms)...\n", timeout_ms);
-    RSNode nodes[64];
-    uint32_t node_count = client->Discover(timeout_ms, nodes, 64);
-    fprintf(stderr, "Found %u node(s)\n\n", node_count);
+    struct NodeInfo { std::string name, ip; int port; };
+    std::vector<NodeInfo> nodes;
+    int node_count = client->Discover(timeout_ms,
+        [](const char* name, const char* ip, int port, void* ctx) -> int {
+            static_cast<std::vector<NodeInfo>*>(ctx)->push_back({name, ip, port});
+            return 0;
+        }, &nodes);
+    fprintf(stderr, "Found %d node(s)\n\n", node_count);
 
     if (node_count == 0) {
         fprintf(stderr, "No nodes found.\n");
@@ -257,11 +262,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    for (uint32_t i = 0; i < node_count; ++i) {
+    for (int i = 0; i < node_count; ++i) {
         const auto& n = nodes[i];
-        fprintf(stderr, "-- Node %u: %s (%s:%d) --\n", i, n.name, n.ip, n.port);
+        fprintf(stderr, "-- Node %d: %s (%s:%d) --\n", i, n.name.c_str(), n.ip.c_str(), n.port);
 
-        client->SetTarget(n.ip, n.port);
+        client->SetTarget(n.ip.c_str(), n.port);
 
         // 2. Query node info
         char* info_json = client->GetNodeInfo();
@@ -390,10 +395,10 @@ int main(int argc, char* argv[]) {
         }
 
         // 10. Connect and run tick loop
-        fprintf(stderr, "\n[RenderStreamClient] connecting to %s:%d...\n", n.ip, kTickPort);
+        fprintf(stderr, "\n[RenderStreamClient] connecting to %s:%d...\n", n.ip.c_str(), kTickPort);
         fflush(stderr);
 
-        if (!client->Connect(n.ip, 30, kTickPort)) {
+        if (!client->Connect(n.ip.c_str(), 30, kTickPort)) {
             fprintf(stderr, "  [ERROR] could not connect tick socket\n");
             delete[] param_values;
             continue;
@@ -403,7 +408,6 @@ int main(int argc, char* argv[]) {
         delete[] param_values;
     }
 
-    client->FreeNodes(nodes, node_count);
     DestroyRenderStreamClient(client);
 
     fprintf(stderr, "\nDone.\n");

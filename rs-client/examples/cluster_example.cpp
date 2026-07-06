@@ -11,6 +11,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 #include <chrono>
 #include <filesystem>
@@ -47,6 +48,14 @@ static const NodeConfig kNodes[] = {
      "C:/Users/hido/Documents/Unreal Projects/nDisplay_Demo_57/nDisplay_Demo.uproject"},
 };
 
+// ── Discovered node ────────────────────────────────────────────────────
+
+struct DiscoveredNode {
+    std::string name;
+    std::string ip;
+    int         port = 9580;
+};
+
 // ── Per-node callback context ──────────────────────────────────────────
 
 struct ClientLogCtx {
@@ -79,6 +88,14 @@ static void OnProfiling(const RSProfiling* p, void* userdata) {
     if (ctx->prof_counter != 1) return;
     ctx->prof_out->info("frame={:.1f}ms ({:.0f}fps) gpu={:.1f}ms await={:.1f}ms",
         p->frame_time_ms, p->fps, p->gpu_time_ms, p->await_time_ms);
+}
+
+// ── Discovery callback ─────────────────────────────────────────────────
+
+static int OnNodeDiscovered(const char* name, const char* ip, int port, void* userdata) {
+    auto* vec = static_cast<std::vector<DiscoveredNode>*>(userdata);
+    vec->push_back({name, ip, port});
+    return 0;  // collect all
 }
 
 // ── Camera rigs ────────────────────────────────────────────────────────
@@ -158,12 +175,12 @@ static ClientLogCtx* SetupClientCallbacks(IRenderStreamClient* c, const char* ta
 
 // ── nDisplay config ────────────────────────────────────────────────────
 
-static nlohmann::json GenerateNdisplayConfig(const RSNode* nodes, uint32_t count) {
+static nlohmann::json GenerateNdisplayConfig(const DiscoveredNode* nodes, int count) {
     ndisplay::Configuration cfg;
     cfg.description = "cluster example";
     cfg.override_viewports_from_external_config = true;
 
-    for (uint32_t i = 0; i < count; ++i) {
+    for (int i = 0; i < count; ++i) {
         ndisplay::Node node;
         node.name = kNodes[i].name;
         node.host = nodes[i].ip;
@@ -222,48 +239,42 @@ int main(int argc, char* argv[]) {
 
     // 1. Discover
     fprintf(stderr, "Discovering nodes...\n");
-    RSNode all_nodes[64];
-    uint32_t total = client->Discover(timeout_ms, all_nodes, 64);
-    fprintf(stderr, "Found %u node(s)\n\n", total);
+    std::vector<DiscoveredNode> all_nodes;
+    int total = client->Discover(timeout_ms, OnNodeDiscovered, &all_nodes);
+    fprintf(stderr, "Found %d node(s)\n\n", total);
     if (total == 0) {
         fprintf(stderr, "No nodes found.\n");
         DestroyRenderStreamClient(client);
         return 1;
     }
 
-    RSNode nodes[2];
+    DiscoveredNode nodes[2];
     int assigned = 0;
-    for (uint32_t i = 0; i < total; ++i) {
-        if (strcmp(all_nodes[i].ip, "10.241.12.217") == 0)      { nodes[0] = all_nodes[i]; ++assigned; }
-        else if (strcmp(all_nodes[i].ip, "10.241.12.246") == 0) { nodes[1] = all_nodes[i]; ++assigned; }
+    for (const auto& n : all_nodes) {
+        if (n.ip == "10.241.12.217")      { nodes[0] = n; ++assigned; }
+        else if (n.ip == "10.241.12.246") { nodes[1] = n; ++assigned; }
     }
     if (assigned < 2) {
         fprintf(stderr, "ERROR: need both .217 and .246, got %d\n", assigned);
-        client->FreeNodes(all_nodes, total);
         DestroyRenderStreamClient(client);
         return 1;
     }
-    fprintf(stderr, "  node0 (primary)   -> %s (%s)\n", nodes[0].name, nodes[0].ip);
-    fprintf(stderr, "  node1 (secondary) -> %s (%s)\n\n", nodes[1].name, nodes[1].ip);
+    fprintf(stderr, "  node0 (primary)   -> %s (%s)\n", nodes[0].name.c_str(), nodes[0].ip.c_str());
+    fprintf(stderr, "  node1 (secondary) -> %s (%s)\n\n", nodes[1].name.c_str(), nodes[1].ip.c_str());
 
     // 2. Schema
-    fprintf(stderr, "Querying schema from %s...\n", nodes[0].name);
+    fprintf(stderr, "Querying schema from %s...\n", nodes[0].name.c_str());
     auto* schema_cli = CreateRenderStreamClient();
-    schema_cli->SetTarget(nodes[0].ip, nodes[0].port);
+    schema_cli->SetTarget(nodes[0].ip.c_str(), nodes[0].port);
     char* schema_json = schema_cli->GetSchema(kNodes[0].project_path);
     if (!schema_json) {
         fprintf(stderr, "  schema not found\n");
         DestroyRenderStreamClient(schema_cli);
-        client->FreeNodes(all_nodes, total);
         DestroyRenderStreamClient(client);
         return 1;
     }
     auto schema = nlohmann::json::parse(schema_json);
-    auto channels = schema.value("channels", nlohmann::json::array());
-    auto scenes   = schema.value("scenes",   nlohmann::json::array());
-    fprintf(stderr, "  %zu channels, %zu scenes\n\n", channels.size(), scenes.size());
-
-    // Build parameter defaults
+    auto scenes = schema.value("scenes", nlohmann::json::array());
     uint32_t pv_count = schema_cli->ParamSlotCount();
     auto* param_values = new float[pv_count];
     schema_cli->MakeDefaultParams(param_values, pv_count);
@@ -285,7 +296,6 @@ int main(int argc, char* argv[]) {
     // 5. Launch UE on each node
     std::vector<int> pids;
     for (int i = 0; i < 2; ++i) {
-        const auto& n = nodes[i];
         const auto& cfg = kNodes[i];
 
         std::string scene_name = "Main";
@@ -300,9 +310,9 @@ int main(int argc, char* argv[]) {
         launch_body["ndisplay"]   = ndisplay_json;
         launch_body["streams"]    = streams_json;
 
-        fprintf(stderr, "Launching %s (%s)...\n", cfg.name, n.ip);
+        fprintf(stderr, "Launching %s (%s)...\n", cfg.name, nodes[i].ip.c_str());
         auto* launch_cli = CreateRenderStreamClient();
-        launch_cli->SetTarget(n.ip, n.port);
+        launch_cli->SetTarget(nodes[i].ip.c_str(), nodes[i].port);
         int pid = launch_cli->LaunchUE(launch_body.dump().c_str());
         DestroyRenderStreamClient(launch_cli);
         if (pid == 0) {
@@ -324,7 +334,7 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < 2; ++i) {
         if (pids[i] == 0) continue;
         auto* c = CreateRenderStreamClient();
-        c->SetTarget(nodes[i].ip, nodes[i].port);
+        c->SetTarget(nodes[i].ip.c_str(), nodes[i].port);
         c->SetRigs(rigs.data(), static_cast<uint32_t>(rigs.size()));
         c->SetSchemaHash(scene_hash);
         c->SetParams(param_values, pv_count);
@@ -334,8 +344,8 @@ int main(int argc, char* argv[]) {
         log_ctxs.push_back(ctx);
 
         fprintf(stderr, "[%s] connecting to %s:%d...\n",
-                kNodes[i].name, nodes[i].ip, kTickPort);
-        if (!c->Connect(nodes[i].ip, 60, kTickPort)) {
+                kNodes[i].name, nodes[i].ip.c_str(), kTickPort);
+        if (!c->Connect(nodes[i].ip.c_str(), 60, kTickPort)) {
             fprintf(stderr, "[%s] WARNING: could not connect\n", kNodes[i].name);
             DestroyRenderStreamClient(c);
             continue;
@@ -346,7 +356,6 @@ int main(int argc, char* argv[]) {
     if (clients.empty()) {
         fprintf(stderr, "No clients connected.\n");
         delete[] param_values;
-        client->FreeNodes(all_nodes, total);
         DestroyRenderStreamClient(client);
         return 1;
     }
@@ -374,10 +383,10 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < 2; ++i) {
         if (pids[i] != 0) {
             auto* kill_cli = CreateRenderStreamClient();
-            kill_cli->SetTarget(nodes[i].ip, nodes[i].port);
+            kill_cli->SetTarget(nodes[i].ip.c_str(), nodes[i].port);
             int ok = kill_cli->KillUE(pids[i]);
             fprintf(stderr, "  kill %s:%d (pid=%d) -> %s\n",
-                    nodes[i].ip, nodes[i].port, pids[i], ok ? "ok" : "fail");
+                    nodes[i].ip.c_str(), nodes[i].port, pids[i], ok ? "ok" : "fail");
             DestroyRenderStreamClient(kill_cli);
         }
     }
@@ -388,7 +397,6 @@ int main(int argc, char* argv[]) {
     for (auto* ctx : log_ctxs)
         delete ctx;
     delete[] param_values;
-    client->FreeNodes(all_nodes, total);
     DestroyRenderStreamClient(client);
 
     fprintf(stderr, "\nDone.\n");
