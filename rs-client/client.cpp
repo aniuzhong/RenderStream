@@ -231,7 +231,7 @@ int RenderStreamClient::GetSessionStatus(const char* host, int port, RS_Status* 
 // Session
 // ============================================================
 
-int RenderStreamClient::LaunchUE(const char* host, int port, const char* config_json) {
+int RenderStreamClient::LaunchUnrealEditor(const char* host, int port, const char* config_json) {
     auto res = MakeClient(host, port)
         .Post("/api/renderstream/launch", config_json, "application/json");
     if (!res || res->status != 200)
@@ -243,7 +243,7 @@ int RenderStreamClient::LaunchUE(const char* host, int port, const char* config_
     }
 }
 
-int RenderStreamClient::KillUE(const char* host, int port, int pid) {
+int RenderStreamClient::KillUnrealEditor(const char* host, int port, int pid) {
     nlohmann::json body = {{"pid", pid}};
     auto res = MakeClient(host, port)
         .Post("/api/unreal/kill", body.dump(), "application/json");

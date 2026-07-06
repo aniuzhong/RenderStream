@@ -86,8 +86,8 @@ public:
     // Session
 
     virtual int  GetSessionStatus(const char* host, int port, RS_Status* out) = 0;
-    virtual int  LaunchUE(const char* host, int port, const char* config_json) = 0;
-    virtual int  KillUE(const char* host, int port, int pid) = 0;
+    virtual int  LaunchUnrealEditor(const char* host, int port, const char* config_json) = 0;
+    virtual int  KillUnrealEditor(const char* host, int port, int pid) = 0;
 
     // -- Frame data -----------------------------
 

@@ -30,8 +30,8 @@ public:
                       RS_OnSchemaLoaded on_schema, void* userdata) override;
     int    GetSessionStatus(const char* host, int port, RS_Status* out) override;
 
-    int  LaunchUE(const char* host, int port, const char* config_json) override;
-    int  KillUE(const char* host, int port, int pid) override;
+    int  LaunchUnrealEditor(const char* host, int port, const char* config_json) override;
+    int  KillUnrealEditor(const char* host, int port, int pid) override;
 
     void     SetRigs(const RS_CameraRig* rigs, uint32_t count) override;
     void     SetParams(const float* values, uint32_t count) override;

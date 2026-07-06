@@ -318,7 +318,7 @@ int main(int argc, char* argv[]) {
 
         fprintf(stderr, "Launching %s (%s)...\n", cfg.name, nodes[i].ip.c_str());
         auto* launch_cli = CreateRenderStreamClient();
-        int pid = launch_cli->LaunchUE(nodes[i].ip.c_str(), nodes[i].port, launch_body.dump().c_str());
+        int pid = launch_cli->LaunchUnrealEditor(nodes[i].ip.c_str(), nodes[i].port, launch_body.dump().c_str());
         DestroyRenderStreamClient(launch_cli);
         if (pid == 0) {
             fprintf(stderr, "  FAILED\n");
@@ -387,7 +387,7 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < 2; ++i) {
         if (pids[i] != 0) {
             auto* kill_cli = CreateRenderStreamClient();
-            int ok = kill_cli->KillUE(nodes[i].ip.c_str(), nodes[i].port, pids[i]);
+            int ok = kill_cli->KillUnrealEditor(nodes[i].ip.c_str(), nodes[i].port, pids[i]);
             fprintf(stderr, "  kill %s:%d (pid=%d) -> %s\n",
                     nodes[i].ip.c_str(), nodes[i].port, pids[i], ok ? "ok" : "fail");
             DestroyRenderStreamClient(kill_cli);

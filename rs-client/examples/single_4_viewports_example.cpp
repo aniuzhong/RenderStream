@@ -333,7 +333,7 @@ int main(int argc, char* argv[]) {
         launch_body["streams"]    = streams;
 
         fprintf(stderr, "  Launching UE...\n"); fflush(stderr);
-        int pid = client->LaunchUE(host, port, launch_body.dump().c_str());
+        int pid = client->LaunchUnrealEditor(host, port, launch_body.dump().c_str());
         if (pid == 0) {
             fprintf(stderr, "  [ERROR] launch rejected\n");
             continue;
