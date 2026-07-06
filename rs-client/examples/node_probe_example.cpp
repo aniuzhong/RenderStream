@@ -51,13 +51,14 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < node_count; ++i) {
         fprintf(stderr, "=== %s (%s:%d) ===\n", ctx.names[i].c_str(), ctx.ips[i].c_str(), ctx.ports[i]);
 
-        client->SetTarget(ctx.ips[i].c_str(), ctx.ports[i]);
+        const char* host = ctx.ips[i].c_str();
+        int port = ctx.ports[i];
 
         // Health
-        fprintf(stderr, "  health: %d\n", client->Health() ? 0 : -1);
+        fprintf(stderr, "  health: %d\n", client->Health(host, port) ? 0 : -1);
 
         // Node info
-        char* info_json = client->GetNodeInfo();
+        char* info_json = client->GetNodeInfo(host, port);
         if (info_json) {
             auto info = nlohmann::json::parse(info_json);
             fprintf(stderr, "  hostname: %s\n", info.value("hostname", "?").c_str());
@@ -71,7 +72,7 @@ int main(int argc, char* argv[]) {
         }
 
         // Schema
-        char* schema_json = client->GetSchema(project_path);
+        char* schema_json = client->GetSchema(host, port, project_path);
         if (schema_json) {
             auto schema = nlohmann::json::parse(schema_json);
             auto channels = schema.value("channels", nlohmann::json::array());
@@ -87,7 +88,7 @@ int main(int argc, char* argv[]) {
 
         // Session status
         RS_Status st{};
-        if (client->GetSessionStatus(&st)) {
+        if (client->GetSessionStatus(host, port, &st)) {
             const char* state_names[] = {"idle", "launching", "running", "stopping"};
             const char* s = (st.state >= 0 && st.state <= 3) ? state_names[st.state] : "?";
             fprintf(stderr, "  session: state=%s pid=%d\n", s, st.pid);

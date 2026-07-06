@@ -153,15 +153,6 @@ int RenderStreamClient::Discover(int timeout_ms, RS_OnNodeDiscovered on_node, vo
 }
 
 // ============================================================
-// Target
-// ============================================================
-
-void RenderStreamClient::SetTarget(const char* host, int port) {
-    node_ip_   = host;
-    node_port_ = port;
-}
-
-// ============================================================
 // HTTP helpers
 // ============================================================
 
@@ -176,21 +167,21 @@ static httplib::Client MakeClient(const std::string& host, int port) {
 // Queries
 // ============================================================
 
-int RenderStreamClient::Health() {
-    auto res = MakeClient(node_ip_, node_port_).Get("/api/health");
+int RenderStreamClient::Health(const char* host, int port) {
+    auto res = MakeClient(host, port).Get("/api/health");
     return (res && res->status == 200) ? 1 : 0;
 }
 
-char* RenderStreamClient::GetNodeInfo() {
-    auto res = MakeClient(node_ip_, node_port_).Get("/api/node/info");
+char* RenderStreamClient::GetNodeInfo(const char* host, int port) {
+    auto res = MakeClient(host, port).Get("/api/node/info");
     if (!res || res->status != 200)
         return nullptr;
     return _strdup(res->body.c_str());
 }
 
-char* RenderStreamClient::GetSchema(const char* project_path) {
+char* RenderStreamClient::GetSchema(const char* host, int port, const char* project_path) {
     std::string url = "/api/renderstream/schema?project=" + std::string(project_path);
-    auto res = MakeClient(node_ip_, node_port_).Get(url.c_str());
+    auto res = MakeClient(host, port).Get(url.c_str());
     if (!res || res->status != 200)
         return nullptr;
 
@@ -204,10 +195,10 @@ char* RenderStreamClient::GetSchema(const char* project_path) {
     }
 }
 
-int RenderStreamClient::GetSessionStatus(RS_Status* out) {
+int RenderStreamClient::GetSessionStatus(const char* host, int port, RS_Status* out) {
     if (!out) return 0;
 
-    auto res = MakeClient(node_ip_, node_port_).Get("/api/unreal/status");
+    auto res = MakeClient(host, port).Get("/api/unreal/status");
     if (!res || res->status != 200)
         return 0;
 
@@ -236,8 +227,8 @@ int RenderStreamClient::GetSessionStatus(RS_Status* out) {
 // Session
 // ============================================================
 
-int RenderStreamClient::LaunchUE(const char* config_json) {
-    auto res = MakeClient(node_ip_, node_port_)
+int RenderStreamClient::LaunchUE(const char* host, int port, const char* config_json) {
+    auto res = MakeClient(host, port)
         .Post("/api/renderstream/launch", config_json, "application/json");
     if (!res || res->status != 200)
         return 0;
@@ -248,9 +239,9 @@ int RenderStreamClient::LaunchUE(const char* config_json) {
     }
 }
 
-int RenderStreamClient::KillUE(int pid) {
+int RenderStreamClient::KillUE(const char* host, int port, int pid) {
     nlohmann::json body = {{"pid", pid}};
-    auto res = MakeClient(node_ip_, node_port_)
+    auto res = MakeClient(host, port)
         .Post("/api/unreal/kill", body.dump(), "application/json");
     if (!res || res->status != 200)
         return 0;

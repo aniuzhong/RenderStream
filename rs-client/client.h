@@ -24,14 +24,13 @@ public:
 
     int  Discover(int timeout_ms, RS_OnNodeDiscovered on_node, void* userdata) override;
 
-    void SetTarget(const char* host, int port) override;
-    int    Health() override;
-    char*  GetNodeInfo() override;
-    char*  GetSchema(const char* project_path) override;
-    int    GetSessionStatus(RS_Status* out) override;
+    int    Health(const char* host, int port) override;
+    char*  GetNodeInfo(const char* host, int port) override;
+    char*  GetSchema(const char* host, int port, const char* project_path) override;
+    int    GetSessionStatus(const char* host, int port, RS_Status* out) override;
 
-    int  LaunchUE(const char* config_json) override;
-    int  KillUE(int pid) override;
+    int  LaunchUE(const char* host, int port, const char* config_json) override;
+    int  KillUE(const char* host, int port, int pid) override;
 
     void     SetRigs(const RS_CameraRig* rigs, uint32_t count) override;
     void     SetParams(const float* values, uint32_t count) override;
@@ -69,7 +68,6 @@ private:
     void build_and_send(double t);
 
     std::string node_ip_;
-    int         node_port_ = 9580;
     int         tick_port_ = 9581;
     double      tick_interval_ = 1.0 / 60.0;
 

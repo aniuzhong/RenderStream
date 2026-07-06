@@ -265,8 +265,7 @@ int main(int argc, char* argv[]) {
     // 2. Schema
     fprintf(stderr, "Querying schema from %s...\n", nodes[0].name.c_str());
     auto* schema_cli = CreateRenderStreamClient();
-    schema_cli->SetTarget(nodes[0].ip.c_str(), nodes[0].port);
-    char* schema_json = schema_cli->GetSchema(kNodes[0].project_path);
+    char* schema_json = schema_cli->GetSchema(nodes[0].ip.c_str(), nodes[0].port, kNodes[0].project_path);
     if (!schema_json) {
         fprintf(stderr, "  schema not found\n");
         DestroyRenderStreamClient(schema_cli);
@@ -312,8 +311,7 @@ int main(int argc, char* argv[]) {
 
         fprintf(stderr, "Launching %s (%s)...\n", cfg.name, nodes[i].ip.c_str());
         auto* launch_cli = CreateRenderStreamClient();
-        launch_cli->SetTarget(nodes[i].ip.c_str(), nodes[i].port);
-        int pid = launch_cli->LaunchUE(launch_body.dump().c_str());
+        int pid = launch_cli->LaunchUE(nodes[i].ip.c_str(), nodes[i].port, launch_body.dump().c_str());
         DestroyRenderStreamClient(launch_cli);
         if (pid == 0) {
             fprintf(stderr, "  FAILED\n");
@@ -334,7 +332,6 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < 2; ++i) {
         if (pids[i] == 0) continue;
         auto* c = CreateRenderStreamClient();
-        c->SetTarget(nodes[i].ip.c_str(), nodes[i].port);
         c->SetRigs(rigs.data(), static_cast<uint32_t>(rigs.size()));
         c->SetSchemaHash(scene_hash);
         c->SetParams(param_values, pv_count);
@@ -383,8 +380,7 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < 2; ++i) {
         if (pids[i] != 0) {
             auto* kill_cli = CreateRenderStreamClient();
-            kill_cli->SetTarget(nodes[i].ip.c_str(), nodes[i].port);
-            int ok = kill_cli->KillUE(pids[i]);
+            int ok = kill_cli->KillUE(nodes[i].ip.c_str(), nodes[i].port, pids[i]);
             fprintf(stderr, "  kill %s:%d (pid=%d) -> %s\n",
                     nodes[i].ip.c_str(), nodes[i].port, pids[i], ok ? "ok" : "fail");
             DestroyRenderStreamClient(kill_cli);

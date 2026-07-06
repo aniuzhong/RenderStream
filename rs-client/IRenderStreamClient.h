@@ -75,21 +75,17 @@ public:
 
     virtual int Discover(int timeout_ms, RS_OnNodeDiscovered on_node, void* userdata) = 0;
 
-    // -- Target ---------------------------------
-
-    virtual void SetTarget(const char* host, int port) = 0;
-
     // -- Queries --------------------------------
 
-    virtual int   Health() = 0;
-    virtual char* GetNodeInfo() = 0;                         // JSON, caller frees with FreeString
-    virtual char* GetSchema(const char* project_path) = 0;   // JSON, caller frees with FreeString
-    virtual int   GetSessionStatus(RS_Status* out) = 0;       // returns 0 on failure
+    virtual int   Health(const char* host, int port) = 0;
+    virtual char* GetNodeInfo(const char* host, int port) = 0;
+    virtual char* GetSchema(const char* host, int port, const char* project_path) = 0;
+    virtual int   GetSessionStatus(const char* host, int port, RS_Status* out) = 0;
 
     // -- Session --------------------------------
 
-    virtual int  LaunchUE(const char* config_json) = 0;     // returns pid, 0 on failure
-    virtual int  KillUE(int pid) = 0;                        // returns non-zero on success
+    virtual int  LaunchUE(const char* host, int port, const char* config_json) = 0;
+    virtual int  KillUE(const char* host, int port, int pid) = 0;
 
     // -- Frame data -----------------------------
 

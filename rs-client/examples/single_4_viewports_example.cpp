@@ -266,10 +266,11 @@ int main(int argc, char* argv[]) {
         const auto& n = nodes[i];
         fprintf(stderr, "-- Node %d: %s (%s:%d) --\n", i, n.name.c_str(), n.ip.c_str(), n.port);
 
-        client->SetTarget(n.ip.c_str(), n.port);
+        const char* host = n.ip.c_str();
+        int port = n.port;
 
         // 2. Query node info
-        char* info_json = client->GetNodeInfo();
+        char* info_json = client->GetNodeInfo(host, port);
         if (!info_json) {
             fprintf(stderr, "  [ERROR] failed to get node info\n");
             continue;
@@ -282,7 +283,7 @@ int main(int argc, char* argv[]) {
         auto vps = BuildViewports(screen_w, screen_h);
 
         // 3. Query schema + build defaults
-        char* schema_json = client->GetSchema(kProjectPath);
+        char* schema_json = client->GetSchema(host, port, kProjectPath);
         if (!schema_json) continue;
 
         auto schema = nlohmann::json::parse(schema_json);
@@ -326,7 +327,7 @@ int main(int argc, char* argv[]) {
         launch_body["streams"]    = streams;
 
         fprintf(stderr, "  Launching UE...\n"); fflush(stderr);
-        int pid = client->LaunchUE(launch_body.dump().c_str());
+        int pid = client->LaunchUE(host, port, launch_body.dump().c_str());
         if (pid == 0) {
             fprintf(stderr, "  [ERROR] launch rejected\n");
             continue;
