@@ -372,90 +372,79 @@ void RenderStreamClient::SetFps(double fps) {
 // Callbacks
 // ============================================================
 
-void RenderStreamClient::SetCallbacks(const RS_Callbacks* cb) {
-    if (!cb) return;
-    void* data = cb->userdata;
-
-    if (cb->on_frame_ack) {
-        auto fn = cb->on_frame_ack;
-        on_frame_ack_ = [fn, data](const CameraResponseData& ack) {
-            fn(&ack, data);
-        };
-    }
-    if (cb->on_status) {
-        auto fn = cb->on_status;
-        on_status_ = [fn, data](const std::string& text) {
-            fn(text.c_str(), data);
-        };
-    }
-    if (cb->on_log) {
-        auto fn = cb->on_log;
-        on_log_ = [fn, data](const std::string& text) {
-            fn(text.c_str(), data);
-        };
-    }
-    if (cb->on_profiling) {
-        auto fn = cb->on_profiling;
-        on_profiling_ = [fn, data](const nlohmann::json& j) {
-            float frame_time = 0, gpu_time = 0, await_time = 0;
-            if (j.contains("entries") && j["entries"].is_array()) {
-                for (const auto& e : j["entries"]) {
-                    std::string name = e.value("name", "");
-                    if (name == "Frame Time")      frame_time = e.value("value", 0.0f);
-                    else if (name == "GPU Time")   gpu_time  = e.value("value", 0.0f);
-                    else if (name == "Await Time") await_time = e.value("value", 0.0f);
-                }
+void RenderStreamClient::SetFrameAckCallback(RS_OnFrameAck fn, void* ctx) {
+    if (fn) on_frame_ack_ = [fn, ctx](const CameraResponseData& ack) { fn(&ack, ctx); };
+    else    on_frame_ack_ = nullptr;
+}
+void RenderStreamClient::SetStatusCallback(RS_OnStatus fn, void* ctx) {
+    if (fn) on_status_ = [fn, ctx](const std::string& text) { fn(text.c_str(), ctx); };
+    else    on_status_ = nullptr;
+}
+void RenderStreamClient::SetLogCallback(RS_OnLog fn, void* ctx) {
+    if (fn) on_log_ = [fn, ctx](const std::string& text) { fn(text.c_str(), ctx); };
+    else    on_log_ = nullptr;
+}
+void RenderStreamClient::SetProfilingCallback(RS_OnProfiling fn, void* ctx) {
+    if (fn) on_profiling_ = [fn, ctx](const nlohmann::json& j) {
+        float frame_time = 0, gpu_time = 0, await_time = 0;
+        if (j.contains("entries") && j["entries"].is_array()) {
+            for (const auto& e : j["entries"]) {
+                std::string name = e.value("name", "");
+                if (name == "Frame Time")      frame_time = e.value("value", 0.0f);
+                else if (name == "GPU Time")   gpu_time  = e.value("value", 0.0f);
+                else if (name == "Await Time") await_time = e.value("value", 0.0f);
             }
-            RS_Profiling p;
-            p.frame_time_ms = frame_time;
-            p.gpu_time_ms   = gpu_time;
-            p.await_time_ms = await_time;
-            p.fps           = frame_time > 0.0f ? 1000.0f / frame_time : 0.0f;
-            fn(&p, data);
-        };
-    }
-    if (cb->on_build_params) {
-        auto fn = cb->on_build_params;
-        on_build_params_ = [fn, data](double t, std::vector<float>& vals) {
-            fn(t, vals.data(), static_cast<uint32_t>(vals.size()), data);
-        };
-    }
-    if (cb->on_build_texts) {
-        auto fn = cb->on_build_texts;
-        on_build_texts_ = [fn, data](double t, std::vector<std::string>& texts) {
-            std::vector<std::string> bufs(texts.size());
-            std::vector<char*> ptrs(texts.size());
-            for (size_t i = 0; i < texts.size(); ++i) {
-                bufs[i].assign(texts[i].begin(), texts[i].end());
-                bufs[i].resize(256, '\0');
-                ptrs[i] = bufs[i].data();
-            }
-            fn(t, ptrs.data(), static_cast<uint32_t>(ptrs.size()), data);
-            for (size_t i = 0; i < texts.size(); ++i)
-                texts[i] = ptrs[i];
-        };
-    }
-    if (cb->on_build_skeleton) {
-        auto fn = cb->on_build_skeleton;
-        on_build_skeleton_ = [fn, data](double t, std::vector<rs::skeleton_pose_data>& poses) {
-            if (poses.empty()) return;
-            auto& p = poses[0];
-            RS_SkeletonPose sp;
-            sp.layout_id      = p.layout_id;
-            sp.layout_version = p.layout_version;
-            sp.root_transform = p.root_transform;
-            sp.joint_count    = static_cast<uint32_t>(p.joints.size());
-            sp.joints         = p.joints.data();
-            fn(t, &sp, data);
-            p.root_transform = sp.root_transform;  // write back value changes
-        };
-    }
-    if (cb->on_build_cameras) {
-        auto fn = cb->on_build_cameras;
-        on_build_cameras_ = [fn, data](double t, std::vector<CameraData>& cams) {
-            fn(t, cams.data(), static_cast<uint32_t>(cams.size()), data);
-        };
-    }
+        }
+        RS_Profiling p;
+        p.frame_time_ms = frame_time;
+        p.gpu_time_ms   = gpu_time;
+        p.await_time_ms = await_time;
+        p.fps           = frame_time > 0.0f ? 1000.0f / frame_time : 0.0f;
+        fn(&p, ctx);
+    };
+    else on_profiling_ = nullptr;
+}
+void RenderStreamClient::SetBuildParamsCallback(RS_OnBuildParams fn, void* ctx) {
+    if (fn) on_build_params_ = [fn, ctx](double t, std::vector<float>& vals) {
+        fn(t, vals.data(), static_cast<uint32_t>(vals.size()), ctx);
+    };
+    else on_build_params_ = nullptr;
+}
+void RenderStreamClient::SetBuildTextsCallback(RS_OnBuildTexts fn, void* ctx) {
+    if (fn) on_build_texts_ = [fn, ctx](double t, std::vector<std::string>& texts) {
+        std::vector<std::string> bufs(texts.size());
+        std::vector<char*> ptrs(texts.size());
+        for (size_t i = 0; i < texts.size(); ++i) {
+            bufs[i].assign(texts[i].begin(), texts[i].end());
+            bufs[i].resize(256, '\0');
+            ptrs[i] = bufs[i].data();
+        }
+        fn(t, ptrs.data(), static_cast<uint32_t>(ptrs.size()), ctx);
+        for (size_t i = 0; i < texts.size(); ++i)
+            texts[i] = ptrs[i];
+    };
+    else on_build_texts_ = nullptr;
+}
+void RenderStreamClient::SetBuildSkeletonCallback(RS_OnBuildSkeleton fn, void* ctx) {
+    if (fn) on_build_skeleton_ = [fn, ctx](double t, std::vector<rs::skeleton_pose_data>& poses) {
+        if (poses.empty()) return;
+        auto& p = poses[0];
+        RS_SkeletonPose sp;
+        sp.layout_id      = p.layout_id;
+        sp.layout_version = p.layout_version;
+        sp.root_transform = p.root_transform;
+        sp.joint_count    = static_cast<uint32_t>(p.joints.size());
+        sp.joints         = p.joints.data();
+        fn(t, &sp, ctx);
+        p.root_transform = sp.root_transform;
+    };
+    else on_build_skeleton_ = nullptr;
+}
+void RenderStreamClient::SetBuildCamerasCallback(RS_OnBuildCameras fn, void* ctx) {
+    if (fn) on_build_cameras_ = [fn, ctx](double t, std::vector<CameraData>& cams) {
+        fn(t, cams.data(), static_cast<uint32_t>(cams.size()), ctx);
+    };
+    else on_build_cameras_ = nullptr;
 }
 
 // ============================================================

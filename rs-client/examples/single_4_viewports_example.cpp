@@ -378,19 +378,16 @@ int main(int argc, char* argv[]) {
 
         // 9. Set callbacks
         {
-            RS_Callbacks cb = {};
-            cb.on_build_params   = OnBuildParams;
-            cb.on_build_texts    = OnBuildTexts;
-            cb.on_build_skeleton = OnBuildSkeleton;
-            cb.on_frame_ack      = OnFrameAck;
-            cb.on_profiling      = OnProfiling;
-            cb.on_build_cameras  = [](double t, CameraData* cams, uint32_t n, void* ctx) {
+            client->SetBuildParamsCallback(OnBuildParams, nullptr);
+            client->SetBuildTextsCallback(OnBuildTexts, nullptr);
+            client->SetBuildSkeletonCallback(OnBuildSkeleton, nullptr);
+            client->SetFrameAckCallback(OnFrameAck, nullptr);
+            client->SetProfilingCallback(OnProfiling, nullptr);
+            client->SetBuildCamerasCallback([](double t, CameraData* cams, uint32_t n, void* ctx) {
                 auto* rigs = static_cast<std::vector<CameraRig>*>(ctx);
                 for (uint32_t i = 0; i < n && i < rigs->size(); ++i)
                     cams[i] = (*rigs)[i].Evaluate(t);
-            };
-            cb.userdata = &rigs;
-            client->SetCallbacks(&cb);
+            }, &rigs);
         }
 
         // 10. Connect and run tick loop

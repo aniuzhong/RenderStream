@@ -64,7 +64,6 @@ struct ClientLogCtx {
     std::shared_ptr<spdlog::logger> ue_log;
     std::shared_ptr<spdlog::logger> prof_out;
     std::shared_ptr<spdlog::logger> stat_out;
-    std::vector<CameraRig>* rigs = nullptr;
     int prof_counter = 0;
 };
 
@@ -141,11 +140,9 @@ static std::string LogDir() {
     return p.string();
 }
 
-static ClientLogCtx* SetupClientCallbacks(IRenderStreamClient* c, const char* tag,
-                                           std::vector<CameraRig>* rigs) {
+static ClientLogCtx* MakeClientLogContext(const char* tag) {
     auto dir = LogDir();
     auto* ctx = new ClientLogCtx();
-    ctx->rigs = rigs;
 
     ctx->frame_log = spdlog::basic_logger_mt(
         fmt::format("{}_frame", tag),
@@ -162,21 +159,6 @@ static ClientLogCtx* SetupClientCallbacks(IRenderStreamClient* c, const char* ta
 
     ctx->stat_out = spdlog::stdout_color_mt(fmt::format("{}_stat", tag));
     ctx->stat_out->set_pattern(fmt::format("[%n] %v"));
-
-    RS_Callbacks cb = {};
-    cb.on_frame_ack     = OnFrameAck;
-    cb.on_status        = OnStatus;
-    cb.on_log           = OnLog;
-    cb.on_profiling     = OnProfiling;
-    cb.on_build_cameras = [](double t, CameraData* cams, uint32_t n, void* ctx) {
-        auto* c = static_cast<ClientLogCtx*>(ctx);
-        if (c->rigs) {
-            for (uint32_t i = 0; i < n && i < c->rigs->size(); ++i)
-                cams[i] = (*c->rigs)[i].Evaluate(t);
-        }
-    };
-    cb.userdata = ctx;
-    c->SetCallbacks(&cb);
 
     return ctx;
 }
@@ -347,8 +329,18 @@ int main(int argc, char* argv[]) {
         c->SetCameras(nullptr, static_cast<uint32_t>(rigs.size()));
         c->SetSchemaHash(scene_hash);
         c->SetFps(kFps);
-        auto* ctx = SetupClientCallbacks(c, kNodes[i].name, &rigs);
+        auto* ctx = MakeClientLogContext(kNodes[i].name);
         log_ctxs.push_back(ctx);
+
+        c->SetFrameAckCallback(OnFrameAck, ctx);
+        c->SetStatusCallback(OnStatus, ctx);
+        c->SetLogCallback(OnLog, ctx);
+        c->SetProfilingCallback(OnProfiling, ctx);
+        c->SetBuildCamerasCallback([](double t, CameraData* cams, uint32_t n, void* ctx) {
+            auto* rigs = static_cast<std::vector<CameraRig>*>(ctx);
+            for (uint32_t i = 0; i < n && i < rigs->size(); ++i)
+                cams[i] = (*rigs)[i].Evaluate(t);
+        }, &rigs);
 
         fprintf(stderr, "[%s] connecting to %s:%d...\n",
                 kNodes[i].name, nodes[i].ip.c_str(), kTickPort);

@@ -38,7 +38,14 @@ public:
     void     SetFps(double fps) override;
     uint64_t SchemaHash() const override;
 
-    void SetCallbacks(const RS_Callbacks* cb) override;
+    void SetFrameAckCallback(RS_OnFrameAck fn, void* ctx) override;
+    void SetStatusCallback(RS_OnStatus fn, void* ctx) override;
+    void SetLogCallback(RS_OnLog fn, void* ctx) override;
+    void SetProfilingCallback(RS_OnProfiling fn, void* ctx) override;
+    void SetBuildParamsCallback(RS_OnBuildParams fn, void* ctx) override;
+    void SetBuildTextsCallback(RS_OnBuildTexts fn, void* ctx) override;
+    void SetBuildSkeletonCallback(RS_OnBuildSkeleton fn, void* ctx) override;
+    void SetBuildCamerasCallback(RS_OnBuildCameras fn, void* ctx) override;
 
     int  Connect(const char* host, int retries, int tick_port) override;
     void Disconnect() override;
@@ -84,8 +91,6 @@ private:
 
     double                  t_ = 0.0;
     int                     frame_seq_ = 0;
-
-    // -- std::function callbacks (wired from RS_Callbacks) --
 
     std::function<void(const CameraResponseData&)> on_frame_ack_;
     std::function<void(const std::string&)>        on_status_;

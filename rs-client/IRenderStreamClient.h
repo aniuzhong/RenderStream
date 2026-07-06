@@ -34,26 +34,15 @@ typedef struct {
 
 typedef int  (*RS_OnNodeDiscovered)(const char* name, const char* ip, int port, void* userdata);
 typedef void (*RS_OnSchemaLoaded)(const char* json, void* userdata);
-typedef void (*RS_OnFrameAckFn)(const CameraResponseData* ack, void* userdata);
-typedef void (*RS_OnStatusFn)(const char* text, void* userdata);
-typedef void (*RS_OnLogFn)(const char* text, void* userdata);
-typedef void (*RS_OnProfilingFn)(const RS_Profiling* p, void* userdata);
-typedef void (*RS_OnBuildParamsFn)(double t, float* values, uint32_t count, void* userdata);
-typedef void (*RS_OnBuildTextsFn)(double t, char** texts, uint32_t count, void* userdata);
-typedef void (*RS_OnBuildSkeletonFn)(double t, RS_SkeletonPose* pose, void* userdata);
-typedef void (*RS_OnBuildCamerasFn)(double t, CameraData* cameras, uint32_t count, void* userdata);
+typedef void (*RS_OnFrameAck)(const CameraResponseData* ack, void* userdata);
+typedef void (*RS_OnStatus)(const char* text, void* userdata);
+typedef void (*RS_OnLog)(const char* text, void* userdata);
+typedef void (*RS_OnProfiling)(const RS_Profiling* p, void* userdata);
+typedef void (*RS_OnBuildParams)(double t, float* values, uint32_t count, void* userdata);
+typedef void (*RS_OnBuildTexts)(double t, char** texts, uint32_t count, void* userdata);
+typedef void (*RS_OnBuildSkeleton)(double t, RS_SkeletonPose* pose, void* userdata);
+typedef void (*RS_OnBuildCameras)(double t, CameraData* cameras, uint32_t count, void* userdata);
 
-typedef struct {
-    RS_OnFrameAckFn      on_frame_ack;
-    RS_OnStatusFn        on_status;
-    RS_OnLogFn           on_log;
-    RS_OnProfilingFn     on_profiling;
-    RS_OnBuildParamsFn   on_build_params;
-    RS_OnBuildTextsFn    on_build_texts;
-    RS_OnBuildSkeletonFn on_build_skeleton;
-    RS_OnBuildCamerasFn  on_build_cameras;
-    void*                userdata;
-} RS_Callbacks;
 
 class IRenderStreamClient {
 public:
@@ -66,8 +55,7 @@ public:
 
     // Project
 
-    virtual int LoadSchema(const char* host, int port, const char* project_path,
-                           RS_OnSchemaLoaded on_schema, void* userdata) = 0;
+    virtual int LoadSchema(const char* host, int port, const char* project_path, RS_OnSchemaLoaded on_schema, void* userdata) = 0;
 
     // Session
 
@@ -85,21 +73,26 @@ public:
     virtual uint64_t SchemaHash() const = 0;
     virtual void     SetFps(double fps) = 0;
 
-    // -- Callbacks ------------------------------
+    // Callbacks
 
-    virtual void SetCallbacks(const RS_Callbacks* cb) = 0;
+    virtual void SetFrameAckCallback(RS_OnFrameAck fn, void* ctx) = 0;
+    virtual void SetStatusCallback(RS_OnStatus fn, void* ctx) = 0;
+    virtual void SetLogCallback(RS_OnLog fn, void* ctx) = 0;
+    virtual void SetProfilingCallback(RS_OnProfiling fn, void* ctx) = 0;
+    virtual void SetBuildParamsCallback(RS_OnBuildParams fn, void* ctx) = 0;
+    virtual void SetBuildTextsCallback(RS_OnBuildTexts fn, void* ctx) = 0;
+    virtual void SetBuildSkeletonCallback(RS_OnBuildSkeleton fn, void* ctx) = 0;
+    virtual void SetBuildCamerasCallback(RS_OnBuildCameras fn, void* ctx) = 0;
 
-    // -- Connection & Run -----------------------
+    // Connection & Run
 
     virtual int  Connect(const char* host, int retries, int tick_port) = 0;
     virtual void Disconnect() = 0;
-    virtual void Run() = 0;      // blocking tick loop
-    virtual void Stop() = 0;     // thread-safe stop signal
+    virtual void Run() = 0;
+    virtual void Stop() = 0;
     virtual int  GetState() = 0;
     virtual void FreeString(char* str) = 0;
 };
-
-// -- Factory (only two exported symbols — no name mangling) ------------
 
 extern "C" {
     __declspec(dllexport) IRenderStreamClient* CreateRenderStreamClient();
