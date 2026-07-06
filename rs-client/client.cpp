@@ -324,26 +324,10 @@ uint64_t RenderStreamClient::SchemaHash() const {
     return SchemaHash(0);
 }
 
-void RenderStreamClient::SetRigs(const RS_CameraRig* rigs, uint32_t count) {
-    rigs_.clear();
-    for (uint32_t i = 0; i < count; ++i) {
-        const auto& cr = rigs[i];
-        CameraRig rig;
-        rig.SetSensorSize(cr.sensor_w, cr.sensor_h);
-        rig.SetLoop(cr.loop != 0);
-        for (uint32_t k = 0; k < cr.keyframe_count; ++k) {
-            const auto& kf = cr.keyframes[k];
-            rig.AddSample(kf.t,
-                          static_cast<double>(kf.x),
-                          static_cast<double>(kf.y),
-                          static_cast<double>(kf.z),
-                          static_cast<double>(kf.rx),
-                          static_cast<double>(kf.ry),
-                          static_cast<double>(kf.rz),
-                          static_cast<double>(kf.fov));
-        }
-        rigs_.push_back(std::move(rig));
-    }
+void RenderStreamClient::SetCameras(const CameraData* cameras, uint32_t count) {
+    cameras_.resize(count);
+    if (count && cameras)
+        memcpy(cameras_.data(), cameras, count * sizeof(CameraData));
 }
 
 void RenderStreamClient::SetParams(const float* values, uint32_t count) {
@@ -478,6 +462,12 @@ void RenderStreamClient::SetCallbacks(const RS_Callbacks* cb) {
             sp.joints         = p.joints.data();
             fn(t, &sp, data);
             p.root_transform = sp.root_transform;  // write back value changes
+        };
+    }
+    if (cb->on_build_cameras) {
+        auto fn = cb->on_build_cameras;
+        on_build_cameras_ = [fn, data](double t, std::vector<CameraData>& cams) {
+            fn(t, cams.data(), static_cast<uint32_t>(cams.size()), data);
         };
     }
 }
@@ -629,14 +619,12 @@ void RenderStreamClient::on_recv(const std::error_code& ec, size_t /*n*/) {
 }
 
 void RenderStreamClient::build_and_send(double t) {
-    last_cameras_.clear();
-    for (auto& rig : rigs_) {
-        if (!rig.IsEmpty())
-            last_cameras_.push_back(rig.Evaluate(t));
-    }
+    std::vector<CameraData> frame_cameras = cameras_;
+    if (on_build_cameras_)
+        on_build_cameras_(t, frame_cameras);
 
-    for (size_t i = 0; i < last_cameras_.size(); ++i)
-        last_cameras_[i].id = static_cast<uint64_t>(i + 1);
+    for (size_t i = 0; i < frame_cameras.size(); ++i)
+        frame_cameras[i].id = static_cast<uint64_t>(i + 1);
 
     if (on_build_params_)
         on_build_params_(t, param_values_);
@@ -650,7 +638,7 @@ void RenderStreamClient::build_and_send(double t) {
     req.scene        = 0;
     req.flags        = 0;
     req.schema_hash  = schema_hash_;
-    req.cameras      = last_cameras_;
+    req.cameras      = frame_cameras;
     req.param_values = param_values_;
     req.text_values  = text_values_;
     req.skel_layout  = skel_layout_;

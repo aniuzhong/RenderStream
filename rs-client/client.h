@@ -10,7 +10,6 @@
 
 #include "IRenderStreamClient.h"
 #include "d3renderstream.hpp"
-#include "camera_rig.h"
 
 class RenderStreamClient : public IRenderStreamClient {
 public:
@@ -33,7 +32,7 @@ public:
     int  LaunchUnrealEditor(const char* host, int port, const char* config_json) override;
     int  KillUnrealEditor(const char* host, int port, int pid) override;
 
-    void     SetRigs(const RS_CameraRig* rigs, uint32_t count) override;
+    void     SetCameras(const CameraData* cameras, uint32_t count) override;
     void     SetParams(const float* values, uint32_t count) override;
     void     SetTexts(const char* const* values, uint32_t count) override;
     void     SetSkeleton(const RS_SkeletonLayout* layout,
@@ -73,7 +72,7 @@ private:
 
     rs::schema schema_;
 
-    std::vector<CameraRig>              rigs_;
+    std::vector<CameraData>              cameras_;
     uint64_t                            schema_hash_ = 0;
     std::vector<float>                  param_values_;
     std::vector<std::string>            text_values_;
@@ -90,7 +89,6 @@ private:
 
     double                  t_ = 0.0;
     int                     frame_seq_ = 0;
-    std::vector<CameraData> last_cameras_;
 
     // -- std::function callbacks (wired from RS_Callbacks) --
 
@@ -101,4 +99,5 @@ private:
     std::function<void(double, std::vector<float>&)>                  on_build_params_;
     std::function<void(double, std::vector<std::string>&)>            on_build_texts_;
     std::function<void(double, std::vector<rs::skeleton_pose_data>&)> on_build_skeleton_;
+    std::function<void(double, std::vector<CameraData>&)>             on_build_cameras_;
 };

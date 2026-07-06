@@ -15,21 +15,6 @@ typedef struct {
 } RS_Status;
 
 typedef struct {
-    double t;
-    float  x, y, z;
-    float  rx, ry, rz;
-    float  fov;
-} RS_Keyframe;
-
-typedef struct {
-    RS_Keyframe* keyframes;
-    uint32_t    keyframe_count;
-    int         sensor_w;
-    int         sensor_h;
-    int         loop;       // 0=clamp  1=loop
-} RS_CameraRig;
-
-typedef struct {
     float frame_time_ms;
     float gpu_time_ms;
     float await_time_ms;
@@ -56,6 +41,7 @@ typedef void (*RS_OnProfilingFn)(const RS_Profiling* p, void* userdata);
 typedef void (*RS_OnBuildParamsFn)(double t, float* values, uint32_t count, void* userdata);
 typedef void (*RS_OnBuildTextsFn)(double t, char** texts, uint32_t count, void* userdata);
 typedef void (*RS_OnBuildSkeletonFn)(double t, RS_SkeletonPose* pose, void* userdata);
+typedef void (*RS_OnBuildCamerasFn)(double t, CameraData* cameras, uint32_t count, void* userdata);
 
 typedef struct {
     RS_OnFrameAckFn      on_frame_ack;
@@ -65,7 +51,8 @@ typedef struct {
     RS_OnBuildParamsFn   on_build_params;
     RS_OnBuildTextsFn    on_build_texts;
     RS_OnBuildSkeletonFn on_build_skeleton;
-    void*               userdata;
+    RS_OnBuildCamerasFn  on_build_cameras;
+    void*                userdata;
 } RS_Callbacks;
 
 class IRenderStreamClient {
@@ -89,12 +76,12 @@ public:
     virtual int  LaunchUnrealEditor(const char* host, int port, const char* config_json) = 0;
     virtual int  KillUnrealEditor(const char* host, int port, int pid) = 0;
 
-    // -- Frame data -----------------------------
+    // Frame data
 
-    virtual void SetRigs(const RS_CameraRig* rigs, uint32_t count) = 0;
-    virtual void SetParams(const float* values, uint32_t count) = 0;
-    virtual void SetTexts(const char* const* values, uint32_t count) = 0;
-    virtual void SetSkeleton(const RS_SkeletonLayout* layout, const char* const* joint_names, const RS_SkeletonPose* pose) = 0;
+    virtual void     SetCameras(const CameraData* cameras, uint32_t count) = 0;
+    virtual void     SetParams(const float* values, uint32_t count) = 0;
+    virtual void     SetTexts(const char* const* values, uint32_t count) = 0;
+    virtual void     SetSkeleton(const RS_SkeletonLayout* layout, const char* const* joint_names, const RS_SkeletonPose* pose) = 0;
     virtual void     SetSchemaHash(uint64_t hash) = 0;
     virtual uint64_t SchemaHash() const = 0;
     virtual void     SetFps(double fps) = 0;

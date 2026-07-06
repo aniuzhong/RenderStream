@@ -14,7 +14,6 @@ target_link_libraries(ndisplay_gen PUBLIC nlohmann_json::nlohmann_json)
 # rs_client shared library (DLL)
 add_library(rs_client SHARED
     client.cpp
-    camera_rig.cpp
 )
 target_include_directories(rs_client PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -37,10 +36,12 @@ target_link_libraries(node_probe_example PRIVATE rs_client)
 
 add_executable(single_4_viewports_example
     examples/single_4_viewports_example.cpp
+    examples/camera_rig.cpp
 )
 target_link_libraries(single_4_viewports_example PRIVATE rs_client ndisplay_gen)
 
 add_executable(cluster_example
     examples/cluster_example.cpp
+    examples/camera_rig.cpp
 )
 target_link_libraries(cluster_example PRIVATE rs_client ndisplay_gen)

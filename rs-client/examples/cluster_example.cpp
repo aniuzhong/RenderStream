@@ -25,6 +25,7 @@
 #include <spdlog/sinks/stdout_color_sinks.h>
 #include <spdlog/spdlog.h>
 
+#include "camera_rig.h"
 #include "IRenderStreamClient.h"
 #include "ndisplay-gen/model.h"
 #include "ndisplay-gen/serialize.h"
@@ -63,6 +64,7 @@ struct ClientLogCtx {
     std::shared_ptr<spdlog::logger> ue_log;
     std::shared_ptr<spdlog::logger> prof_out;
     std::shared_ptr<spdlog::logger> stat_out;
+    std::vector<CameraRig>* rigs = nullptr;
     int prof_counter = 0;
 };
 
@@ -100,33 +102,30 @@ static int OnNodeDiscovered(const char* name, const char* ip, int port, void* us
 
 // ── Camera rigs ────────────────────────────────────────────────────────
 
-static std::vector<RS_CameraRig> BuildCameraRigs() {
-    static RS_Keyframe kf0[] = {
-        {0.0, -2.94f, 1.50f, -7.69f,  0.0f,   0.0f, 0.0f, 90.0f},
-        {3.0,  2.00f, 1.50f, -7.69f,  0.0f,   0.0f, 0.0f, 90.0f},
-        {6.0, -2.94f, 1.50f, -7.69f,  0.0f,   0.0f, 0.0f, 90.0f},
-    };
-    static RS_Keyframe kf1[] = {
-        {0.0,  5.71f, 1.36f,  6.50f,  0.0f, 179.71f, 0.0f, 90.0f},
-        {3.0, -5.59f, 1.36f,  6.50f,  0.0f, 179.71f, 0.0f, 90.0f},
-        {6.0,  5.71f, 1.36f,  6.50f,  0.0f, 179.71f, 0.0f, 90.0f},
-    };
-    static RS_Keyframe kf2[] = {
-        {0.0, -11.395f, 8.30f,  7.40f, -20.0f, 84.1f, 0.0f, 90.0f},
-        {3.0, -11.395f, 8.30f, -5.00f, -20.0f, 84.1f, 0.0f, 90.0f},
-        {6.0, -11.395f, 8.30f,  7.40f, -20.0f, 84.1f, 0.0f, 90.0f},
-    };
-    static RS_Keyframe kf3[] = {
-        {0.0, 12.40f, 7.70f, -8.60f, -30.0f, -90.0f, 0.0f, 90.0f},
-        {3.0, 12.40f, 7.70f,  7.00f, -30.0f, -90.0f, 0.0f, 90.0f},
-        {6.0, 12.40f, 7.70f, -8.60f, -30.0f, -90.0f, 0.0f, 90.0f},
+static std::vector<CameraRig> BuildCameraRigs() {
+    struct Track { double t, x, y, z, rx, ry, rz, fov; };
+    static const Track kTracks[][3] = {
+        {{0.0, -2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0},
+         {3.0,  2.00, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0},
+         {6.0, -2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0}},
+        {{0.0,  5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0},
+         {3.0, -5.59, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0},
+         {6.0,  5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0}},
+        {{0.0, -11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0},
+         {3.0, -11.395, 8.30, -5.00, -20.0, 84.1, 0.0, 90.0},
+         {6.0, -11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0}},
+        {{0.0, 12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0},
+         {3.0, 12.40, 7.70,  7.00, -30.0, -90.0, 0.0, 90.0},
+         {6.0, 12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0}},
     };
 
-    std::vector<RS_CameraRig> rigs(4);
-    rigs[0] = {kf0, 3, 1920, 1080, 1};
-    rigs[1] = {kf1, 3, 1920, 1080, 1};
-    rigs[2] = {kf2, 3, 1920, 1080, 1};
-    rigs[3] = {kf3, 3, 1920, 1080, 1};
+    std::vector<CameraRig> rigs(4);
+    for (int i = 0; i < 4; ++i) {
+        rigs[i].SetLoop(true);
+        rigs[i].SetSensorSize(1920, 1080);
+        for (const auto& k : kTracks[i])
+            rigs[i].AddSample(k.t, k.x, k.y, k.z, k.rx, k.ry, k.rz, k.fov);
+    }
     return rigs;
 }
 
@@ -142,9 +141,11 @@ static std::string LogDir() {
     return p.string();
 }
 
-static ClientLogCtx* SetupClientCallbacks(IRenderStreamClient* c, const char* tag) {
+static ClientLogCtx* SetupClientCallbacks(IRenderStreamClient* c, const char* tag,
+                                           std::vector<CameraRig>* rigs) {
     auto dir = LogDir();
     auto* ctx = new ClientLogCtx();
+    ctx->rigs = rigs;
 
     ctx->frame_log = spdlog::basic_logger_mt(
         fmt::format("{}_frame", tag),
@@ -163,11 +164,18 @@ static ClientLogCtx* SetupClientCallbacks(IRenderStreamClient* c, const char* ta
     ctx->stat_out->set_pattern(fmt::format("[%n] %v"));
 
     RS_Callbacks cb = {};
-    cb.on_frame_ack = OnFrameAck;
-    cb.on_status    = OnStatus;
-    cb.on_log       = OnLog;
-    cb.on_profiling = OnProfiling;
-    cb.userdata     = ctx;
+    cb.on_frame_ack     = OnFrameAck;
+    cb.on_status        = OnStatus;
+    cb.on_log           = OnLog;
+    cb.on_profiling     = OnProfiling;
+    cb.on_build_cameras = [](double t, CameraData* cams, uint32_t n, void* ctx) {
+        auto* c = static_cast<ClientLogCtx*>(ctx);
+        if (c->rigs) {
+            for (uint32_t i = 0; i < n && i < c->rigs->size(); ++i)
+                cams[i] = (*c->rigs)[i].Evaluate(t);
+        }
+    };
+    cb.userdata = ctx;
     c->SetCallbacks(&cb);
 
     return ctx;
@@ -339,12 +347,12 @@ int main(int argc, char* argv[]) {
     for (int i = 0; i < 2; ++i) {
         if (pids[i] == 0) continue;
         auto* c = CreateRenderStreamClient();
-        c->SetRigs(rigs.data(), static_cast<uint32_t>(rigs.size()));
+        c->SetCameras(nullptr, static_cast<uint32_t>(rigs.size()));
         c->SetSchemaHash(scene_hash);
         c->SetParams(param_values, pv_count);
         c->SetFps(kFps);
 
-        auto* ctx = SetupClientCallbacks(c, kNodes[i].name);
+        auto* ctx = SetupClientCallbacks(c, kNodes[i].name, &rigs);
         log_ctxs.push_back(ctx);
 
         fprintf(stderr, "[%s] connecting to %s:%d...\n",

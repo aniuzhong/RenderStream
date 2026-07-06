@@ -22,6 +22,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "camera_rig.h"
 #include "IRenderStreamClient.h"
 #include "ndisplay-gen/model.h"
 #include "ndisplay-gen/serialize.h"
@@ -66,42 +67,32 @@ static int CameraIndex(const std::string& channel) {
 
 // -- Camera rigs --------------------------------------------------------
 
-static std::vector<RS_CameraRig> BuildCameraRigs(const std::vector<Viewport>& vps) {
-    static RS_Keyframe kf0[] = {
-        {0, -2.94f,   1.50f, -7.69f,   0.0f,   0.0f, 0, 90},
-        {3,  2.00f,   1.50f, -7.69f,   0.0f,   0.0f, 0, 90},
-        {6, -2.94f,   1.50f, -7.69f,   0.0f,   0.0f, 0, 90},
-    };
-    static RS_Keyframe kf1[] = {
-        {0,  5.71f,   1.36f,  6.50f,   0.0f, 179.71f, 0, 90},
-        {3, -5.59f,   1.36f,  6.50f,   0.0f, 179.71f, 0, 90},
-        {6,  5.71f,   1.36f,  6.50f,   0.0f, 179.71f, 0, 90},
-    };
-    static RS_Keyframe kf2[] = {
-        {0, -11.395f, 8.30f,  7.40f, -20.0f,  84.1f,  0, 90},
-        {3, -11.395f, 8.30f, -5.00f, -20.0f,  84.1f,  0, 90},
-        {6, -11.395f, 8.30f,  7.40f, -20.0f,  84.1f,  0, 90},
-    };
-    static RS_Keyframe kf3[] = {
-        {0, 12.40f,   7.70f, -8.60f, -30.0f, -90.0f,  0, 90},
-        {3, 12.40f,   7.70f,  7.00f, -30.0f, -90.0f,  0, 90},
-        {6, 12.40f,   7.70f, -8.60f, -30.0f, -90.0f,  0, 90},
+static std::vector<CameraRig> BuildCameraRigs(const std::vector<Viewport>& vps) {
+    struct Track { double t, x, y, z, rx, ry, rz, fov; };
+    static const Track kTracks[][3] = {
+        { {0, -2.94,   1.50, -7.69,   0.0,   0.0, 0, 90},
+          {3,  2.00,   1.50, -7.69,   0.0,   0.0, 0, 90},
+          {6, -2.94,   1.50, -7.69,   0.0,   0.0, 0, 90} },
+        { {0,  5.71,   1.36,  6.50,   0.0, 179.71, 0, 90},
+          {3, -5.59,   1.36,  6.50,   0.0, 179.71, 0, 90},
+          {6,  5.71,   1.36,  6.50,   0.0, 179.71, 0, 90} },
+        { {0, -11.395, 8.30,  7.40, -20.0,  84.1,  0, 90},
+          {3, -11.395, 8.30, -5.00, -20.0,  84.1,  0, 90},
+          {6, -11.395, 8.30,  7.40, -20.0,  84.1,  0, 90} },
+        { {0, 12.40,   7.70, -8.60, -30.0, -90.0,  0, 90},
+          {3, 12.40,   7.70,  7.00, -30.0, -90.0,  0, 90},
+          {6, 12.40,   7.70, -8.60, -30.0, -90.0,  0, 90} },
     };
 
-    std::vector<RS_CameraRig> rigs;
+    std::vector<CameraRig> rigs;
     for (const auto& vp : vps) {
-        int idx = CameraIndex(vp.channel);
-        RS_CameraRig r;
-        r.sensor_w = vp.w;
-        r.sensor_h = vp.h;
-        r.loop = 1;
-        switch (idx % 4) {
-        case 0: r.keyframes = kf0; r.keyframe_count = 3; break;
-        case 1: r.keyframes = kf1; r.keyframe_count = 3; break;
-        case 2: r.keyframes = kf2; r.keyframe_count = 3; break;
-        case 3: r.keyframes = kf3; r.keyframe_count = 3; break;
-        }
-        rigs.push_back(r);
+        CameraRig rig;
+        rig.SetLoop(true);
+        rig.SetSensorSize(vp.w, vp.h);
+        const auto& t = kTracks[CameraIndex(vp.channel) % 4];
+        for (const auto& k : t)
+            rig.AddSample(k.t, k.x, k.y, k.z, k.rx, k.ry, k.rz, k.fov);
+        rigs.push_back(rig);
     }
     return rigs;
 }
@@ -355,7 +346,8 @@ int main(int argc, char* argv[]) {
         fflush(stderr);
 
         // 8. Frame data
-        client->SetRigs(rigs.data(), static_cast<uint32_t>(rigs.size()));
+        client->SetCameras(nullptr, static_cast<uint32_t>(rigs.size()));
+        // CameraRig evaluation is done in on_build_cameras callback below
         client->SetSchemaHash(scene_hash);
         client->SetParams(param_values, pv_count);
         const char* text_init[] = {""};
@@ -397,7 +389,12 @@ int main(int argc, char* argv[]) {
             cb.on_build_skeleton = OnBuildSkeleton;
             cb.on_frame_ack      = OnFrameAck;
             cb.on_profiling      = OnProfiling;
-            cb.userdata          = nullptr;
+            cb.on_build_cameras  = [](double t, CameraData* cams, uint32_t n, void* ctx) {
+                auto* rigs = static_cast<std::vector<CameraRig>*>(ctx);
+                for (uint32_t i = 0; i < n && i < rigs->size(); ++i)
+                    cams[i] = (*rigs)[i].Evaluate(t);
+            };
+            cb.userdata = &rigs;
             client->SetCallbacks(&cb);
         }
 
