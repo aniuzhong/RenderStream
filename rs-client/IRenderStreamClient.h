@@ -71,19 +71,19 @@ class IRenderStreamClient {
 public:
     virtual ~IRenderStreamClient() = default;
 
-    // Discovery
+    // Node
 
-    virtual int Discover(int timeout_ms, RS_OnNodeDiscovered on_node, void* userdata) = 0;
-
-    // -- Queries --------------------------------
-
+    virtual int   Discover(int timeout_ms, RS_OnNodeDiscovered on_node, void* userdata) = 0;
     virtual int   Health(const char* host, int port) = 0;
     virtual char* GetNodeInfo(const char* host, int port) = 0;
-    virtual char* GetSchema(const char* host, int port, const char* project_path) = 0;
-    virtual int   GetSessionStatus(const char* host, int port, RS_Status* out) = 0;
 
-    // -- Session --------------------------------
+    // Project
 
+    virtual char* LoadSchema(const char* host, int port, const char* project_path) = 0;
+
+    // Session
+
+    virtual int  GetSessionStatus(const char* host, int port, RS_Status* out) = 0;
     virtual int  LaunchUE(const char* host, int port, const char* config_json) = 0;
     virtual int  KillUE(const char* host, int port, int pid) = 0;
 
@@ -92,9 +92,7 @@ public:
     virtual void SetRigs(const RS_CameraRig* rigs, uint32_t count) = 0;
     virtual void SetParams(const float* values, uint32_t count) = 0;
     virtual void SetTexts(const char* const* values, uint32_t count) = 0;
-    virtual void SetSkeleton(const RS_SkeletonLayout* layout,
-                             const char* const* joint_names,
-                             const RS_SkeletonPose* pose) = 0;
+    virtual void SetSkeleton(const RS_SkeletonLayout* layout, const char* const* joint_names, const RS_SkeletonPose* pose) = 0;
     virtual void     SetSchemaHash(uint64_t hash) = 0;
     virtual uint64_t SchemaHash() const = 0;
     virtual void     SetFps(double fps) = 0;

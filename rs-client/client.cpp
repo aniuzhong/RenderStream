@@ -179,7 +179,7 @@ char* RenderStreamClient::GetNodeInfo(const char* host, int port) {
     return _strdup(res->body.c_str());
 }
 
-char* RenderStreamClient::GetSchema(const char* host, int port, const char* project_path) {
+char* RenderStreamClient::LoadSchema(const char* host, int port, const char* project_path) {
     std::string url = "/api/renderstream/schema?project=" + std::string(project_path);
     auto res = MakeClient(host, port).Get(url.c_str());
     if (!res || res->status != 200)

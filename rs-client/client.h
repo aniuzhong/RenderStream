@@ -26,7 +26,7 @@ public:
 
     int    Health(const char* host, int port) override;
     char*  GetNodeInfo(const char* host, int port) override;
-    char*  GetSchema(const char* host, int port, const char* project_path) override;
+    char*  LoadSchema(const char* host, int port, const char* project_path) override;
     int    GetSessionStatus(const char* host, int port, RS_Status* out) override;
 
     int  LaunchUE(const char* host, int port, const char* config_json) override;

@@ -265,7 +265,7 @@ int main(int argc, char* argv[]) {
     // 2. Schema
     fprintf(stderr, "Querying schema from %s...\n", nodes[0].name.c_str());
     auto* schema_cli = CreateRenderStreamClient();
-    char* schema_json = schema_cli->GetSchema(nodes[0].ip.c_str(), nodes[0].port, kNodes[0].project_path);
+    char* schema_json = schema_cli->LoadSchema(nodes[0].ip.c_str(), nodes[0].port, kNodes[0].project_path);
     if (!schema_json) {
         fprintf(stderr, "  schema not found\n");
         DestroyRenderStreamClient(schema_cli);

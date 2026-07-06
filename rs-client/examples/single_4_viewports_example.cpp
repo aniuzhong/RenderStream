@@ -283,7 +283,7 @@ int main(int argc, char* argv[]) {
         auto vps = BuildViewports(screen_w, screen_h);
 
         // 3. Query schema + build defaults
-        char* schema_json = client->GetSchema(host, port, kProjectPath);
+        char* schema_json = client->LoadSchema(host, port, kProjectPath);
         if (!schema_json) continue;
 
         auto schema = nlohmann::json::parse(schema_json);

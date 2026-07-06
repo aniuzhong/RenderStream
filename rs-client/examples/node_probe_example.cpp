@@ -72,7 +72,7 @@ int main(int argc, char* argv[]) {
         }
 
         // Schema
-        char* schema_json = client->GetSchema(host, port, project_path);
+        char* schema_json = client->LoadSchema(host, port, project_path);
         if (schema_json) {
             auto schema = nlohmann::json::parse(schema_json);
             auto channels = schema.value("channels", nlohmann::json::array());
