@@ -73,7 +73,13 @@ public:
     virtual int  GetState() = 0;
 };
 
+#ifdef RENDER_STREAM_CLIENT_EXPORTS
+  #define RENDER_STREAM_CLIENT_API __declspec(dllexport)
+#else
+  #define RENDER_STREAM_CLIENT_API __declspec(dllimport)
+#endif
+
 extern "C" {
-    __declspec(dllexport) IRenderStreamClient* CreateRenderStreamClient();
-    __declspec(dllexport) void DestroyRenderStreamClient(IRenderStreamClient*);
+RENDER_STREAM_CLIENT_API IRenderStreamClient* CreateRenderStreamClient();
+RENDER_STREAM_CLIENT_API void DestroyRenderStreamClient(IRenderStreamClient*);
 }

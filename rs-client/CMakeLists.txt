@@ -19,6 +19,7 @@ target_include_directories(rs_client PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/common
 )
+target_compile_definitions(rs_client PRIVATE RENDER_STREAM_CLIENT_EXPORTS)
 target_link_libraries(rs_client PUBLIC
     nlohmann_json::nlohmann_json
     httplib::httplib
