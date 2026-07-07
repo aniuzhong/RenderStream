@@ -1,6 +1,6 @@
 #pragma once
 
-#include "d3renderstream.hpp"
+#include "renderstream.hpp"
 
 #include <map>
 #include <string>

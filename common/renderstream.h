@@ -1,5 +1,5 @@
-#ifndef D3RENDERSTREAM_H
-#define D3RENDERSTREAM_H
+#ifndef RENDERSTREAM_H
+#define RENDERSTREAM_H
 
 #include <stdint.h>
 
@@ -329,7 +329,7 @@ typedef struct
 
 #pragma pack(pop)
 
-#define D3_RENDER_STREAM_API __declspec( dllexport )
+#define RENDER_STREAM_API __declspec( dllexport )
 
 #define RENDER_STREAM_VERSION_MAJOR 2
 #define RENDER_STREAM_VERSION_MINOR 0
@@ -387,51 +387,51 @@ typedef struct
 } SkeletonPose;
 
 // isolated functions, do not require init prior to use
-extern "C" D3_RENDER_STREAM_API void rs_registerLoggingFunc(logger_t logger);
-extern "C" D3_RENDER_STREAM_API void rs_registerErrorLoggingFunc(logger_t logger);
-extern "C" D3_RENDER_STREAM_API void rs_registerVerboseLoggingFunc(logger_t logger);
+extern "C" RENDER_STREAM_API void rs_registerLoggingFunc(logger_t logger);
+extern "C" RENDER_STREAM_API void rs_registerErrorLoggingFunc(logger_t logger);
+extern "C" RENDER_STREAM_API void rs_registerVerboseLoggingFunc(logger_t logger);
 
-extern "C" D3_RENDER_STREAM_API void rs_unregisterLoggingFunc();
-extern "C" D3_RENDER_STREAM_API void rs_unregisterErrorLoggingFunc();
-extern "C" D3_RENDER_STREAM_API void rs_unregisterVerboseLoggingFunc();
+extern "C" RENDER_STREAM_API void rs_unregisterLoggingFunc();
+extern "C" RENDER_STREAM_API void rs_unregisterErrorLoggingFunc();
+extern "C" RENDER_STREAM_API void rs_unregisterVerboseLoggingFunc();
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor, int expectedVersionMinor);
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithoutInterop(ID3D11Device* device);
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX11Device(ID3D11Device* device);
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX11Resource(ID3D11Resource* resource);
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX12DeviceAndQueue(ID3D12Device* device, ID3D12CommandQueue* queue);
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithOpenGlContexts(HGLRC glContext, HDC deviceContext);
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithVulkanDevice(VkDevice device);
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_shutdown();
+extern "C" RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor, int expectedVersionMinor);
+extern "C" RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithoutInterop(ID3D11Device* device);
+extern "C" RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX11Device(ID3D11Device* device);
+extern "C" RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX11Resource(ID3D11Resource* resource);
+extern "C" RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX12DeviceAndQueue(ID3D12Device* device, ID3D12CommandQueue* queue);
+extern "C" RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithOpenGlContexts(HGLRC glContext, HDC deviceContext);
+extern "C" RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithVulkanDevice(VkDevice device);
+extern "C" RENDER_STREAM_API RS_ERROR rs_shutdown();
 
 // non-isolated functions, these require init prior to use
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_useDX12SharedHeapFlag(UseDX12SharedHeapFlag * flag);
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_saveSchema(const char* assetPath, Schema* schema); // Save schema for project file/custom executable at (assetPath)
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_loadSchema(const char* assetPath, /*Out*/Schema* schema, /*InOut*/uint32_t* nBytes); // Load schema for project file/custom executable at (assetPath) into a buffer of size (nBytes) starting at (schema)
+extern "C" RENDER_STREAM_API RS_ERROR rs_useDX12SharedHeapFlag(UseDX12SharedHeapFlag * flag);
+extern "C" RENDER_STREAM_API RS_ERROR rs_saveSchema(const char* assetPath, Schema* schema); // Save schema for project file/custom executable at (assetPath)
+extern "C" RENDER_STREAM_API RS_ERROR rs_loadSchema(const char* assetPath, /*Out*/Schema* schema, /*InOut*/uint32_t* nBytes); // Load schema for project file/custom executable at (assetPath) into a buffer of size (nBytes) starting at (schema)
 
 // workload functions, these require the process to be running inside d3's asset launcher environment
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_setSchema(/*InOut*/Schema* schema); // Set schema and fill in per-scene hash for use with rs_getFrameParameters
+extern "C" RENDER_STREAM_API RS_ERROR rs_setSchema(/*InOut*/Schema* schema); // Set schema and fill in per-scene hash for use with rs_getFrameParameters
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getStreams(/*Out*/StreamDescriptions* streams, /*InOut*/uint32_t* nBytes); // Populate streams into a buffer of size (nBytes) starting at (streams)
+extern "C" RENDER_STREAM_API RS_ERROR rs_getStreams(/*Out*/StreamDescriptions* streams, /*InOut*/uint32_t* nBytes); // Populate streams into a buffer of size (nBytes) starting at (streams)
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_awaitFrameData(int timeoutMs, /*Out*/FrameData * data);  // waits for any asset, any stream to request a frame, provides the parameters for that frame.
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_setFollower(int isFollower); // Used to mark this node as relying on alternative mechanisms to distribute FrameData. Users must provide correct CameraResponseData to sendFrame, and call rs_beginFollowerFrame at the start of the frame, where awaitFrame would normally be called.
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_beginFollowerFrame(double tTracked); // Pass the engine-distributed tTracked value in, if you have called rs_setFollower(1) otherwise do not call this function.
+extern "C" RENDER_STREAM_API RS_ERROR rs_awaitFrameData(int timeoutMs, /*Out*/FrameData * data);  // waits for any asset, any stream to request a frame, provides the parameters for that frame.
+extern "C" RENDER_STREAM_API RS_ERROR rs_setFollower(int isFollower); // Used to mark this node as relying on alternative mechanisms to distribute FrameData. Users must provide correct CameraResponseData to sendFrame, and call rs_beginFollowerFrame at the start of the frame, where awaitFrame would normally be called.
+extern "C" RENDER_STREAM_API RS_ERROR rs_beginFollowerFrame(double tTracked); // Pass the engine-distributed tTracked value in, if you have called rs_setFollower(1) otherwise do not call this function.
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameParameters(uint64_t schemaHash, /*Out*/void* outParameterData, uint64_t outParameterDataSize);  // returns the remote parameters for this frame.
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameImageData(uint64_t schemaHash, /*Out*/ImageFrameData* outParameterData, uint64_t outParameterDataCount);  // returns the remote image data for this frame.
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameImage2(int64_t imageId, /*InOut*/ const SenderFrame* frame); // fills in (data) with the remote image
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameText(uint64_t schemaHash, uint32_t textParamIndex, /*Out*/const char** outTextPtr); // // returns the remote text data (pointer only valid until next rs_awaitFrameData)
+extern "C" RENDER_STREAM_API RS_ERROR rs_getFrameParameters(uint64_t schemaHash, /*Out*/void* outParameterData, uint64_t outParameterDataSize);  // returns the remote parameters for this frame.
+extern "C" RENDER_STREAM_API RS_ERROR rs_getFrameImageData(uint64_t schemaHash, /*Out*/ImageFrameData* outParameterData, uint64_t outParameterDataCount);  // returns the remote image data for this frame.
+extern "C" RENDER_STREAM_API RS_ERROR rs_getFrameImage2(int64_t imageId, /*InOut*/ const SenderFrame* frame); // fills in (data) with the remote image
+extern "C" RENDER_STREAM_API RS_ERROR rs_getFrameText(uint64_t schemaHash, uint32_t textParamIndex, /*Out*/const char** outTextPtr); // // returns the remote text data (pointer only valid until next rs_awaitFrameData)
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameCamera(StreamHandle streamHandle, /*Out*/CameraData* outCameraData);  // returns the CameraData for this stream, or RS_ERROR_NOTFOUND if no camera data is available for this stream on this frame
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_sendFrame2(StreamHandle streamHandle, const SenderFrame* frame, const FrameResponseData* frameData); // publish a frame which was generated from the associated tracking and timing information.
+extern "C" RENDER_STREAM_API RS_ERROR rs_getFrameCamera(StreamHandle streamHandle, /*Out*/CameraData* outCameraData);  // returns the CameraData for this stream, or RS_ERROR_NOTFOUND if no camera data is available for this stream on this frame
+extern "C" RENDER_STREAM_API RS_ERROR rs_sendFrame2(StreamHandle streamHandle, const SenderFrame* frame, const FrameResponseData* frameData); // publish a frame which was generated from the associated tracking and timing information.
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_releaseImage2(const SenderFrame* frame); // release any references to image (e.g. before deletion)
+extern "C" RENDER_STREAM_API RS_ERROR rs_releaseImage2(const SenderFrame* frame); // release any references to image (e.g. before deletion)
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_logToD3(const char* str); // Transmit log message over network. New line automatically appended
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_sendProfilingData(ProfilingEntry * entries, int count);
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_setNewStatusMessage(const char* msg);
+extern "C" RENDER_STREAM_API RS_ERROR rs_logToD3(const char* str); // Transmit log message over network. New line automatically appended
+extern "C" RENDER_STREAM_API RS_ERROR rs_sendProfilingData(ProfilingEntry * entries, int count);
+extern "C" RENDER_STREAM_API RS_ERROR rs_setNewStatusMessage(const char* msg);
 
 #endif

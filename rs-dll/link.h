@@ -11,7 +11,7 @@
 #include <thread>
 #include <vector>
 
-#include "d3renderstream.hpp"
+#include "renderstream.hpp"
 
 namespace rs {
 

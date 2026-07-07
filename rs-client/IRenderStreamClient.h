@@ -2,7 +2,7 @@
 
 #include <stdint.h>
 
-#include "d3renderstream.h"
+#include "renderstream.h"
 
 typedef struct {
     int      pid;

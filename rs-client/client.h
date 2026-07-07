@@ -10,7 +10,7 @@
 #include <nlohmann/json.hpp>
 
 #include "IRenderStreamClient.h"
-#include "d3renderstream.hpp"
+#include "renderstream.hpp"
 
 class RenderStreamClient : public IRenderStreamClient {
 public:
@@ -26,7 +26,7 @@ public:
 
     int  LoadNodeInfo(const char* host, int port, RS_OnNodeInfo on_info, void* userdata) override;
     int  LoadSchema(const char* host, int port, const char* project_path, RS_OnSchemaLoaded on_schema, void* userdata) override;
-    int    GetSessionStatus(const char* host, int port, RS_Status* out) override;
+    int  GetSessionStatus(const char* host, int port, RS_Status* out) override;
 
     int  LaunchUnrealEditor(const char* host, int port, const char* config_json) override;
     int  KillUnrealEditor(const char* host, int port, int pid) override;

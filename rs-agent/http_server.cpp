@@ -15,7 +15,7 @@
 
 #include "process_manager.h"
 #include "pipe_server.h"
-#include "d3renderstream.hpp"
+#include "renderstream.hpp"
 
 #include "utils/encoding.h"
 

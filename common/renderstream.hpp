@@ -13,11 +13,11 @@
 
 #include <nlohmann/json.hpp>
 
-#include "d3renderstream.h"
+#include "renderstream.h"
 
 // ============================================================
 // CameraData / ProjectionClipping - JSON serialization
-// (global scope: the C types from d3renderstream.h live here)
+// (global scope: the C types from renderstream.h live here)
 // ============================================================
 
 inline void to_json(nlohmann::json& j, const CameraData& cd) {
