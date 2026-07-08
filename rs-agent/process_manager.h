@@ -33,7 +33,7 @@ public:
     std::optional<DWORD> GetExitCode(DWORD pid) const;
     int64_t GetLaunchTimeMs(DWORD pid) const;  // 0 if not found or no launch time tracked
     int64_t GetExitTimeMs(DWORD pid) const;    // 0 if process still alive
-    bool IsStopping(DWORD pid) const;          // true if kill requested, waiting for exit
+
     DWORD LastExitedPid() const { return last_exited_pid_; }
     std::optional<DWORD> LastExitCode() const { return last_exit_code_; }
     int64_t LastExitTimeMs() const { return last_exit_time_ms_; }
@@ -43,8 +43,6 @@ private:
         DWORD pid = 0;
         HANDLE handle = nullptr;
         int64_t launch_time_ms = 0;
-        bool stopping = false;
-        int64_t stop_deadline_ms = 0;  // 0 = no deadline, force-kill after this
     };
 
     void OnPoll(const std::error_code& ec);

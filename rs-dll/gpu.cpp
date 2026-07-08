@@ -5,7 +5,7 @@
 #include <vector>
 #include <profileapi.h>
 
-#include "d3renderstream.h"
+#include "renderstream.h"
 #include "logging.h"
 #include "streams.h"
 

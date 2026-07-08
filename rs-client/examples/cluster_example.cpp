@@ -11,6 +11,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 #include <chrono>
 #include <filesystem>
@@ -25,9 +26,9 @@
 #include <spdlog/spdlog.h>
 
 #include "camera_rig.h"
+#include "IRenderStreamClient.h"
 #include "ndisplay-gen/model.h"
 #include "ndisplay-gen/serialize.h"
-#include "render_stream_client.h"
 
 static constexpr int    kTickPort  = 9581;
 static constexpr double kFps       = 60.0;
@@ -48,35 +49,94 @@ static const NodeConfig kNodes[] = {
      "C:/Users/hido/Documents/Unreal Projects/nDisplay_Demo_57/nDisplay_Demo.uproject"},
 };
 
-// ── Camera rigs ─────────────────────────────────────────────────────
+// ── Discovered node ────────────────────────────────────────────────────
+
+struct DiscoveredNode {
+    std::string name;
+    std::string ip;
+    int         port = 9580;
+};
+
+// ── Per-node callback context ──────────────────────────────────────────
+
+struct ClientLogCtx {
+    std::shared_ptr<spdlog::logger> frame_log;
+    std::shared_ptr<spdlog::logger> ue_log;
+    std::shared_ptr<spdlog::logger> prof_out;
+    std::shared_ptr<spdlog::logger> stat_out;
+    int prof_counter = 0;
+};
+
+static void OnFrameAck(const CameraResponseData* ack, void* userdata) {
+    auto* ctx = static_cast<ClientLogCtx*>(userdata);
+    ctx->frame_log->info("t={:.3f} camera(id={} x={:.2f} y={:.2f} z={:.2f})",
+        ack->tTracked, ack->camera.id, ack->camera.x, ack->camera.y, ack->camera.z);
+}
+
+static void OnStatus(const char* text, void* userdata) {
+    auto* ctx = static_cast<ClientLogCtx*>(userdata);
+    ctx->stat_out->info("{}", text);
+}
+
+static void OnLog(const char* text, void* userdata) {
+    auto* ctx = static_cast<ClientLogCtx*>(userdata);
+    ctx->ue_log->info("{}", text);
+}
+
+static void OnProfiling(const char* json, void* userdata) {
+    auto* ctx = static_cast<ClientLogCtx*>(userdata);
+    ctx->prof_counter = (ctx->prof_counter + 1) % 120;
+    if (ctx->prof_counter != 1) return;
+    auto j = nlohmann::json::parse(json);
+    float ft = 0, gt = 0, at = 0;
+    for (const auto& e : j["entries"]) {
+        std::string n = e.value("name", "");
+        if (n == "Frame Time")      ft = e.value("value", 0.0f);
+        else if (n == "GPU Time")   gt = e.value("value", 0.0f);
+        else if (n == "Await Time") at = e.value("value", 0.0f);
+    }
+    float fps = ft > 0.0f ? 1000.0f / ft : 0.0f;
+    ctx->prof_out->info("frame={:.1f}ms ({:.0f}fps) gpu={:.1f}ms await={:.1f}ms", ft, fps, gt, at);
+}
+
+// ── Discovery callback ─────────────────────────────────────────────────
+
+static int OnNodeDiscovered(const char* name, const char* ip, int port, void* userdata) {
+    auto* vec = static_cast<std::vector<DiscoveredNode>*>(userdata);
+    vec->push_back({name, ip, port});
+    return 0;  // collect all
+}
+
+// ── Camera rigs ────────────────────────────────────────────────────────
 
 static std::vector<CameraRig> BuildCameraRigs() {
+    struct Track { double t, x, y, z, rx, ry, rz, fov; };
+    static const Track kTracks[][3] = {
+        {{0.0, -2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0},
+         {3.0,  2.00, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0},
+         {6.0, -2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0}},
+        {{0.0,  5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0},
+         {3.0, -5.59, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0},
+         {6.0,  5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0}},
+        {{0.0, -11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0},
+         {3.0, -11.395, 8.30, -5.00, -20.0, 84.1, 0.0, 90.0},
+         {6.0, -11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0}},
+        {{0.0, 12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0},
+         {3.0, 12.40, 7.70,  7.00, -30.0, -90.0, 0.0, 90.0},
+         {6.0, 12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0}},
+    };
+
     std::vector<CameraRig> rigs(4);
-    for (auto& rig : rigs) {
-        rig.SetLoop(true);
-        rig.SetSensorSize(1920, 1080);
+    for (int i = 0; i < 4; ++i) {
+        rigs[i].SetLoop(true);
+        rigs[i].SetSensorSize(1920, 1080);
+        for (const auto& k : kTracks[i])
+            rigs[i].AddSample(k.t, k.x, k.y, k.z, k.rx, k.ry, k.rz, k.fov);
     }
-
-    rigs[0].AddSample(0.0, -2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0);
-    rigs[0].AddSample(3.0,  2.00, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0);
-    rigs[0].AddSample(6.0, -2.94, 1.50, -7.69,  0.0,   0.0, 0.0, 90.0);
-
-    rigs[1].AddSample(0.0,  5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0);
-    rigs[1].AddSample(3.0, -5.59, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0);
-    rigs[1].AddSample(6.0,  5.71, 1.36,  6.50,  0.0, 179.71, 0.0, 90.0);
-
-    rigs[2].AddSample(0.0, -11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0);
-    rigs[2].AddSample(3.0, -11.395, 8.30, -5.00, -20.0, 84.1, 0.0, 90.0);
-    rigs[2].AddSample(6.0, -11.395, 8.30,  7.40, -20.0, 84.1, 0.0, 90.0);
-
-    rigs[3].AddSample(0.0, 12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0);
-    rigs[3].AddSample(3.0, 12.40, 7.70,  7.00, -30.0, -90.0, 0.0, 90.0);
-    rigs[3].AddSample(6.0, 12.40, 7.70, -8.60, -30.0, -90.0, 0.0, 90.0);
-
     return rigs;
 }
 
-// ── Log setup ───────────────────────────────────────────────────────
+// ── Log setup ──────────────────────────────────────────────────────────
 
 static std::string LogDir() {
     const wchar_t* appdata = nullptr;
@@ -88,68 +148,37 @@ static std::string LogDir() {
     return p.string();
 }
 
-static void SetupClientCallbacks(RenderStreamClient& c, const char* tag) {
+static ClientLogCtx* MakeClientLogContext(const char* tag) {
     auto dir = LogDir();
+    auto* ctx = new ClientLogCtx();
 
-    // Frame ack -> file
-    auto frame_log = spdlog::basic_logger_mt(
+    ctx->frame_log = spdlog::basic_logger_mt(
         fmt::format("{}_frame", tag),
         fmt::format("{}/{}.frame.log", dir, tag));
-    frame_log->set_pattern("[%Y-%m-%d %H:%M:%S.%e] %v");
-    c.on_frame_ack = [frame_log](const CameraResponseData& ack) {
-        frame_log->info("t={:.3f} camera(id={} x={:.2f} y={:.2f} z={:.2f})",
-            ack.tTracked, ack.camera.id, ack.camera.x, ack.camera.y, ack.camera.z);
-    };
+    ctx->frame_log->set_pattern("[%Y-%m-%d %H:%M:%S.%e] %v");
 
-    // UE log -> file
-    auto ue_log = spdlog::basic_logger_mt(
+    ctx->ue_log = spdlog::basic_logger_mt(
         fmt::format("{}_ue", tag),
         fmt::format("{}/{}.ue.log", dir, tag));
-    ue_log->set_pattern("[%Y-%m-%d %H:%M:%S.%e] %v");
-    c.on_log = [ue_log](const std::string& text) {
-        ue_log->info("{}", text);
-    };
+    ctx->ue_log->set_pattern("[%Y-%m-%d %H:%M:%S.%e] %v");
 
-    // Profiling -> stdout, throttled
-    auto prof_out = spdlog::stdout_color_mt(fmt::format("{}_prof", tag));
-    prof_out->set_pattern(fmt::format("[%n] %v"));
-    auto prof_counter = std::make_shared<int>(0);
-    c.on_profiling = [prof_out, tag, prof_counter](const nlohmann::json& j) {
-        *prof_counter = (*prof_counter + 1) % 120;
-        if (*prof_counter != 1) return;
+    ctx->prof_out = spdlog::stdout_color_mt(fmt::format("{}_prof", tag));
+    ctx->prof_out->set_pattern(fmt::format("[%n] %v"));
 
-        float frame_time = 0, gpu_time = 0, await_time = 0;
-        if (j.contains("entries") && j["entries"].is_array()) {
-            for (const auto& e : j["entries"]) {
-                std::string name = e.value("name", "");
-                if (name == "Frame Time")      frame_time = e.value("value", 0.0f);
-                else if (name == "GPU Time")   gpu_time  = e.value("value", 0.0f);
-                else if (name == "Await Time") await_time = e.value("value", 0.0f);
-            }
-        }
-        float fps = frame_time > 0.0f ? 1000.0f / frame_time : 0.0f;
-        prof_out->info("[{}] frame={:.1f}ms ({:.0f}fps) gpu={:.1f}ms await={:.1f}ms",
-            tag, frame_time, fps, gpu_time, await_time);
-    };
+    ctx->stat_out = spdlog::stdout_color_mt(fmt::format("{}_stat", tag));
+    ctx->stat_out->set_pattern(fmt::format("[%n] %v"));
 
-    // Status -> stdout
-    auto stat_out = spdlog::stdout_color_mt(fmt::format("{}_stat", tag));
-    stat_out->set_pattern(fmt::format("[%n] %v"));
-    c.on_status = [stat_out, tag](const std::string& text) {
-        stat_out->info("[{}] {}", tag, text);
-    };
+    return ctx;
 }
 
-// ── nDisplay config ─────────────────────────────────────────────────
+// ── nDisplay config ────────────────────────────────────────────────────
 
-static nlohmann::json GenerateNdisplayConfig(
-    const std::vector<RenderStreamClient::NodeInfo>& nodes)
-{
+static nlohmann::json GenerateNdisplayConfig(const DiscoveredNode* nodes, int count) {
     ndisplay::Configuration cfg;
     cfg.description = "cluster example";
     cfg.override_viewports_from_external_config = true;
 
-    for (size_t i = 0; i < nodes.size(); ++i) {
+    for (int i = 0; i < count; ++i) {
         ndisplay::Node node;
         node.name = kNodes[i].name;
         node.host = nodes[i].ip;
@@ -187,7 +216,7 @@ static nlohmann::json GenerateNdisplayConfig(
     return ndisplay::ToJson(cfg);
 }
 
-// ── Streams JSON ────────────────────────────────────────────────────
+// ── Streams JSON ───────────────────────────────────────────────────────
 
 static nlohmann::json BuildStreams() {
     return nlohmann::json::array({
@@ -195,7 +224,7 @@ static nlohmann::json BuildStreams() {
     });
 }
 
-// ── Main ────────────────────────────────────────────────────────────
+// ── Main ───────────────────────────────────────────────────────────────
 
 int main(int argc, char* argv[]) {
     int timeout_ms = (argc > 1) ? atoi(argv[1]) : 500;
@@ -204,16 +233,20 @@ int main(int argc, char* argv[]) {
     fprintf(stderr, "  tick: %d  fps: %.0f  run: %ds  timeout: %dms\n",
             kTickPort, kFps, kRunSecs, timeout_ms);
 
+    auto* client = CreateRenderStreamClient();
+
     // 1. Discover
     fprintf(stderr, "Discovering nodes...\n");
-    auto all_nodes = RenderStreamClient::DiscoverNodes(timeout_ms);
-    fprintf(stderr, "Found %zu node(s)\n\n", all_nodes.size());
-    if (all_nodes.empty()) {
+    std::vector<DiscoveredNode> all_nodes;
+    int total = client->Discover(timeout_ms, OnNodeDiscovered, &all_nodes);
+    fprintf(stderr, "Found %d node(s)\n\n", total);
+    if (total == 0) {
         fprintf(stderr, "No nodes found.\n");
+        DestroyRenderStreamClient(client);
         return 1;
     }
 
-    std::vector<RenderStreamClient::NodeInfo> nodes(2);
+    DiscoveredNode nodes[2];
     int assigned = 0;
     for (const auto& n : all_nodes) {
         if (n.ip == "10.241.12.217")      { nodes[0] = n; ++assigned; }
@@ -221,56 +254,67 @@ int main(int argc, char* argv[]) {
     }
     if (assigned < 2) {
         fprintf(stderr, "ERROR: need both .217 and .246, got %d\n", assigned);
+        DestroyRenderStreamClient(client);
         return 1;
     }
-    fprintf(stderr, "  node0 (primary) -> %s (%s)\n",   nodes[0].name.c_str(), nodes[0].ip.c_str());
+    fprintf(stderr, "  node0 (primary)   -> %s (%s)\n", nodes[0].name.c_str(), nodes[0].ip.c_str());
     fprintf(stderr, "  node1 (secondary) -> %s (%s)\n\n", nodes[1].name.c_str(), nodes[1].ip.c_str());
 
     // 2. Schema
     fprintf(stderr, "Querying schema from %s...\n", nodes[0].name.c_str());
-    RenderStreamClient schema_client("schema");
-    schema_client.SetTarget(nodes[0]);
-    auto schema = schema_client.GetSchema(kNodes[0].project_path);
-    if (!schema) {
+    auto* schema_cli = CreateRenderStreamClient();
+    nlohmann::json scenes;
+    bool schema_ok = false;
+    struct Ctx { nlohmann::json* sc; bool* ok; };
+    Ctx ctx{&scenes, &schema_ok};
+    schema_cli->LoadSchema(nodes[0].ip.c_str(), nodes[0].port, kNodes[0].project_path,
+        [](const char* json, void* p) {
+            auto* c = static_cast<Ctx*>(p);
+            auto schema = nlohmann::json::parse(json);
+            *c->sc = schema.value("scenes", nlohmann::json::array());
+            *c->ok = true;
+        }, &ctx);
+    if (!schema_ok) {
         fprintf(stderr, "  schema not found\n");
+        DestroyRenderStreamClient(schema_cli);
+        DestroyRenderStreamClient(client);
         return 1;
     }
-    fprintf(stderr, "  %zu channels, %zu scenes\n\n",
-            schema->channels.size(), schema->scenes.size());
-
-    // Build parameter defaults
-    auto param_values = schema_client.MakeDefaultParams(0);
-    uint64_t scene_hash = schema_client.SchemaHash(0);
-    fprintf(stderr, "  schema hash=%llu, %zu param floats\n\n",
-        static_cast<unsigned long long>(scene_hash), param_values.size());
+    uint64_t scene_hash = schema_cli->SchemaHash();
+    fprintf(stderr, "  schema hash=%llu\n\n",
+        static_cast<unsigned long long>(scene_hash));
+    DestroyRenderStreamClient(schema_cli);
 
     // 3. Build camera rigs
     auto rigs = BuildCameraRigs();
 
     // 4. Build config + streams
-    auto ndisplay_json = GenerateNdisplayConfig(nodes);
+    auto ndisplay_json = GenerateNdisplayConfig(nodes, 2);
     auto streams_json  = BuildStreams();
     fprintf(stderr, "Viewport layout: 1x 1920x1080 camera0 per node\n");
     fprintf(stderr, "nDisplay config: %zu bytes\n\n", ndisplay_json.dump().size());
 
     // 5. Launch UE on each node
     std::vector<int> pids;
-    for (size_t i = 0; i < nodes.size(); ++i) {
-        const auto& n = nodes[i];
+    for (int i = 0; i < 2; ++i) {
         const auto& cfg = kNodes[i];
+
+        std::string scene_name = "Main";
+        if (!scenes.empty())
+            scene_name = scenes[0].value("name", "Main");
 
         nlohmann::json launch_body;
         launch_body["engine_exe"] = cfg.engine_exe;
         launch_body["project"]    = cfg.project_path;
-        launch_body["map"]        = "/Game/Maps/" + schema->scenes[0].name;
+        launch_body["map"]        = "/Game/Maps/" + scene_name;
         launch_body["node_name"]  = cfg.name;
         launch_body["ndisplay"]   = ndisplay_json;
         launch_body["streams"]    = streams_json;
 
-        fprintf(stderr, "Launching %s (%s)...\n", cfg.name, n.ip.c_str());
-        RenderStreamClient launch_cli("launch");
-        launch_cli.SetTarget(n);
-        int pid = launch_cli.LaunchUE(launch_body);
+        fprintf(stderr, "Launching %s (%s)...\n", cfg.name, nodes[i].ip.c_str());
+        auto* launch_cli = CreateRenderStreamClient();
+        int pid = launch_cli->LaunchUnrealEditor(nodes[i].ip.c_str(), nodes[i].port, launch_body.dump().c_str());
+        DestroyRenderStreamClient(launch_cli);
         if (pid == 0) {
             fprintf(stderr, "  FAILED\n");
         } else {
@@ -283,44 +327,56 @@ int main(int argc, char* argv[]) {
     // 6. Create clients
     fprintf(stderr, "Logs -> %s\n\n", LogDir().c_str());
 
-    std::vector<std::unique_ptr<RenderStreamClient>> clients;
+    std::vector<IRenderStreamClient*> clients;
+    std::vector<ClientLogCtx*> log_ctxs;
     std::vector<std::thread> threads;
 
-    for (size_t i = 0; i < nodes.size(); ++i) {
+    for (int i = 0; i < 2; ++i) {
         if (pids[i] == 0) continue;
-        auto c = std::make_unique<RenderStreamClient>(kNodes[i].name);
-        c->SetTarget(nodes[i]);
-        c->SetRigs(rigs);
+        auto* c = CreateRenderStreamClient();
+        c->SetCameras(nullptr, static_cast<uint32_t>(rigs.size()));
         c->SetSchemaHash(scene_hash);
-        c->SetParameters(param_values);
         c->SetFps(kFps);
-        SetupClientCallbacks(*c, kNodes[i].name);
+        auto* ctx = MakeClientLogContext(kNodes[i].name);
+        log_ctxs.push_back(ctx);
+
+        c->SetFrameAckCallback(OnFrameAck, ctx);
+        c->SetStatusCallback(OnStatus, ctx);
+        c->SetLogCallback(OnLog, ctx);
+        c->SetProfilingCallback(OnProfiling, ctx);
+        c->SetBuildCamerasCallback([](double t, CameraData* cams, uint32_t n, void* ctx) {
+            auto* rigs = static_cast<std::vector<CameraRig>*>(ctx);
+            for (uint32_t i = 0; i < n && i < rigs->size(); ++i)
+                cams[i] = (*rigs)[i].Evaluate(t);
+        }, &rigs);
 
         fprintf(stderr, "[%s] connecting to %s:%d...\n",
                 kNodes[i].name, nodes[i].ip.c_str(), kTickPort);
-        if (!c->Connect(60)) {
+        if (!c->Connect(nodes[i].ip.c_str(), 60, kTickPort)) {
             fprintf(stderr, "[%s] WARNING: could not connect\n", kNodes[i].name);
+            DestroyRenderStreamClient(c);
             continue;
         }
-        clients.push_back(std::move(c));
+        clients.push_back(c);
     }
 
     if (clients.empty()) {
         fprintf(stderr, "No clients connected.\n");
+        DestroyRenderStreamClient(client);
         return 1;
     }
 
     // 7. Start tick loops
     fprintf(stderr, "\nStarting %zu client(s) for %d seconds...\n\n",
             clients.size(), kRunSecs);
-    for (auto& c : clients)
-        threads.emplace_back([&c] { c->Run(); });
+    for (auto* c : clients)
+        threads.emplace_back([c] { c->Start(); });
 
     // 8. Wait, then graceful shutdown
     std::this_thread::sleep_for(std::chrono::seconds(kRunSecs));
     fprintf(stderr, "\n--- %ds elapsed, stopping clients ---\n", kRunSecs);
 
-    for (auto& c : clients)
+    for (auto* c : clients)
         c->Stop();
 
     for (auto& t : threads)
@@ -330,15 +386,22 @@ int main(int argc, char* argv[]) {
 
     // 9. Kill remote UEs
     fprintf(stderr, "Killing remote UE processes...\n");
-    for (size_t i = 0; i < nodes.size(); ++i) {
+    for (int i = 0; i < 2; ++i) {
         if (pids[i] != 0) {
-            RenderStreamClient kill_cli("kill");
-            kill_cli.SetTarget(nodes[i]);
-            bool ok = kill_cli.KillUE(pids[i]);
+            auto* kill_cli = CreateRenderStreamClient();
+            int ok = kill_cli->KillUnrealEditor(nodes[i].ip.c_str(), nodes[i].port, pids[i]);
             fprintf(stderr, "  kill %s:%d (pid=%d) -> %s\n",
                     nodes[i].ip.c_str(), nodes[i].port, pids[i], ok ? "ok" : "fail");
+            DestroyRenderStreamClient(kill_cli);
         }
     }
+
+    // Cleanup
+    for (auto* c : clients)
+        DestroyRenderStreamClient(c);
+    for (auto* ctx : log_ctxs)
+        delete ctx;
+    DestroyRenderStreamClient(client);
 
     fprintf(stderr, "\nDone.\n");
     return 0;

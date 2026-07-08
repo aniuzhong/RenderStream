@@ -3,10 +3,27 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 #include <nlohmann/json.hpp>
+#include <string>
+#include <vector>
 
-#include "render_stream_client.h"
+#include "IRenderStreamClient.h"
+
+struct ProbeCtx {
+    std::vector<std::string> names;
+    std::vector<std::string> ips;
+    std::vector<int>         ports;
+};
+
+static int OnNode(const char* name, const char* ip, int port, void* userdata) {
+    auto* ctx = static_cast<ProbeCtx*>(userdata);
+    ctx->names.push_back(name);
+    ctx->ips.push_back(ip);
+    ctx->ports.push_back(port);
+    return 0;  // collect all
+}
 
 int main(int argc, char* argv[]) {
     int timeout_ms = (argc > 1) ? atoi(argv[1]) : 500;
@@ -18,54 +35,70 @@ int main(int argc, char* argv[]) {
     fprintf(stderr, "  timeout: %dms\n", timeout_ms);
     fprintf(stderr, "  project: %s\n\n", project_path);
 
-    fprintf(stderr, "Discovering nodes...\n");
-    auto nodes = RenderStreamClient::DiscoverNodes(timeout_ms);
-    fprintf(stderr, "Found %zu node(s)\n\n", nodes.size());
+    auto* client = CreateRenderStreamClient();
 
-    if (nodes.empty()) {
+    fprintf(stderr, "Discovering nodes...\n");
+    ProbeCtx ctx;
+    int node_count = client->Discover(timeout_ms, OnNode, &ctx);
+    fprintf(stderr, "Found %d node(s)\n\n", node_count);
+
+    if (node_count == 0) {
         fprintf(stderr, "No nodes found.\n");
+        DestroyRenderStreamClient(client);
         return 1;
     }
 
-    for (size_t i = 0; i < nodes.size(); ++i) {
-        const auto& n = nodes[i];
-        fprintf(stderr, "=== %s (%s:%d) ===\n", n.name.c_str(), n.ip.c_str(), n.port);
+    for (int i = 0; i < node_count; ++i) {
+        fprintf(stderr, "=== %s (%s:%d) ===\n", ctx.names[i].c_str(), ctx.ips[i].c_str(), ctx.ports[i]);
 
-        RenderStreamClient client(n.name);
-        client.SetTarget(n);
-
-        // Health
-        fprintf(stderr, "  health: %d\n", client.Health() ? 0 : -1);
+        const char* host = ctx.ips[i].c_str();
+        int port = ctx.ports[i];
 
         // Node info
-        auto info = client.GetNodeInfo();
-        if (!info.empty()) {
-            fprintf(stderr, "  hostname: %s\n", info.value("hostname", "?").c_str());
-            if (info.contains("displays") && info["displays"].is_array() && !info["displays"].empty()) {
-                auto& d = info["displays"][0];
-                fprintf(stderr, "  display:  %dx%d\n", d.value("w", 0), d.value("h", 0));
-            }
-        } else {
+        bool info_ok = false;
+        client->LoadNodeInfo(host, port,
+            [](const char* json, void* ctx) {
+                *static_cast<bool*>(ctx) = true;
+                auto info = nlohmann::json::parse(json);
+                fprintf(stderr, "  hostname: %s\n", info.value("hostname", "?").c_str());
+                if (info.contains("displays") && info["displays"].is_array() && !info["displays"].empty()) {
+                    auto& d = info["displays"][0];
+                    fprintf(stderr, "  display:  %dx%d\n", d.value("w", 0), d.value("h", 0));
+                }
+            }, &info_ok);
+        if (!info_ok)
             fprintf(stderr, "  info: (null)\n");
-        }
 
         // Schema
-        auto schema = client.GetSchema(project_path);
-        if (schema) {
-            fprintf(stderr, "  schema:  %zu channels, %zu scenes\n",
-                    schema->channels.size(), schema->scenes.size());
-            for (size_t j = 0; j < schema->channels.size(); ++j)
-                fprintf(stderr, "    channel[%zu]: %s\n", j, schema->channels[j].c_str());
-        } else {
+        bool schema_ok = false;
+        client->LoadSchema(host, port, project_path,
+            [](const char* json, void* ctx) {
+                auto* ok = static_cast<bool*>(ctx);
+                auto schema = nlohmann::json::parse(json);
+                auto channels = schema.value("channels", nlohmann::json::array());
+                auto scenes   = schema.value("scenes",   nlohmann::json::array());
+                fprintf(stderr, "  schema:  %zu channels, %zu scenes\n",
+                        channels.size(), scenes.size());
+                for (size_t j = 0; j < channels.size(); ++j)
+                    fprintf(stderr, "    channel[%zu]: %s\n", j, channels[j].get<std::string>().c_str());
+                *ok = true;
+            }, &schema_ok);
+        if (!schema_ok)
             fprintf(stderr, "  schema: not found\n");
-        }
 
         // Session status
-        auto st = client.GetSessionStatus();
-        fprintf(stderr, "  session: state=%s pid=%d\n", st.state.c_str(), st.pid);
+        RS_Status st{};
+        if (client->GetSessionStatus(host, port, &st)) {
+            const char* state_names[] = {"idle", "launching", "running", "stopping"};
+            const char* s = (st.state >= 0 && st.state <= 3) ? state_names[st.state] : "?";
+            fprintf(stderr, "  session: state=%s pid=%d\n", s, st.pid);
+        } else {
+            fprintf(stderr, "  session: (failed)\n");
+        }
         fprintf(stderr, "\n");
     }
 
+    DestroyRenderStreamClient(client);
     fprintf(stderr, "Done.\n");
     return 0;
 }

@@ -5,8 +5,8 @@
 #include <cstring>
 #include <memory>
 
-#include "d3renderstream.h"
-#include "d3renderstream.hpp"
+#include "renderstream.h"
+#include "renderstream.hpp"
 #include "gpu.h"
 #include "link.h"
 #include "logging.h"
@@ -39,14 +39,14 @@ static std::string GetArg(const wchar_t* key) {
 
 static std::unique_ptr<rs::Link> g_link;
 
-extern "C" D3_RENDER_STREAM_API void rs_registerLoggingFunc(logger_t fn)        { rs::log::SetInfoCallback(fn);    }
-extern "C" D3_RENDER_STREAM_API void rs_registerErrorLoggingFunc(logger_t fn)   { rs::log::SetErrorCallback(fn);   }
-extern "C" D3_RENDER_STREAM_API void rs_registerVerboseLoggingFunc(logger_t fn) { rs::log::SetVerboseCallback(fn); }
-extern "C" D3_RENDER_STREAM_API void rs_unregisterLoggingFunc()                 { rs::log::ClearInfoCallback();    }
-extern "C" D3_RENDER_STREAM_API void rs_unregisterErrorLoggingFunc()            { rs::log::ClearErrorCallback();   }
-extern "C" D3_RENDER_STREAM_API void rs_unregisterVerboseLoggingFunc()          { rs::log::ClearVerboseCallback(); }
+extern "C" RENDER_STREAM_API void rs_registerLoggingFunc(logger_t fn)        { rs::log::SetInfoCallback(fn);    }
+extern "C" RENDER_STREAM_API void rs_registerErrorLoggingFunc(logger_t fn)   { rs::log::SetErrorCallback(fn);   }
+extern "C" RENDER_STREAM_API void rs_registerVerboseLoggingFunc(logger_t fn) { rs::log::SetVerboseCallback(fn); }
+extern "C" RENDER_STREAM_API void rs_unregisterLoggingFunc()                 { rs::log::ClearInfoCallback();    }
+extern "C" RENDER_STREAM_API void rs_unregisterErrorLoggingFunc()            { rs::log::ClearErrorCallback();   }
+extern "C" RENDER_STREAM_API void rs_unregisterVerboseLoggingFunc()          { rs::log::ClearVerboseCallback(); }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor, int expectedVersionMinor) {
+extern "C" RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor, int expectedVersionMinor) {
     (void)expectedVersionMajor;
     (void)expectedVersionMinor;
 
@@ -65,7 +65,7 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor,
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_shutdown() {
+extern "C" RENDER_STREAM_API RS_ERROR rs_shutdown() {
     g_link.reset();
     rs::GpuContext::Instance().Shutdown();
     rs::Sender::Instance().Stop();
@@ -73,17 +73,17 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_shutdown() {
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX11Device(ID3D11Device*)     { return RS_ERROR_UNSPECIFIED; }
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX11Resource(ID3D11Resource*) { return RS_ERROR_UNSPECIFIED; }
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithoutInterop(ID3D11Device*)     { return RS_ERROR_UNSPECIFIED; }
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithOpenGlContexts(HGLRC, HDC)    { return RS_ERROR_UNSPECIFIED; }
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithVulkanDevice(VkDevice)        { return RS_ERROR_UNSPECIFIED; }
+extern "C" RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX11Device(ID3D11Device*)     { return RS_ERROR_UNSPECIFIED; }
+extern "C" RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX11Resource(ID3D11Resource*) { return RS_ERROR_UNSPECIFIED; }
+extern "C" RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithoutInterop(ID3D11Device*)     { return RS_ERROR_UNSPECIFIED; }
+extern "C" RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithOpenGlContexts(HGLRC, HDC)    { return RS_ERROR_UNSPECIFIED; }
+extern "C" RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithVulkanDevice(VkDevice)        { return RS_ERROR_UNSPECIFIED; }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_useDX12SharedHeapFlag(UseDX12SharedHeapFlag*) {
+extern "C" RENDER_STREAM_API RS_ERROR rs_useDX12SharedHeapFlag(UseDX12SharedHeapFlag*) {
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX12DeviceAndQueue(ID3D12Device* device, ID3D12CommandQueue* queue) {
+extern "C" RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX12DeviceAndQueue(ID3D12Device* device, ID3D12CommandQueue* queue) {
     if (!rs::GpuContext::Instance().Initialize(device, queue)) {
         rs::log::Error("rs_initialiseGpGpuWithDX12DeviceAndQueue: GPU init failed");
         return RS_ERROR_UNSPECIFIED;
@@ -91,7 +91,7 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX12DeviceAndQueu
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_loadSchema(const char* assetPath, Schema* outSchema, uint32_t* nBytes) {
+extern "C" RENDER_STREAM_API RS_ERROR rs_loadSchema(const char* assetPath, Schema* outSchema, uint32_t* nBytes) {
     std::string json_path = rs::schema_path(assetPath);
 
     auto opt_s = rs::load_schema_file(json_path);
@@ -128,7 +128,7 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_loadSchema(const char* assetPath, Sc
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_saveSchema(const char* assetPath, Schema* inSchema) {
+extern "C" RENDER_STREAM_API RS_ERROR rs_saveSchema(const char* assetPath, Schema* inSchema) {
     if (!assetPath || !inSchema)
         return RS_ERROR_INVALID_PARAMETERS;
 
@@ -144,7 +144,7 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_saveSchema(const char* assetPath, Sc
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_setSchema(Schema* schema) {
+extern "C" RENDER_STREAM_API RS_ERROR rs_setSchema(Schema* schema) {
     if (!schema)
         return RS_ERROR_INVALID_PARAMETERS;
 
@@ -158,7 +158,7 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_setSchema(Schema* schema) {
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getStreams(StreamDescriptions* out, uint32_t* nBytes) {
+extern "C" RENDER_STREAM_API RS_ERROR rs_getStreams(StreamDescriptions* out, uint32_t* nBytes) {
     const auto& streams = rs::Streams();
 
     if (streams.empty()) {
@@ -207,31 +207,31 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getStreams(StreamDescriptions* out, 
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_awaitFrameData(int timeoutMs, FrameData* data) {
+extern "C" RENDER_STREAM_API RS_ERROR rs_awaitFrameData(int timeoutMs, FrameData* data) {
     if (!data || !g_link)
         return RS_ERROR_INVALID_PARAMETERS;
     return g_link->AwaitFrame(timeoutMs, data);
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_setFollower(int isFollower) {
+extern "C" RENDER_STREAM_API RS_ERROR rs_setFollower(int isFollower) {
     if (g_link)
         g_link->SetFollower(isFollower != 0);
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_beginFollowerFrame(double tTracked) {
+extern "C" RENDER_STREAM_API RS_ERROR rs_beginFollowerFrame(double tTracked) {
     if (!g_link)
         return RS_ERROR_UNSPECIFIED;
     return g_link->BeginFollowerFrame(tTracked);
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameCamera(StreamHandle streamHandle, CameraData* outCameraData) {
+extern "C" RENDER_STREAM_API RS_ERROR rs_getFrameCamera(StreamHandle streamHandle, CameraData* outCameraData) {
     if (!g_link)
         return RS_ERROR_NOTFOUND;
     return g_link->GetCamera(streamHandle, outCameraData);
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameParameters(uint64_t schemaHash, void* outParameterData, uint64_t outParameterDataSize) {
+extern "C" RENDER_STREAM_API RS_ERROR rs_getFrameParameters(uint64_t schemaHash, void* outParameterData, uint64_t outParameterDataSize) {
     if (!outParameterData) {
         if (outParameterDataSize == 0)
             return RS_ERROR_SUCCESS;  // No params to query, null buffer is acceptable
@@ -254,7 +254,7 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameParameters(uint64_t schemaHa
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameImageData(uint64_t schemaHash, ImageFrameData* outParameterData, uint64_t outParameterDataCount) {
+extern "C" RENDER_STREAM_API RS_ERROR rs_getFrameImageData(uint64_t schemaHash, ImageFrameData* outParameterData, uint64_t outParameterDataCount) {
     if (!outParameterData) {
         if (outParameterDataCount == 0)
             return RS_ERROR_SUCCESS;  // No images to query, null buffer is acceptable
@@ -277,11 +277,11 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameImageData(uint64_t schemaHas
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameImage2(int64_t, const SenderFrame*) {
+extern "C" RENDER_STREAM_API RS_ERROR rs_getFrameImage2(int64_t, const SenderFrame*) {
     return RS_ERROR_NOTFOUND;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameText(uint64_t schemaHash, uint32_t textParamIndex, const char** outTextPtr) {
+extern "C" RENDER_STREAM_API RS_ERROR rs_getFrameText(uint64_t schemaHash, uint32_t textParamIndex, const char** outTextPtr) {
     if (!outTextPtr)
         return RS_ERROR_INVALID_PARAMETERS;
     if (!g_link)
@@ -300,11 +300,11 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getFrameText(uint64_t schemaHash, ui
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_releaseImage2(const SenderFrame*) {
+extern "C" RENDER_STREAM_API RS_ERROR rs_releaseImage2(const SenderFrame*) {
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointPoses(uint64_t schemaHash, uint32_t poseParamIndex, SkeletonPose* pose, int* numJoints) {
+extern "C" RENDER_STREAM_API RS_ERROR rs_getSkeletonJointPoses(uint64_t schemaHash, uint32_t poseParamIndex, SkeletonPose* pose, int* numJoints) {
     if (!numJoints)
         return RS_ERROR_INVALID_PARAMETERS;
     if (!g_link)
@@ -336,7 +336,7 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointPoses(uint64_t schem
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonLayout(uint64_t schemaHash, uint64_t layoutId, SkeletonLayout* layout, int* numJoints) {
+extern "C" RENDER_STREAM_API RS_ERROR rs_getSkeletonLayout(uint64_t schemaHash, uint64_t layoutId, SkeletonLayout* layout, int* numJoints) {
     if (!numJoints)
         return RS_ERROR_INVALID_PARAMETERS;
     if (!g_link)
@@ -361,7 +361,7 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonLayout(uint64_t schemaHas
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointNames(uint64_t schemaHash, uint64_t layoutId, const char** names, int** nameLengths, int* numJoints) {
+extern "C" RENDER_STREAM_API RS_ERROR rs_getSkeletonJointNames(uint64_t schemaHash, uint64_t layoutId, const char** names, int** nameLengths, int* numJoints) {
     if (!numJoints)
         return RS_ERROR_INVALID_PARAMETERS;
     if (!g_link)
@@ -384,7 +384,7 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_getSkeletonJointNames(uint64_t schem
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_sendFrame2(StreamHandle streamHandle, const SenderFrame* frame, const FrameResponseData* frameData) {
+extern "C" RENDER_STREAM_API RS_ERROR rs_sendFrame2(StreamHandle streamHandle, const SenderFrame* frame, const FrameResponseData* frameData) {
     int layer_key = static_cast<int>(streamHandle) - 1;
 
     if (!rs::GpuContext::Instance().SubmitFrame(frame, layer_key))
@@ -402,19 +402,19 @@ extern "C" D3_RENDER_STREAM_API RS_ERROR rs_sendFrame2(StreamHandle streamHandle
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_logToD3(const char* msg) {
+extern "C" RENDER_STREAM_API RS_ERROR rs_logToD3(const char* msg) {
     if (g_link && msg && msg[0])
         g_link->LogToD3(msg);
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_sendProfilingData(ProfilingEntry* entries, int count) {
+extern "C" RENDER_STREAM_API RS_ERROR rs_sendProfilingData(ProfilingEntry* entries, int count) {
     if (g_link)
         g_link->SendProfilingData(entries, count);
     return RS_ERROR_SUCCESS;
 }
 
-extern "C" D3_RENDER_STREAM_API RS_ERROR rs_setNewStatusMessage(const char* msg) {
+extern "C" RENDER_STREAM_API RS_ERROR rs_setNewStatusMessage(const char* msg) {
     if (g_link)
         g_link->SetNewStatusMessage(msg ? msg : "");
     return RS_ERROR_SUCCESS;

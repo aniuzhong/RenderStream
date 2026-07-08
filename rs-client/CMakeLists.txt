@@ -11,15 +11,15 @@ add_library(ndisplay_gen STATIC
 target_include_directories(ndisplay_gen PUBLIC ndisplay-gen)
 target_link_libraries(ndisplay_gen PUBLIC nlohmann_json::nlohmann_json)
 
-# rs_client static library
-add_library(rs_client STATIC
-    render_stream_client.cpp
-    camera_rig.cpp
+# rs_client shared library (DLL)
+add_library(rs_client SHARED
+    client.cpp
 )
 target_include_directories(rs_client PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/common
 )
+target_compile_definitions(rs_client PRIVATE RENDER_STREAM_CLIENT_EXPORTS)
 target_link_libraries(rs_client PUBLIC
     nlohmann_json::nlohmann_json
     httplib::httplib
@@ -28,7 +28,7 @@ target_link_libraries(rs_client PUBLIC
     ws2_32
 )
 
-# ── Examples ────────────────────────────────────────────────────────
+# -- Examples --------------------------------------------------------
 
 add_executable(node_probe_example
     examples/node_probe_example.cpp
@@ -37,10 +37,12 @@ target_link_libraries(node_probe_example PRIVATE rs_client)
 
 add_executable(single_4_viewports_example
     examples/single_4_viewports_example.cpp
+    examples/camera_rig.cpp
 )
 target_link_libraries(single_4_viewports_example PRIVATE rs_client ndisplay_gen)
 
 add_executable(cluster_example
     examples/cluster_example.cpp
+    examples/camera_rig.cpp
 )
 target_link_libraries(cluster_example PRIVATE rs_client ndisplay_gen)

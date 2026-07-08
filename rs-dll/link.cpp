@@ -1,6 +1,6 @@
 #include <nlohmann/json.hpp>
 
-#include "d3renderstream.hpp"
+#include "renderstream.hpp"
 #include "link.h"
 #include "logging.h"
 

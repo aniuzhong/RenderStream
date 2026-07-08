@@ -1,6 +1,6 @@
 #pragma once
 
-#include "d3renderstream.h"
+#include "renderstream.h"
 
 namespace rs {
 namespace log {

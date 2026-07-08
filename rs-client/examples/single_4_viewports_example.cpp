@@ -1,8 +1,8 @@
 // single_4_viewports_example.cpp — single-node 4-viewport tick source.
 //
 // Launches a 4-viewport UE session, then connects to renderstream.dll's
-// TCP listener and sends NDJSON ticks at 60 fps.  Uses RenderStreamClient
-// for both agent communication and conductor tick loop.
+// TCP listener and sends NDJSON ticks at 60 fps.  Uses the C-style
+// IRenderStreamClient interface via the DLL factory.
 //
 // Usage:
 //   single_4_viewports_example.exe [timeout_ms]
@@ -11,31 +11,35 @@
 #include <cstdlib>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
 #include "camera_rig.h"
+#include "IRenderStreamClient.h"
 #include "ndisplay-gen/model.h"
 #include "ndisplay-gen/serialize.h"
-#include "render_stream_client.h"
 
 static constexpr int    kTickPort = 9581;
 static constexpr double kFps      = 60.0;
 
 const char* kEngineExe =
-    // "D:/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor.exe";
-    "C:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor.exe";
+    // "C:/Program Files/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor.exe";
+    "D:/Epic Games/UE_5.7/Engine/Binaries/Win64/UnrealEditor.exe";
 const char* kProjectPath =
-    // "D:/Unreal Projects/nDisplay_Demo_57/nDisplay_Demo.uproject";
-    "C:/Users/hido/Documents/Unreal Projects/nDisplay_Demo_57/nDisplay_Demo.uproject";
+    "D:/Unreal Projects/nDisplay_Demo_57/nDisplay_Demo.uproject";
 const char* kNodeName = "node0";
 
-// ── Viewport layout (2x2 grid) ──────────────────────────────────────
+// -- Viewport layout (2x2 grid) ----------------------------------------
+
+struct NodeInfoCtx { int* w; int* h; bool* ok; };
 
 struct Viewport {
     std::string name;
@@ -63,44 +67,123 @@ static int CameraIndex(const std::string& channel) {
     return std::atoi(channel.c_str() + pos + 6);
 }
 
-// ── Camera rigs ─────────────────────────────────────────────────────
+// -- Camera rigs --------------------------------------------------------
 
-// clang-format off
-static CameraRig BuildCameraRig(int idx, int sensor_w, int sensor_h) {
-    CameraRig rig;
-    rig.SetLoop(true);
-    rig.SetSensorSize(sensor_w, sensor_h);
-
+static std::vector<CameraRig> BuildCameraRigs(const std::vector<Viewport>& vps) {
     struct Track { double t, x, y, z, rx, ry, rz, fov; };
     static const Track kTracks[][3] = {
-        { // camera0 - left-top
-            {0, -2.94,   1.50, -7.69,   0.0,   0.0, 0, 90},
-            {3,  2.00,   1.50, -7.69,   0.0,   0.0, 0, 90},
-            {6, -2.94,   1.50, -7.69,   0.0,   0.0, 0, 90},
-        },
-        { // camera1 - right-top
-            {0,  5.71,   1.36,  6.50,   0.0, 179.71, 0, 90},
-            {3, -5.59,   1.36,  6.50,   0.0, 179.71, 0, 90},
-            {6,  5.71,   1.36,  6.50,   0.0, 179.71, 0, 90},
-        },
-        { // camera2 - left-bottom
-            {0, -11.395, 8.30,  7.40, -20.0,  84.1,  0, 90},
-            {3, -11.395, 8.30, -5.00, -20.0,  84.1,  0, 90},
-            {6, -11.395, 8.30,  7.40, -20.0,  84.1,  0, 90},
-        },
-        { // camera3 - right-bottom
-            {0, 12.40,   7.70, -8.60, -30.0, -90.0,  0, 90},
-            {3, 12.40,   7.70,  7.00, -30.0, -90.0,  0, 90},
-            {6, 12.40,   7.70, -8.60, -30.0, -90.0,  0, 90},
-        },
+        { {0, -2.94,   1.50, -7.69,   0.0,   0.0, 0, 90},
+          {3,  2.00,   1.50, -7.69,   0.0,   0.0, 0, 90},
+          {6, -2.94,   1.50, -7.69,   0.0,   0.0, 0, 90} },
+        { {0,  5.71,   1.36,  6.50,   0.0, 179.71, 0, 90},
+          {3, -5.59,   1.36,  6.50,   0.0, 179.71, 0, 90},
+          {6,  5.71,   1.36,  6.50,   0.0, 179.71, 0, 90} },
+        { {0, -11.395, 8.30,  7.40, -20.0,  84.1,  0, 90},
+          {3, -11.395, 8.30, -5.00, -20.0,  84.1,  0, 90},
+          {6, -11.395, 8.30,  7.40, -20.0,  84.1,  0, 90} },
+        { {0, 12.40,   7.70, -8.60, -30.0, -90.0,  0, 90},
+          {3, 12.40,   7.70,  7.00, -30.0, -90.0,  0, 90},
+          {6, 12.40,   7.70, -8.60, -30.0, -90.0,  0, 90} },
     };
 
-    const auto& t = kTracks[idx % 4];
-    for (const auto& k : t)
-        rig.AddSample(k.t, k.x, k.y, k.z, k.rx, k.ry, k.rz, k.fov);
-    return rig;
+    std::vector<CameraRig> rigs;
+    for (const auto& vp : vps) {
+        CameraRig rig;
+        rig.SetLoop(true);
+        rig.SetSensorSize(vp.w, vp.h);
+        const auto& t = kTracks[CameraIndex(vp.channel) % 4];
+        for (const auto& k : t)
+            rig.AddSample(k.t, k.x, k.y, k.z, k.rx, k.ry, k.rz, k.fov);
+        rigs.push_back(rig);
+    }
+    return rigs;
 }
-// clang-format on
+
+// -- Callbacks ----------------------------------------------------------
+
+static void OnBuildParams(double t, float* values, uint32_t count, void*) {
+    if (count >= 5) {
+        values[0] = 0.5f + 0.5f * (float)std::sin(t * 1.5);
+        values[1] = 0.3f + 0.3f * (float)std::sin(t * 2.0 + 1.0);
+        values[2] = 0.7f + 0.3f * (float)std::sin(t * 3.0 + 2.0);
+        values[3] = 1.0f;
+        values[4] = 10.0f + 10.0f * (float)std::sin(t * 2.0);
+        static int frame = 0;
+        if (++frame <= 10 || frame % 120 == 0)
+            fprintf(stderr, "  [params] t=%.3f rgba=%.2f,%.2f,%.2f,%.2f intensity=%.1f\n",
+                t, values[0], values[1], values[2], values[3], values[4]);
+    }
+}
+
+static void OnBuildTexts(double t, char** texts, uint32_t count, void*) {
+    if (count > 0 && texts[0]) {
+        auto now = std::chrono::system_clock::now();
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
+        auto timer = std::chrono::system_clock::to_time_t(now);
+        std::tm* tm = std::localtime(&timer);
+        char buf[64];
+        snprintf(buf, sizeof(buf), "%02d:%02d:%02d.%03lld",
+            tm->tm_hour, tm->tm_min, tm->tm_sec, static_cast<long long>(ms.count()));
+        strncpy(texts[0], buf, 255);
+    }
+}
+
+static void OnBuildSkeleton(double t, SkeletonPose* pose, uint32_t joint_count, void*) {
+    pose->layoutId = 0;
+    pose->layoutVersion = 1;
+    pose->rootTransform = {0, 1.5f, 0, 0, 0, 0, 1};
+
+    for (uint32_t j = 0; j < joint_count && j < 6; ++j) {
+        pose->joints[j].id = j;
+        pose->joints[j].transform = {0,0,0, 0,0,0,1};
+    }
+
+    auto makeSway = [](float angleRad) -> Transform {
+        float ha = angleRad * 0.5f;
+        return {0,0,0, 0, std::sin(ha), 0, std::cos(ha)};
+    };
+    auto makeTilt = [](float angleRad) -> Transform {
+        float ha = angleRad * 0.5f;
+        return {0,0,0, std::sin(ha), 0, 0, std::cos(ha)};
+    };
+
+    float sway1 = 0.25f * (float)std::sin(t * 1.5f);
+    float sway2 = 0.20f * (float)std::sin(t * 1.5f);
+    float head  = 0.30f * (float)std::sin(t * 0.8f);
+    float armL  = 1.20f * (float)std::sin(t * 2.0f);
+    float armR  = 1.20f * (float)std::sin(t * 2.0f + 3.14f);
+
+    if (joint_count > 1) pose->joints[1].transform = makeSway(sway1);
+    if (joint_count > 2) pose->joints[2].transform = makeSway(sway2);
+    if (joint_count > 3) pose->joints[3].transform = makeTilt(head);
+    if (joint_count > 4) pose->joints[4].transform = makeTilt(armL);
+    if (joint_count > 5) pose->joints[5].transform = makeTilt(armR);
+}
+
+static void OnFrameAck(const CameraResponseData* ack, void*) {
+    static int frame = 0;
+    if (++frame <= 10 || frame % 120 == 0)
+        fprintf(stderr, "  [frame] t=%.3f camera(id=%llu x=%.2f y=%.2f z=%.2f)\n",
+            ack->tTracked, ack->camera.id, ack->camera.x, ack->camera.y, ack->camera.z);
+}
+
+static void OnProfiling(const char* json, void*) {
+    static int counter = 0;
+    if (++counter % 120 != 1) return;
+    auto j = nlohmann::json::parse(json);
+    float ft = 0, gt = 0, at = 0;
+    for (const auto& e : j["entries"]) {
+        std::string n = e.value("name", "");
+        if (n == "Frame Time")      ft = e.value("value", 0.0f);
+        else if (n == "GPU Time")   gt = e.value("value", 0.0f);
+        else if (n == "Await Time") at = e.value("value", 0.0f);
+    }
+    float fps = ft > 0.0f ? 1000.0f / ft : 0.0f;
+    fprintf(stderr, "  [prof] frame=%.1fms (%.0ffps) gpu=%.1fms await=%.1fms\n",
+        ft, fps, gt, at);
+}
+
+// -- nDisplay config ----------------------------------------------------
 
 static int WindowW(const std::vector<Viewport>& vps) {
     int w = 0;
@@ -113,8 +196,6 @@ static int WindowH(const std::vector<Viewport>& vps) {
     for (const auto& vp : vps) h = (std::max)(h, vp.y + vp.h);
     return h;
 }
-
-// ── nDisplay config generation ──────────────────────────────────────
 
 static nlohmann::json GenerateNdisplayConfig(const std::vector<Viewport>& vps) {
     ndisplay::Configuration cfg;
@@ -156,7 +237,7 @@ static nlohmann::json GenerateNdisplayConfig(const std::vector<Viewport>& vps) {
     return ndisplay::ToJson(cfg);
 }
 
-// ── Main ────────────────────────────────────────────────────────────
+// -- Main ---------------------------------------------------------------
 
 int main(int argc, char* argv[]) {
     int timeout_ms = (argc > 1) ? atoi(argv[1]) : 500;
@@ -164,49 +245,73 @@ int main(int argc, char* argv[]) {
     fprintf(stderr, "=== nDisplay Launcher (external tick) ===\n");
     fprintf(stderr, "  tick port: %d  fps: %.0f\n\n", kTickPort, kFps);
 
+    auto* client = CreateRenderStreamClient();
+
     // 1. Discover nodes
     fprintf(stderr, "Discovering nodes (timeout=%dms)...\n", timeout_ms);
-    auto nodes = RenderStreamClient::DiscoverNodes(timeout_ms);
-    fprintf(stderr, "Found %zu node(s)\n\n", nodes.size());
+    struct NodeInfo { std::string name, ip; int port; };
+    std::vector<NodeInfo> nodes;
+    int node_count = client->Discover(timeout_ms,
+        [](const char* name, const char* ip, int port, void* ctx) -> int {
+            static_cast<std::vector<NodeInfo>*>(ctx)->push_back({name, ip, port});
+            return 0;
+        }, &nodes);
+    fprintf(stderr, "Found %d node(s)\n\n", node_count);
 
-    if (nodes.empty()) {
+    if (node_count == 0) {
         fprintf(stderr, "No nodes found.\n");
+        DestroyRenderStreamClient(client);
         return 1;
     }
 
-    for (size_t i = 0; i < nodes.size(); ++i) {
+    for (int i = 0; i < node_count; ++i) {
         const auto& n = nodes[i];
-        fprintf(stderr, "-- Node %zu: %s (%s:%d) --\n", i, n.name.c_str(), n.ip.c_str(), n.port);
+        fprintf(stderr, "-- Node %d: %s (%s:%d) --\n", i, n.name.c_str(), n.ip.c_str(), n.port);
 
-        RenderStreamClient client;
-        client.SetTarget(n);
+        const char* host = n.ip.c_str();
+        int port = n.port;
 
         // 2. Query node info
-        auto info = client.GetNodeInfo();
-        if (info.empty()) {
+        int screen_w = 0, screen_h = 0;
+        bool info_ok = false;
+        NodeInfoCtx ni_ctx{&screen_w, &screen_h, &info_ok};
+        client->LoadNodeInfo(host, port,
+            [](const char* json, void* p) {
+                auto* c = static_cast<NodeInfoCtx*>(p);
+                auto info = nlohmann::json::parse(json);
+                *c->w = info["displays"][0]["w"];
+                *c->h = info["displays"][0]["h"];
+                *c->ok = true;
+            }, &ni_ctx);
+        if (!info_ok) {
             fprintf(stderr, "  [ERROR] failed to get node info\n");
             continue;
         }
-        int screen_w = info["displays"][0]["w"];
-        int screen_h = info["displays"][0]["h"];
         auto vps = BuildViewports(screen_w, screen_h);
 
         // 3. Query schema + build defaults
-        auto schema = client.GetSchema(kProjectPath);
-        if (!schema) continue;
+        nlohmann::json schema_channels, schema_scenes;
+        bool schema_ok = false;
+        struct Ctx { nlohmann::json* ch; nlohmann::json* sc; bool* ok; };
+        Ctx ctx{&schema_channels, &schema_scenes, &schema_ok};
+        client->LoadSchema(host, port, kProjectPath,
+            [](const char* json, void* p) {
+                auto* c = static_cast<Ctx*>(p);
+                auto schema = nlohmann::json::parse(json);
+                *c->ch = schema.value("channels", nlohmann::json::array());
+                *c->sc = schema.value("scenes",   nlohmann::json::array());
+                *c->ok = true;
+            }, &ctx);
+        if (!schema_ok) continue;
 
-        // 4. Validate channels
-        bool channel_ok = true;
+        // 4. Validate channels (non-fatal warning)
         for (const auto& vp : vps) {
             bool found = false;
-            for (const auto& ch : schema->channels)
-                if (ch == vp.channel) { found = true; break; }
-            if (!found) {
-                fprintf(stderr, "  [ERROR] channel '%s' not in schema\n", vp.channel.c_str());
-                channel_ok = false;
-            }
+            for (const auto& ch : schema_channels)
+                if (ch.get<std::string>() == vp.channel) { found = true; break; }
+            if (!found)
+                fprintf(stderr, "  [WARN] channel '%s' not in schema\n", vp.channel.c_str());
         }
-        if (!channel_ok) continue;
 
         // 5. Build streams + launch
         nlohmann::json streams = nlohmann::json::array();
@@ -222,16 +327,20 @@ int main(int argc, char* argv[]) {
 
         auto ndisplay_json = GenerateNdisplayConfig(vps);
 
+        std::string scene_name = "Main";
+        if (!schema_scenes.empty())
+            scene_name = schema_scenes[0].value("name", "Main");
+
         nlohmann::json launch_body;
         launch_body["engine_exe"] = kEngineExe;
         launch_body["project"]    = kProjectPath;
-        launch_body["map"]        = "/Game/Maps/" + schema->scenes[0].name;
+        launch_body["map"]        = "/Game/Maps/" + scene_name;
         launch_body["node_name"]  = kNodeName;
         launch_body["ndisplay"]   = ndisplay_json;
         launch_body["streams"]    = streams;
 
         fprintf(stderr, "  Launching UE...\n"); fflush(stderr);
-        int pid = client.LaunchUE(launch_body);
+        int pid = client->LaunchUnrealEditor(host, port, launch_body.dump().c_str());
         if (pid == 0) {
             fprintf(stderr, "  [ERROR] launch rejected\n");
             continue;
@@ -239,120 +348,75 @@ int main(int argc, char* argv[]) {
         fprintf(stderr, "  UE launched: pid=%d\n", pid);
         fflush(stderr);
 
-        // 6. Build camera rigs per viewport
+        // 6. Build camera rigs
         fprintf(stderr, "  Building camera rigs...\n"); fflush(stderr);
-        std::vector<CameraRig> rigs;
-        for (const auto& vp : vps)
-            rigs.push_back(BuildCameraRig(CameraIndex(vp.channel), vp.w, vp.h));
+        auto rigs = BuildCameraRigs(vps);
 
-        // 7. Build parameter defaults from schema
-        auto param_values = client.MakeDefaultParams(0);
-        uint64_t scene_hash = client.SchemaHash(0);
-        fprintf(stderr, "  schema: hash=%llu, %zu param floats\n",
-            static_cast<unsigned long long>(scene_hash), param_values.size());
+        // 7. Frame data
+        uint64_t scene_hash = client->SchemaHash();
+        fprintf(stderr, "  schema hash=%llu\n",
+            static_cast<unsigned long long>(scene_hash));
         fflush(stderr);
 
-        // 8. Set up conductor — frame data
-        client.SetRigs(rigs);
-        client.SetSchemaHash(scene_hash);
-        client.SetParameters(param_values);
-        client.SetTexts({""});
-        client.SetFps(kFps);
+        client->SetCameras(nullptr, static_cast<uint32_t>(rigs.size()));
+        // CameraRig evaluation is done in on_build_cameras callback below
+        client->SetSchemaHash(scene_hash);
+        const char* text_init[] = {""};
+        client->SetTexts(text_init, 1);
+        client->SetFps(kFps);
 
-        // Build a simple 6-joint skeleton
+        // Simple 6-joint skeleton
         {
-            rs::skeleton_layout_data layout;
-            layout.version = 1;
-
+            SkeletonJointDesc joints[6] = {};
             const uint64_t NO_PARENT = UINT64_MAX;
             Transform identity = {0,0,0, 0,0,0,1};
+            joints[0] = {0, NO_PARENT, identity};
+            joints[1] = {1, 0, {0,0,0.12f, 0,0,0,1}};
+            joints[2] = {2, 1, {0,0,0.12f, 0,0,0,1}};
+            joints[3] = {3, 2, {0,0,0.08f, 0,0,0,1}};
+            joints[4] = {4, 2, {-0.08f,0,0.06f, 0,0,0,1}};
+            joints[5] = {5, 2, {0.08f,0,0.06f, 0,0,0,1}};
 
-            layout.joints.push_back({0, NO_PARENT, identity});
-            layout.joints.push_back({1, 0, {0,0,0.12f, 0,0,0,1}});
-            layout.joints.push_back({2, 1, {0,0,0.12f, 0,0,0,1}});
-            layout.joints.push_back({3, 2, {0,0,0.08f, 0,0,0,1}});
-            layout.joints.push_back({4, 2, {-0.08f,0,0.06f, 0,0,0,1}});
-            layout.joints.push_back({5, 2, {0.08f,0,0.06f, 0,0,0,1}});
-
-            std::vector<std::string> jointNames = {
+            SkeletonLayout skel_layout = {1, joints};
+            const char* joint_names[] = {
                 "pelvis", "spine_01", "spine_02", "neck_01", "clavicle_l", "clavicle_r"
             };
-
-            client.SetSkeleton(layout, jointNames, {{{}}});
-
-            client.on_build_skeleton = [](double t, std::vector<rs::skeleton_pose_data>& poses) {
-                if (poses.empty()) poses.resize(1);
-                auto& p = poses[0];
-                p.layout_id = 0;
-                p.layout_version = 1;
-                p.root_transform = {0, 0.9f, 0, 0, 0, 0, 1};
-
-                p.joints.resize(6);
-                for (int j = 0; j < 6; ++j) p.joints[j].id = j;
-                for (int j = 0; j < 6; ++j) p.joints[j].transform = {0,0,0, 0,0,0,1};
-
-                auto makeSway = [](float angleRad) -> Transform {
-                    float ha = angleRad * 0.5f;
-                    return {0,0,0, 0, std::sin(ha), 0, std::cos(ha)};
-                };
-                auto makeTilt = [](float angleRad) -> Transform {
-                    float ha = angleRad * 0.5f;
-                    return {0,0,0, std::sin(ha), 0, 0, std::cos(ha)};
-                };
-
-                float sway1 = 0.25f * (float)std::sin(t * 1.5f);
-                float sway2 = 0.20f * (float)std::sin(t * 1.5f);
-                float head  = 0.30f * (float)std::sin(t * 0.8f);
-                float armL  = 1.20f * (float)std::sin(t * 2.0f);
-                float armR  = 1.20f * (float)std::sin(t * 2.0f + 3.14f);
-
-                p.joints[1].transform = makeSway(sway1);
-                p.joints[2].transform = makeSway(sway2);
-                p.joints[3].transform = makeTilt(head);
-                p.joints[4].transform = makeTilt(armL);
-                p.joints[5].transform = makeTilt(armR);
-            };
+            SkeletonJointPose initial_poses[6] = {};
+            for (int i = 0; i < 6; ++i) {
+                initial_poses[i].id = i;
+                initial_poses[i].transform = identity;
+            }
+            SkeletonPose skel_pose = {0, 1, {0}, identity, initial_poses};
+            client->SetSkeleton(&skel_layout, 6, joint_names, &skel_pose, 6);
         }
 
-        client.on_build_params = [](double t, std::vector<float>& params) {
-            if (params.size() >= 5) {
-                params[0] = 0.5f + 0.5f * (float)std::sin(t * 1.5);
-                params[1] = 0.3f + 0.3f * (float)std::sin(t * 2.0 + 1.0);
-                params[2] = 0.7f + 0.3f * (float)std::sin(t * 3.0 + 2.0);
-                params[3] = 1.0f;
-                params[4] = 10.0f + 10.0f * (float)std::sin(t * 2.0);
-                static int frame = 0;
-                if (++frame <= 10 || frame % 120 == 0)
-                    fprintf(stderr, "  [params] t=%.3f rgba=%.2f,%.2f,%.2f,%.2f intensity=%.1f\n",
-                        t, params[0], params[1], params[2], params[3], params[4]);
-            }
-        };
+        // 9. Set callbacks
+        {
+            client->SetBuildParamsCallback(OnBuildParams, nullptr);
+            client->SetBuildTextsCallback(OnBuildTexts, nullptr);
+            client->SetBuildSkeletonCallback(OnBuildSkeleton, nullptr);
+            client->SetFrameAckCallback(OnFrameAck, nullptr);
+            client->SetProfilingCallback(OnProfiling, nullptr);
+            client->SetBuildCamerasCallback([](double t, CameraData* cams, uint32_t n, void* ctx) {
+                auto* rigs = static_cast<std::vector<CameraRig>*>(ctx);
+                for (uint32_t i = 0; i < n && i < rigs->size(); ++i)
+                    cams[i] = (*rigs)[i].Evaluate(t);
+            }, &rigs);
+        }
 
-        client.on_build_texts = [](double t, std::vector<std::string>& texts) {
-            if (!texts.empty()) {
-                auto now = std::chrono::system_clock::now();
-                auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
-                auto timer = std::chrono::system_clock::to_time_t(now);
-                std::tm* tm = std::localtime(&timer);
-                char buf[64];
-                snprintf(buf, sizeof(buf), "%02d:%02d:%02d.%03lld",
-                    tm->tm_hour, tm->tm_min, tm->tm_sec, static_cast<long long>(ms.count()));
-                texts[0] = buf;
-            }
-        };
-
-        // 9. Connect and run tick loop
+        // 10. Connect and run tick loop
         fprintf(stderr, "\n[RenderStreamClient] connecting to %s:%d...\n", n.ip.c_str(), kTickPort);
         fflush(stderr);
 
-        if (!client.Connect(30)) {
+        if (!client->Connect(n.ip.c_str(), 30, kTickPort)) {
             fprintf(stderr, "  [ERROR] could not connect tick socket\n");
             continue;
         }
 
-        client.Run();
+        client->Start();
     }
 
+    DestroyRenderStreamClient(client);
     fprintf(stderr, "\nDone.\n");
     return 0;
 }
