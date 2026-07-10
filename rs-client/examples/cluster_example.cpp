@@ -139,11 +139,18 @@ static std::vector<CameraRig> BuildCameraRigs() {
 // ── Log setup ──────────────────────────────────────────────────────────
 
 static std::string LogDir() {
+    std::filesystem::path p;
+#ifdef _WIN32
     const wchar_t* appdata = nullptr;
     _wdupenv_s((wchar_t**)&appdata, nullptr, L"LOCALAPPDATA");
-    std::filesystem::path p = appdata ? appdata : L".";
+    p = appdata ? appdata : L".";
     free((void*)appdata);
-    p /= L"RenderStream/rs-client";
+#else
+    const char* home = std::getenv("HOME");
+    p = home ? home : ".";
+    p /= ".local/share";
+#endif
+    p /= "RenderStream/rs-client";
     std::filesystem::create_directories(p);
     return p.string();
 }

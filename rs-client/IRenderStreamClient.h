@@ -73,10 +73,14 @@ public:
     virtual int  GetState() = 0;
 };
 
-#ifdef RENDER_STREAM_CLIENT_EXPORTS
-  #define RENDER_STREAM_CLIENT_API __declspec(dllexport)
+#ifdef _WIN32
+  #ifdef RENDER_STREAM_CLIENT_EXPORTS
+    #define RENDER_STREAM_CLIENT_API __declspec(dllexport)
+  #else
+    #define RENDER_STREAM_CLIENT_API __declspec(dllimport)
+  #endif
 #else
-  #define RENDER_STREAM_CLIENT_API __declspec(dllimport)
+  #define RENDER_STREAM_CLIENT_API
 #endif
 
 extern "C" {

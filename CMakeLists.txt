@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 project(RenderStream LANGUAGES CXX)
 
 if(NOT WIN32)
-    message(FATAL_ERROR "This project builds for Windows only.")
+    message(WARNING "Building on non-Windows — only rs-client is supported.")
 endif()
 
 if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -12,14 +12,16 @@ endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 # Suppress MSVC warnings from third-party headers
 if(MSVC)
     add_compile_options(/W3 /wd4068 /wd4996)
 endif()
 
-# Global Windows target version — eliminates _WIN32_WINNT warnings
-add_compile_definitions(_WIN32_WINNT=0x0A00)
+if(WIN32)
+    add_compile_definitions(_WIN32_WINNT=0x0A00)
+endif()
 
 include(FetchContent)
 set(FETCHCONTENT_UPDATES_DISCONNECTED TRUE)
@@ -137,6 +139,8 @@ include(CTest)
 # ---------------------------------------------------------------------------
 # Subdirectories
 # ---------------------------------------------------------------------------
-add_subdirectory(rs-dll)
-add_subdirectory(rs-agent)
+if(WIN32)
+    add_subdirectory(rs-dll)
+    add_subdirectory(rs-agent)
+endif()
 add_subdirectory(rs-client)

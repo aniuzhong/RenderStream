@@ -329,7 +329,11 @@ typedef struct
 
 #pragma pack(pop)
 
+#ifdef _WIN32
 #define RENDER_STREAM_API __declspec( dllexport )
+#else
+#define RENDER_STREAM_API
+#endif
 
 #define RENDER_STREAM_VERSION_MAJOR 2
 #define RENDER_STREAM_VERSION_MINOR 0

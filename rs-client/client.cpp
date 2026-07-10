@@ -10,19 +10,15 @@
 #include <set>
 #include <thread>
 
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <Windows.h>
-
 // ============================================================
 // Factory
 // ============================================================
 
-extern "C" __declspec(dllexport) IRenderStreamClient* CreateRenderStreamClient() {
+extern "C" RENDER_STREAM_CLIENT_API IRenderStreamClient* CreateRenderStreamClient() {
     return new RenderStreamClient();
 }
 
-extern "C" __declspec(dllexport) void DestroyRenderStreamClient(IRenderStreamClient* p) {
+extern "C" RENDER_STREAM_CLIENT_API void DestroyRenderStreamClient(IRenderStreamClient* p) {
     delete p;
 }
 
@@ -86,45 +82,25 @@ int RenderStreamClient::Discover(int timeout_ms, RS_OnNodeDiscovered on_node, vo
 
     int reported = 0;
 
-    WSADATA wsa;
-    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
-        return 0;
-
-    SOCKET sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (sock == INVALID_SOCKET) {
-        WSACleanup();
-        return 0;
-    }
-
-    BOOL reuse = TRUE;
-    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<char*>(&reuse), sizeof(reuse));
-
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(9580);
-    addr.sin_addr.s_addr = INADDR_ANY;
-    if (bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
-        closesocket(sock);
-        WSACleanup();
-        return 0;
-    }
-
-    DWORD timeout = static_cast<DWORD>((std::max)(timeout_ms, 100));
-    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<char*>(&timeout), sizeof(timeout));
+    asio::io_context io;
+    asio::ip::udp::socket socket(io, asio::ip::udp::endpoint(asio::ip::udp::v4(), 9580));
+    socket.set_option(asio::socket_base::reuse_address(true));
 
     auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
     std::set<std::string> seen;
 
     char buf[2048];
     while (std::chrono::steady_clock::now() < deadline) {
-        sockaddr_in from{};
-        int from_len = sizeof(from);
-        int n = recvfrom(sock, buf, sizeof(buf) - 1, 0,
-                         reinterpret_cast<sockaddr*>(&from), &from_len);
-        if (n <= 0) {
+        asio::ip::udp::endpoint sender;
+        std::error_code ec;
+        socket.non_blocking(true);
+        size_t n = socket.receive_from(asio::buffer(buf, sizeof(buf) - 1), sender, 0, ec);
+        if (ec == asio::error::would_block || ec == asio::error::try_again) {
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
             continue;
         }
+        if (ec || n == 0)
+            continue;
         buf[n] = '\0';
 
         try {
@@ -134,10 +110,7 @@ int RenderStreamClient::Discover(int timeout_ms, RS_OnNodeDiscovered on_node, vo
                 continue;
             seen.insert(name);
 
-            char ip[INET_ADDRSTRLEN]{};
-            inet_ntop(AF_INET, &from.sin_addr, ip, sizeof(ip));
-
-            std::string node_ip = j.value("ip", ip);
+            std::string node_ip = j.value("ip", sender.address().to_string());
             int node_port = j.value("port", 9580);
 
             ++reported;
@@ -148,8 +121,6 @@ int RenderStreamClient::Discover(int timeout_ms, RS_OnNodeDiscovered on_node, vo
         }
     }
 
-    closesocket(sock);
-    WSACleanup();
     return reported;
 }
 

@@ -25,8 +25,10 @@ target_link_libraries(rs_client PUBLIC
     httplib::httplib
     asio::asio
     spdlog::spdlog
-    ws2_32
 )
+if(MSVC)
+    target_link_libraries(rs_client PUBLIC ws2_32)
+endif()
 
 # -- Examples --------------------------------------------------------
 
