@@ -4,29 +4,28 @@
 #include <mutex>
 #include <string>
 #include <unordered_map>
-#include <vector>
 
 #include <Processing.NDI.Lib.h>
 
+#include "sender.h"
+
 namespace rs {
 
-class Sender {
+class NdiSender : public ISender {
 public:
-    static Sender& Instance();
+    NdiSender() = default;
+    ~NdiSender() override;
 
-    ~Sender();
+    NdiSender(const NdiSender&) = delete;
+    NdiSender& operator=(const NdiSender&) = delete;
 
-    Sender(const Sender&) = delete;
-    Sender& operator=(const Sender&) = delete;
-
-    bool Start(const std::string& dc_node);
-    void Stop();
-    bool IsStarted() const { return started_; }
-    void Send(int layer_id, const uint8_t* data);
-    size_t LayerCount() const { return layers_.size(); }
+    bool Start(const std::string& dc_node) override;
+    void Stop() override;
+    bool IsStarted() const override { return started_; }
+    bool Send(int layer_id, const uint8_t* data) override;
+    size_t LayerCount() const override { return layers_.size(); }
 
 private:
-    Sender() = default;
     void StopLocked();
 
     static constexpr int        kConnCheckIntervalMs = 1000;

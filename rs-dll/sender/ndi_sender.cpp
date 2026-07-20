@@ -1,10 +1,10 @@
-#include "sender.h"
+#include "ndi_sender.h"
 
 #include <chrono>
 #include <cstdio>
 
-#include "logging.h"
-#include "streams.h"
+#include "../logging.h"
+#include "../streams.h"
 
 namespace rs {
 
@@ -13,17 +13,12 @@ static int64_t NowMs() {
     return duration_cast<milliseconds>(steady_clock::now().time_since_epoch()).count();
 }
 
-Sender& Sender::Instance() {
-    static Sender inst;
-    return inst;
-}
-
-Sender::~Sender() {
-    rs::log::Info("[Sender] ~Sender destructor fired (started=%d layers=%zu)", started_ ? 1 : 0, layers_.size());
+NdiSender::~NdiSender() {
+    rs::log::Info("[NdiSender] ~NdiSender destructor fired (started=%d layers=%zu)", started_ ? 1 : 0, layers_.size());
     Stop();
 }
 
-void Sender::StopLocked() {
+void NdiSender::StopLocked() {
     if (!started_)
         return;
     started_ = false;
@@ -35,15 +30,15 @@ void Sender::StopLocked() {
             l.instance = nullptr;
         }
     }
-    rs::log::Info("[Sender] Stop: complete");
+    rs::log::Info("[NdiSender] Stop: complete");
 }
 
-void Sender::Stop() {
+void NdiSender::Stop() {
     std::lock_guard lock(mutex_);
     StopLocked();
 }
 
-bool Sender::Start(const std::string& dc_node) {
+bool NdiSender::Start(const std::string& dc_node) {
     std::lock_guard lock(mutex_);
     StopLocked();
 
@@ -59,7 +54,7 @@ bool Sender::Start(const std::string& dc_node) {
         l.channel = s.channel;
         l.width   = cw;
         l.height  = ch;
-        rs::log::Info("[Sender] Configure: layer %d channel='%s' %dx%d", i, l.channel.c_str(), cw, ch);
+        rs::log::Info("[NdiSender] Configure: layer %d channel='%s' %dx%d", i, l.channel.c_str(), cw, ch);
     }
 
     if (layers_.empty()) {
@@ -82,7 +77,7 @@ bool Sender::Start(const std::string& dc_node) {
         NDIlib_send_create_t desc = {ndi_name, nullptr};
         l.instance = NDIlib_send_create(&desc);
         if (!l.instance) {
-            rs::log::Error("[Sender] Start: NDIlib_send_create failed for '%s'", ndi_name);
+            rs::log::Error("[NdiSender] Start: NDIlib_send_create failed for '%s'", ndi_name);
             for (auto& [id2, l2] : layers_) {
                 if (id2 == layer_id)
                     break;
@@ -95,25 +90,25 @@ bool Sender::Start(const std::string& dc_node) {
             return false;
         }
         l.started_ms = NowMs();
-        rs::log::Info("[Sender] Start: '%s' %dx%d row_pitch=%u", ndi_name, l.width, l.height, row_pitch_);
+        rs::log::Info("[NdiSender] Start: '%s' %dx%d row_pitch=%u", ndi_name, l.width, l.height, row_pitch_);
     }
 
     started_ = true;
     return true;
 }
 
-void Sender::Send(int layer_id, const uint8_t* data) {
+bool NdiSender::Send(int layer_id, const uint8_t* data) {
     std::lock_guard lock(mutex_);
     if (!started_ || !data)
-        return;
+        return false;
 
     auto it = layers_.find(layer_id);
     if (it == layers_.end())
-        return;
+        return false;
 
     Layer& l = it->second;
     if (!l.instance)
-        return;
+        return false;
 
     const int64_t now_ms = NowMs();
     if (now_ms - l.last_conn_ms > kConnCheckIntervalMs) {
@@ -121,9 +116,8 @@ void Sender::Send(int layer_id, const uint8_t* data) {
         l.last_conn_ms = now_ms;
     }
 
-    if (l.conn_count == 0 && now_ms - l.started_ms > kGracePeriodMs) {
-        return;
-    }
+    if (l.conn_count == 0 && now_ms - l.started_ms > kGracePeriodMs)
+        return false;
 
     NDIlib_video_frame_v2_t fr{};
     fr.xres                 = l.width;
@@ -137,5 +131,7 @@ void Sender::Send(int layer_id, const uint8_t* data) {
     fr.p_data               = const_cast<uint8_t*>(data);
 
     NDIlib_send_send_video_async_v2(l.instance, &fr);
+    return true;
 }
+
 }  // namespace rs

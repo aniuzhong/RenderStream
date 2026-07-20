@@ -1,6 +1,8 @@
 set(NDI_ROOT "${CMAKE_SOURCE_DIR}/third_party/ndi")
 set(NDI_LIB  "${NDI_ROOT}/Lib/x64/Processing.NDI.Lib.x64.lib")
 
+set(RS_SENDER_BACKEND "NDI" CACHE STRING "Sender backend: NDI, NOVANDI, or ST2110")
+
 if(NOT EXISTS "${NDI_ROOT}/Include/Processing.NDI.Lib.h")
     message(FATAL_ERROR "NDI SDK not found under third_party/ndi. Expected: ${NDI_ROOT}/Include")
 endif()
@@ -12,7 +14,7 @@ endif()
 add_library(renderstream SHARED
     gpu.cpp
     logging.cpp
-    sender.cpp
+    sender/ndi_sender.cpp
     renderstream.cpp
     streams.cpp
     link.cpp

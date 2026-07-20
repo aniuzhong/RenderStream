@@ -10,7 +10,7 @@
 #include "gpu.h"
 #include "link.h"
 #include "logging.h"
-#include "sender.h"
+#include "sender/ndi_sender.h"
 #include "streams.h"
 
 static std::string GetArg(const wchar_t* key) {
@@ -38,6 +38,7 @@ static std::string GetArg(const wchar_t* key) {
 }
 
 static std::unique_ptr<rs::Link> g_link;
+static std::unique_ptr<rs::ISender> g_sender = std::make_unique<rs::NdiSender>();
 
 extern "C" RENDER_STREAM_API void rs_registerLoggingFunc(logger_t fn)        { rs::log::SetInfoCallback(fn);    }
 extern "C" RENDER_STREAM_API void rs_registerErrorLoggingFunc(logger_t fn)   { rs::log::SetErrorCallback(fn);   }
@@ -68,7 +69,7 @@ extern "C" RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor, in
 extern "C" RENDER_STREAM_API RS_ERROR rs_shutdown() {
     g_link.reset();
     rs::GpuContext::Instance().Shutdown();
-    rs::Sender::Instance().Stop();
+    g_sender->Stop();
     NDIlib_destroy();
     return RS_ERROR_SUCCESS;
 }
@@ -169,7 +170,7 @@ extern "C" RENDER_STREAM_API RS_ERROR rs_getStreams(StreamDescriptions* out, uin
         }
 
         std::string prefix = GetArg(L"dc_node");
-        rs::Sender::Instance().Start(prefix);
+        g_sender->Start(prefix);
         rs::log::Info("[rs_getStreams] NDI started: %zu layers, prefix '%s'",
                       rs::Streams().size(), prefix.empty() ? "(none)" : prefix.c_str());
     }
@@ -393,7 +394,7 @@ extern "C" RENDER_STREAM_API RS_ERROR rs_sendFrame2(StreamHandle streamHandle, c
     auto ready_pack = rs::GpuContext::Instance().ConsumeReadyPack();
     for (const auto& buf : ready_pack) {
         if (buf.cpu_base)
-            rs::Sender::Instance().Send(buf.layer_id, buf.cpu_base);
+            g_sender->Send(buf.layer_id, buf.cpu_base);
     }
 
     if (frameData && frameData->cameraData && g_link)
