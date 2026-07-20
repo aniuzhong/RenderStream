@@ -2,7 +2,7 @@ set(RS_SENDER_BACKEND "NDI" CACHE STRING "Sender backend: NDI, NOVANDI, or ST211
 
 # ---- common sources (shared by all backends) ----
 set(RS_COMMON_SOURCES
-    gpu.cpp
+    converter.cpp
     logging.cpp
     renderstream.cpp
     streams.cpp

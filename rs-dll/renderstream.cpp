@@ -7,7 +7,7 @@
 
 #include "renderstream.h"
 #include "renderstream.hpp"
-#include "gpu.h"
+#include "converter.h"
 #include "link.h"
 #include "logging.h"
 #ifdef RS_SENDER_NOVANDI
@@ -78,7 +78,7 @@ extern "C" RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor, in
 
 extern "C" RENDER_STREAM_API RS_ERROR rs_shutdown() {
     g_link.reset();
-    rs::GpuContext::Instance().Shutdown();
+    rs::Converter::Instance().Shutdown();
     g_sender->Stop();
 #ifndef RS_SENDER_NOVANDI
     NDIlib_destroy();
@@ -97,7 +97,7 @@ extern "C" RENDER_STREAM_API RS_ERROR rs_useDX12SharedHeapFlag(UseDX12SharedHeap
 }
 
 extern "C" RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX12DeviceAndQueue(ID3D12Device* device, ID3D12CommandQueue* queue) {
-    if (!rs::GpuContext::Instance().Initialize(device, queue)) {
+    if (!rs::Converter::Instance().Initialize(device, queue)) {
         rs::log::Error("rs_initialiseGpGpuWithDX12DeviceAndQueue: GPU init failed");
         return RS_ERROR_UNSPECIFIED;
     }
@@ -404,10 +404,10 @@ extern "C" RENDER_STREAM_API RS_ERROR rs_getSkeletonJointNames(uint64_t schemaHa
 extern "C" RENDER_STREAM_API RS_ERROR rs_sendFrame2(StreamHandle streamHandle, const SenderFrame* frame, const FrameResponseData* frameData) {
     int layer_key = static_cast<int>(streamHandle) - 1;
 
-    if (!rs::GpuContext::Instance().SubmitFrame(frame, layer_key))
+    if (!rs::Converter::Instance().Submit(frame, layer_key))
         return RS_ERROR_UNSPECIFIED;
 
-    auto ready_pack = rs::GpuContext::Instance().ConsumeReadyPack();
+    auto ready_pack = rs::Converter::Instance().Consume();
     for (const auto& buf : ready_pack) {
         if (buf.cpu_base) {
             if (!g_sender->Send(buf.layer_id, buf.cpu_base)) {

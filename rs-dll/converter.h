@@ -16,15 +16,15 @@ struct FrameBuffer {
     int              layer_id       = 0;
 };
 
-class GpuContext {
+class Converter {
 public:
-    static GpuContext& Instance();
+    static Converter& Instance();
 
-    ~GpuContext();
+    ~Converter();
     bool Initialize(ID3D12Device* device, ID3D12CommandQueue* queue);
     void Shutdown();
-    bool SubmitFrame(const SenderFrame* frame, int layer_key);
-    std::vector<FrameBuffer> ConsumeReadyPack();
+    bool Submit(const SenderFrame* frame, int layer_key);
+    std::vector<FrameBuffer> Consume();
     UINT block_size() const { return block_size_; }
 
 private:

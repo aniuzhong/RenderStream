@@ -1,4 +1,4 @@
-#include "gpu.h"
+#include "converter.h"
 
 #include <cassert>
 #include <cstdio>
@@ -11,45 +11,45 @@
 
 namespace rs {
 
-GpuContext& GpuContext::Instance() {
-    static GpuContext instance;
+Converter& Converter::Instance() {
+    static Converter instance;
     static bool s_logged = false;
     if (!s_logged) {
-        rs::log::Info("[GPU] GpuContext singleton created at %p", &instance);
+        rs::log::Info("[Converter] singleton created at %p", &instance);
         s_logged = true;
     }
     return instance;
 }
 
-GpuContext::~GpuContext() {
-    rs::log::Info("[GPU] ~GpuContext destructor fired (device=%p queue=%p)", device_, queue_);
+Converter::~Converter() {
+    rs::log::Info("[Converter] destructor fired (device=%p queue=%p)", device_, queue_);
     Shutdown();
 }
 
-bool GpuContext::Initialize(ID3D12Device* device, ID3D12CommandQueue* queue) {
+bool Converter::Initialize(ID3D12Device* device, ID3D12CommandQueue* queue) {
     device_ = device;
     queue_  = queue;
 
     ID3D12DebugDevice* debug_dev = nullptr;
     if (SUCCEEDED(device_->QueryInterface(IID_PPV_ARGS(&debug_dev)))) {
-        rs::log::Info("GpuContext::Initialize: D3D12 debug layer active — GPU errors will be reported");
+        rs::log::Info("[Converter] D3D12 debug layer active — GPU errors will be reported");
         debug_dev->Release();
     } else {
-        rs::log::Info("GpuContext::Initialize: D3D12 debug layer not active (pass -d3ddebug to UE for GPU diagnostics)");
+        rs::log::Info("[Converter] D3D12 debug layer not active (pass -d3ddebug to UE for GPU diagnostics)");
     }
 
     EnsureResources();
     return true;
 }
 
-void GpuContext::Shutdown() {
+void Converter::Shutdown() {
     if (!device_ && !queue_ && !cmd_list_) {
-        rs::log::Info("[GPU] Shutdown: already shut down - skipping");
+        rs::log::Info("[Converter] Shutdown: already shut down - skipping");
         return;
     }
-    rs::log::Info("[GPU] Shutdown: releasing readback pool...");
+    rs::log::Info("[Converter] Shutdown: releasing readback pool...");
     ReleaseReadbackPool();
-    rs::log::Info("[GPU] Shutdown: releasing fences/allocators/events...");
+    rs::log::Info("[Converter] Shutdown: releasing fences/allocators/events...");
     for (int i = 0; i < 2; ++i) {
         if (fence_event_[i]) {
             CloseHandle(fence_event_[i]);
@@ -76,10 +76,10 @@ void GpuContext::Shutdown() {
     image_index_     = 0;
     reset_command_   = true;
     command_index_   = 0;
-    rs::log::Info("[GPU] Shutdown: complete");
+    rs::log::Info("[Converter] Shutdown: complete");
 }
 
-void GpuContext::EnsureResources() {
+void Converter::EnsureResources() {
     if (!device_) return;
     for (int i = 0; i < 2; ++i) {
         if (!allocator_[i])
@@ -93,13 +93,13 @@ void GpuContext::EnsureResources() {
         device_->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, allocator_[0], nullptr, IID_PPV_ARGS(&cmd_list_));
 }
 
-bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
+bool Converter::Submit(const SenderFrame* frame, int layer_key) {
     assert(frame);
     if (!device_ || !queue_ || !frame)
         return false;
 
     const auto& streams = Streams();
-    assert(!streams.empty() && "Streams must be loaded before SubmitFrame");
+    assert(!streams.empty() && "Streams must be loaded before Submit");
 
     ID3D12Resource* tex = nullptr;
     if (frame->type == RS_FRAMETYPE_DX12_TEXTURE)
@@ -224,21 +224,21 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
                 const UINT64 after = fence_[wait_idx]->GetCompletedValue();
 
                 if (wait_result != WAIT_OBJECT_0) {
-                    rs::log::Error("[GPU] FENCE TIMEOUT #%d: slot=%d expected=%llu before=%llu after=%llu waited=%.1fms — likely TDR or GPU hang",
+                    rs::log::Error("[Converter] FENCE TIMEOUT #%d: slot=%d expected=%llu before=%llu after=%llu waited=%.1fms — likely TDR or GPU hang",
                         s_frame, wait_idx, expected, before, after, wait_ms);
                     assert(wait_result == WAIT_OBJECT_0 && "GPU fence wait must succeed within timeout (5s) — possible TDR or GPU hang");
                 } else if (wait_ms > 1000.0) {
-                    rs::log::Error("[GPU] FENCE SLOW #%d: slot=%d expected=%llu before=%llu after=%llu waited=%.1fms — GPU under heavy load",
+                    rs::log::Error("[Converter] FENCE SLOW #%d: slot=%d expected=%llu before=%llu after=%llu waited=%.1fms — GPU under heavy load",
                         s_frame, wait_idx, expected, before, after, wait_ms);
                 } else if (wait_ms > 100.0) {
-                    rs::log::Info("[GPU] FENCE WARN #%d: slot=%d expected=%llu before=%llu after=%llu waited=%.1fms",
+                    rs::log::Info("[Converter] FENCE WARN #%d: slot=%d expected=%llu before=%llu after=%llu waited=%.1fms",
                         s_frame, wait_idx, expected, before, after, wait_ms);
                 } else if (s_frame <= 30) {
-                    rs::log::Info("[GPU] FENCE #%d: slot=%d expected=%llu before=%llu after=%llu waited=%.1fms",
+                    rs::log::Info("[Converter] FENCE #%d: slot=%d expected=%llu before=%llu after=%llu waited=%.1fms",
                         s_frame, wait_idx, expected, before, after, wait_ms);
                 }
             } else if (s_frame <= 5) {
-                rs::log::Info("[GPU] FENCE #%d: slot=%d NO WAIT (first frame or fence already signaled)", s_frame, wait_idx);
+                rs::log::Info("[Converter] FENCE #%d: slot=%d NO WAIT (first frame or fence already signaled)", s_frame, wait_idx);
             }
         }
 
@@ -254,7 +254,7 @@ bool GpuContext::SubmitFrame(const SenderFrame* frame, int layer_key) {
     return true;
 }
 
-std::vector<FrameBuffer> GpuContext::ConsumeReadyPack() {
+std::vector<FrameBuffer> Converter::Consume() {
     if (!frame_complete_) {
         return {};
     }
@@ -266,10 +266,10 @@ std::vector<FrameBuffer> GpuContext::ConsumeReadyPack() {
     data_pack_[ready_idx].clear();
 
     for (const auto& buf : result) {
-        assert(buf.cpu_base && "ConsumeReadyPack: cpu_base must not be null");
-        assert(buf.stage_buffer && "ConsumeReadyPack: stage_buffer must not be null");
-        assert(buf.frame_bytes > 0 && buf.frame_bytes <= rb_buffer_bytes_ && "ConsumeReadyPack: frame_bytes must be positive and within pool buffer size");
-        assert(buf.layer_id >= 0 && buf.layer_id < kMaxLayers && "ConsumeReadyPack: layer_id must be valid");
+        assert(buf.cpu_base && "Consume: cpu_base must not be null");
+        assert(buf.stage_buffer && "Consume: stage_buffer must not be null");
+        assert(buf.frame_bytes > 0 && buf.frame_bytes <= rb_buffer_bytes_ && "Consume: frame_bytes must be positive and within pool buffer size");
+        assert(buf.layer_id >= 0 && buf.layer_id < kMaxLayers && "Consume: layer_id must be valid");
         const size_t canary_offset = static_cast<size_t>(rb_buffer_bytes_) - sizeof(uint32_t);
         const uint32_t canary = *reinterpret_cast<const uint32_t*>(buf.cpu_base + canary_offset);
         assert(canary == 0xDEADBEEF && "GPU WRITE OVERRUN DETECTED: canary corrupted — GPU wrote past buffer bounds!");
@@ -277,7 +277,7 @@ std::vector<FrameBuffer> GpuContext::ConsumeReadyPack() {
     return result;
 }
 
-void GpuContext::ReleaseReadbackPool() {
+void Converter::ReleaseReadbackPool() {
     for (int i = 0; i < 2; ++i) {
         if (fence_[i] && fence_[i]->GetCompletedValue() < fence_value_[i]) {
             fence_[i]->SetEventOnCompletion(fence_value_[i], fence_event_[i]);
@@ -301,14 +301,12 @@ void GpuContext::ReleaseReadbackPool() {
     rb_buffer_bytes_ = 0;
 }
 
-bool GpuContext::EnsureReadbackPool(int frame_w, int frame_h, UINT req_row_pitch, UINT64 req_total_bytes) {
+bool Converter::EnsureReadbackPool(int frame_w, int frame_h, UINT req_row_pitch, UINT64 req_total_bytes) {
     if (!device_) return false;
     assert(req_row_pitch > 0 && req_total_bytes > 0 && "readback pool request must have positive size");
 
     int res_w = (std::max)(1, frame_w);
     int res_h = (std::max)(1, frame_h);
-
-    // rs::log::Info("[GPU] EnsureReadbackPool: frame=%dx%d layout=%dx%d req_pitch=%u req_bytes=%llu", frame_w, frame_h, layout_.width, layout_.height, req_row_pitch, req_total_bytes);
 
     int max_w = 0, max_h = 0;
     for (const auto& s : Streams()) {
@@ -317,8 +315,6 @@ bool GpuContext::EnsureReadbackPool(int frame_w, int frame_h, UINT req_row_pitch
     }
     res_w = (std::max)(res_w, max_w);
     res_h = (std::max)(res_h, max_h);
-
-    // rs::log::Info("[GPU] EnsureReadbackPool: after layout floor (%dx%d) -> %dx%d", layout_.width, layout_.height, res_w, res_h);
 
     UINT fp_w = static_cast<UINT>(res_w);
     UINT fp_h = static_cast<UINT>(res_h);
@@ -329,17 +325,13 @@ bool GpuContext::EnsureReadbackPool(int frame_w, int frame_h, UINT req_row_pitch
     total_bytes = (std::max)(total_bytes, req_total_bytes);
     total_bytes = (std::max)(total_bytes, static_cast<UINT64>(row_pitch) * fp_h);
 
-    // rs::log::Info("[GPU] EnsureReadbackPool: final row_pitch=%u total_bytes=%llu (layers=%d)", row_pitch, total_bytes, layout_.n_layers);
-
     int n_l = static_cast<int>(Streams().size());
     if (n_l <= 0) n_l = 1;
     if (n_l > kMaxLayers)
         n_l = kMaxLayers;
 
-    if (rb_ready_ && rb_layer_count_ >= n_l && rb_row_pitch_ >= row_pitch && rb_buffer_bytes_ >= total_bytes) {
-        // rs::log::Info("[GPU] EnsureReadbackPool: reusing existing pool (rb_row_pitch=%u >= %u, rb_bytes=%llu >= %llu)", rb_row_pitch_, row_pitch, rb_buffer_bytes_, total_bytes);
+    if (rb_ready_ && rb_layer_count_ >= n_l && rb_row_pitch_ >= row_pitch && rb_buffer_bytes_ >= total_bytes)
         return true;
-    }
 
     ReleaseReadbackPool();
 
