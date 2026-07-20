@@ -10,7 +10,11 @@
 #include "gpu.h"
 #include "link.h"
 #include "logging.h"
+#ifdef RS_SENDER_NOVANDI
+#include "sender/nova_ndi_sender.h"
+#else
 #include "sender/ndi_sender.h"
+#endif
 #include "streams.h"
 
 static std::string GetArg(const wchar_t* key) {
@@ -38,7 +42,11 @@ static std::string GetArg(const wchar_t* key) {
 }
 
 static std::unique_ptr<rs::Link> g_link;
+#ifdef RS_SENDER_NOVANDI
+static std::unique_ptr<rs::ISender> g_sender = std::make_unique<rs::NovaNdiSender>();
+#else
 static std::unique_ptr<rs::ISender> g_sender = std::make_unique<rs::NdiSender>();
+#endif
 
 extern "C" RENDER_STREAM_API void rs_registerLoggingFunc(logger_t fn)        { rs::log::SetInfoCallback(fn);    }
 extern "C" RENDER_STREAM_API void rs_registerErrorLoggingFunc(logger_t fn)   { rs::log::SetErrorCallback(fn);   }
@@ -51,10 +59,12 @@ extern "C" RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor, in
     (void)expectedVersionMajor;
     (void)expectedVersionMinor;
 
+#ifndef RS_SENDER_NOVANDI
     if (!NDIlib_initialize()) {
         rs::log::Error("[rs_initialise] NDIlib_initialize failed");
         return RS_ERROR_UNSPECIFIED;
     }
+#endif
 
     try {
         g_link = std::make_unique<rs::Link>();
@@ -70,7 +80,9 @@ extern "C" RENDER_STREAM_API RS_ERROR rs_shutdown() {
     g_link.reset();
     rs::GpuContext::Instance().Shutdown();
     g_sender->Stop();
+#ifndef RS_SENDER_NOVANDI
     NDIlib_destroy();
+#endif
     return RS_ERROR_SUCCESS;
 }
 
@@ -170,9 +182,13 @@ extern "C" RENDER_STREAM_API RS_ERROR rs_getStreams(StreamDescriptions* out, uin
         }
 
         std::string prefix = GetArg(L"dc_node");
-        g_sender->Start(prefix);
-        rs::log::Info("[rs_getStreams] NDI started: %zu layers, prefix '%s'",
-                      rs::Streams().size(), prefix.empty() ? "(none)" : prefix.c_str());
+        if (g_sender->Start(prefix)) {
+            rs::log::Info("[rs_getStreams] Sender started: %zu layers, prefix '%s'",
+                          g_sender->LayerCount(), prefix.empty() ? "(none)" : prefix.c_str());
+        } else {
+            rs::log::Error("[rs_getStreams] Sender start failed for prefix '%s'",
+                           prefix.empty() ? "(none)" : prefix.c_str());
+        }
     }
 
     const auto& loaded = rs::Streams();
@@ -393,8 +409,13 @@ extern "C" RENDER_STREAM_API RS_ERROR rs_sendFrame2(StreamHandle streamHandle, c
 
     auto ready_pack = rs::GpuContext::Instance().ConsumeReadyPack();
     for (const auto& buf : ready_pack) {
-        if (buf.cpu_base)
-            g_sender->Send(buf.layer_id, buf.cpu_base);
+        if (buf.cpu_base) {
+            if (!g_sender->Send(buf.layer_id, buf.cpu_base)) {
+                static int s_send_fail = 0;
+                if (++s_send_fail <= 10)
+                    rs::log::Info("[rs_sendFrame2] Send failed for layer %d", buf.layer_id);
+            }
+        }
     }
 
     if (frameData && frameData->cameraData && g_link)
