@@ -404,16 +404,24 @@ extern "C" RENDER_STREAM_API RS_ERROR rs_getSkeletonJointNames(uint64_t schemaHa
 extern "C" RENDER_STREAM_API RS_ERROR rs_sendFrame2(StreamHandle streamHandle, const SenderFrame* frame, const FrameResponseData* frameData) {
     int layer_key = static_cast<int>(streamHandle) - 1;
 
-    if (!rs::Converter::Instance().Submit(frame, layer_key))
+    rs::FrameFormat fmt = g_sender->WantsGpuTextures() ? rs::FrameFormat::kD3D11 : rs::FrameFormat::kCPU;
+    if (!rs::Converter::Instance().Submit(frame, layer_key, fmt))
         return RS_ERROR_UNSPECIFIED;
 
-    auto ready_pack = rs::Converter::Instance().Consume();
-    for (const auto& buf : ready_pack) {
-        if (buf.cpu_base) {
-            if (!g_sender->Send(buf.layer_id, buf.cpu_base)) {
+    auto ready = rs::Converter::Instance().Consume();
+    for (const auto& out : ready) {
+        if (out.cpu_ptr) {
+            if (!g_sender->Send(out.layer_id, out.cpu_ptr)) {
                 static int s_send_fail = 0;
                 if (++s_send_fail <= 10)
-                    rs::log::Info("[rs_sendFrame2] Send failed for layer %d", buf.layer_id);
+                    rs::log::Info("[rs_sendFrame2] Send failed for layer %d", out.layer_id);
+            }
+        }
+        if (out.d3d11_tex) {
+            if (!g_sender->SendTexture(out.d3d11_tex, out.layer_id)) {
+                static int s_gpu_send_fail = 0;
+                if (++s_gpu_send_fail <= 10)
+                    rs::log::Info("[rs_sendFrame2] SendTexture failed for layer %d", out.layer_id);
             }
         }
     }

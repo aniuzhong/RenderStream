@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <vector>
 #include <profileapi.h>
+#include <dxgi1_4.h>
 
 #include "renderstream.h"
 #include "logging.h"
@@ -39,6 +40,7 @@ bool Converter::Initialize(ID3D12Device* device, ID3D12CommandQueue* queue) {
     }
 
     EnsureResources();
+    InitD3D11();
     return true;
 }
 
@@ -49,6 +51,10 @@ void Converter::Shutdown() {
     }
     rs::log::Info("[Converter] Shutdown: releasing readback pool...");
     ReleaseReadbackPool();
+    rs::log::Info("[Converter] Shutdown: releasing shared pool...");
+    ReleaseSharedPool();
+    rs::log::Info("[Converter] Shutdown: releasing D3D11...");
+    ReleaseD3D11();
     rs::log::Info("[Converter] Shutdown: releasing fences/allocators/events...");
     for (int i = 0; i < 2; ++i) {
         if (fence_event_[i]) {
@@ -93,7 +99,153 @@ void Converter::EnsureResources() {
         device_->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, allocator_[0], nullptr, IID_PPV_ARGS(&cmd_list_));
 }
 
-bool Converter::Submit(const SenderFrame* frame, int layer_key) {
+// ---------------------------------------------------------------------------
+// D3D11 interop for GPU sender path
+// ---------------------------------------------------------------------------
+bool Converter::InitD3D11() {
+    if (!device_) return false;
+
+    LUID luid = device_->GetAdapterLuid();
+
+    IDXGIFactory4* factory = nullptr;
+    HRESULT hr = CreateDXGIFactory1(IID_PPV_ARGS(&factory));
+    if (FAILED(hr) || !factory) {
+        rs::log::Info("[Converter] InitD3D11: CreateDXGIFactory1 failed (hr=0x%lX) — GPU sender unavailable",
+                      static_cast<unsigned long>(hr));
+        return false;
+    }
+
+    IDXGIAdapter* adapter = nullptr;
+    hr = factory->EnumAdapterByLuid(luid, IID_PPV_ARGS(&adapter));
+    factory->Release();
+    if (FAILED(hr) || !adapter) {
+        rs::log::Info("[Converter] InitD3D11: EnumAdapterByLuid failed (hr=0x%lX) — GPU sender unavailable",
+                      static_cast<unsigned long>(hr));
+        return false;
+    }
+
+    const D3D_FEATURE_LEVEL levels[] = { D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0 };
+    hr = D3D11CreateDevice(adapter, D3D_DRIVER_TYPE_UNKNOWN, nullptr, 0,
+                           levels, _countof(levels), D3D11_SDK_VERSION,
+                           &d3d11_dev_, nullptr, &d3d11_ctx_);
+    adapter->Release();
+
+    if (FAILED(hr) || !d3d11_dev_) {
+        rs::log::Info("[Converter] InitD3D11: D3D11CreateDevice failed (hr=0x%lX) — GPU sender unavailable",
+                      static_cast<unsigned long>(hr));
+        return false;
+    }
+
+    rs::log::Info("[Converter] InitD3D11: D3D11 device created — GPU sender available");
+    return true;
+}
+
+void Converter::ReleaseD3D11() {
+    if (d3d11_ctx_) { d3d11_ctx_->Release(); d3d11_ctx_ = nullptr; }
+    if (d3d11_dev_) { d3d11_dev_->Release(); d3d11_dev_ = nullptr; }
+}
+
+bool Converter::EnsureSharedPool(int width, int height) {
+    if (!d3d11_dev_ || !device_) return false;
+
+    if (shared_ready_ && shared_w_ >= static_cast<UINT>(width) && shared_h_ >= static_cast<UINT>(height))
+        return true;
+
+    ReleaseSharedPool();
+
+    UINT w = static_cast<UINT>(width);
+    UINT h = static_cast<UINT>(height);
+
+    int n_l = static_cast<int>(Streams().size());
+    if (n_l <= 0)
+        n_l = 1;
+    if (n_l > kMaxLayers)
+        n_l = kMaxLayers;
+
+    // Create shared texture on D3D11 side, open on D3D12 side.
+    // (reverse of the NATURAL approach, but verified working via d3d_interop_verify.exe)
+    D3D11_TEXTURE2D_DESC d3d11Desc = {};
+    d3d11Desc.Width            = w;
+    d3d11Desc.Height           = h;
+    d3d11Desc.MipLevels        = 1;
+    d3d11Desc.ArraySize        = 1;
+    d3d11Desc.Format           = DXGI_FORMAT_B8G8R8A8_UNORM;
+    d3d11Desc.SampleDesc.Count = 1;
+    d3d11Desc.Usage            = D3D11_USAGE_DEFAULT;
+    d3d11Desc.BindFlags        = D3D11_BIND_SHADER_RESOURCE;
+    d3d11Desc.MiscFlags        = D3D11_RESOURCE_MISC_SHARED;
+
+    for (int l = 0; l < n_l; ++l) {
+        for (int b = 0; b < 2; ++b) {
+            ID3D11Texture2D* d3d11Tex = nullptr;
+            HRESULT hr = d3d11_dev_->CreateTexture2D(&d3d11Desc, nullptr, &d3d11Tex);
+            if (FAILED(hr) || !d3d11Tex) {
+                rs::log::Error("[Converter] EnsureSharedPool: D3D11 CreateTexture2D failed (hr=0x%lX)",
+                               static_cast<unsigned long>(hr));
+                ReleaseSharedPool();
+                return false;
+            }
+
+            IDXGIResource* dxgiRes = nullptr;
+            hr = d3d11Tex->QueryInterface(IID_PPV_ARGS(&dxgiRes));
+            if (FAILED(hr) || !dxgiRes) {
+                rs::log::Error("[Converter] EnsureSharedPool: QueryInterface IDXGIResource failed (hr=0x%lX)",
+                               static_cast<unsigned long>(hr));
+                d3d11Tex->Release();
+                ReleaseSharedPool();
+                return false;
+            }
+
+            HANDLE hShared = nullptr;
+            hr = dxgiRes->GetSharedHandle(&hShared);
+            dxgiRes->Release();
+            if (FAILED(hr) || !hShared) {
+                rs::log::Error("[Converter] EnsureSharedPool: GetSharedHandle failed (hr=0x%lX)",
+                               static_cast<unsigned long>(hr));
+                d3d11Tex->Release();
+                ReleaseSharedPool();
+                return false;
+            }
+
+            ID3D12Resource* d3d12Tex = nullptr;
+            hr = device_->OpenSharedHandle(hShared, IID_PPV_ARGS(&d3d12Tex));
+            if (FAILED(hr) || !d3d12Tex) {
+                rs::log::Error("[Converter] EnsureSharedPool: D3D12 OpenSharedHandle failed (hr=0x%lX)",
+                               static_cast<unsigned long>(hr));
+                d3d11Tex->Release();
+                ReleaseSharedPool();
+                return false;
+            }
+
+            shared_[l][b].d3d12_tex = d3d12Tex;
+            shared_[l][b].d3d11_tex = d3d11Tex;
+        }
+        shared_bank_[l] = 0;
+    }
+
+    shared_w_ = w;
+    shared_h_ = h;
+    shared_ready_ = true;
+    rs::log::Info("[Converter] EnsureSharedPool: %dx%d x%dx2 ready", w, h, n_l);
+    return true;
+}
+
+void Converter::ReleaseSharedPool() {
+    for (int l = 0; l < kMaxLayers; ++l) {
+        shared_bank_[l] = 0;
+        for (int b = 0; b < 2; ++b) {
+            if (shared_[l][b].d3d11_tex) { shared_[l][b].d3d11_tex->Release(); shared_[l][b].d3d11_tex = nullptr; }
+            if (shared_[l][b].d3d12_tex) { shared_[l][b].d3d12_tex->Release(); shared_[l][b].d3d12_tex = nullptr; }
+        }
+    }
+    shared_ready_ = false;
+    shared_w_ = shared_h_ = 0;
+}
+
+// ---------------------------------------------------------------------------
+// Submit — CPU readback or D3D11 interop
+// ---------------------------------------------------------------------------
+bool Converter::Submit(const SenderFrame* frame, int layer_key, FrameFormat fmt) {
     assert(frame);
     if (!device_ || !queue_ || !frame)
         return false;
@@ -128,9 +280,7 @@ bool Converter::Submit(const SenderFrame* frame, int layer_key) {
         reset_command_ = false;
     }
 
-    D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint;
-    device_->GetCopyableFootprints(&desc, 0, 1, 0, &footprint, nullptr, nullptr, &buffer_size_);
-
+    // Compute clip box (used by both CPU and GPU paths)
     D3D12_BOX box;
     box.left   = static_cast<UINT>(static_cast<float>(tex_w) * clip.left);
     box.right  = static_cast<UINT>(static_cast<float>(tex_w) * clip.right);
@@ -138,59 +288,86 @@ bool Converter::Submit(const SenderFrame* frame, int layer_key) {
     box.bottom = static_cast<UINT>(static_cast<float>(tex_h) * clip.bottom);
     box.front  = 0;
     box.back   = 1;
-    assert(box.right > box.left && box.bottom > box.top && "clip region must be non-empty");
+
+    const UINT clip_w = box.right - box.left;
+    const UINT clip_h = box.bottom - box.top;
+    assert(clip_w > 0 && clip_h > 0 && "clip region must be non-empty");
     assert(box.right <= static_cast<UINT>(tex_w) && box.bottom <= static_cast<UINT>(tex_h) && "clip must be within texture bounds");
 
-    footprint.Footprint.Width  = box.right - box.left;
-    footprint.Footprint.Height = box.bottom - box.top;
-    footprint.Footprint.Depth  = 1;
+    if (fmt == FrameFormat::kD3D11) {
+        // ---- GPU path: copy source → shared D3D12 texture ----
+        if (!d3d11_dev_)
+            return false;
+        if (!EnsureSharedPool(static_cast<int>(clip_w), static_cast<int>(clip_h)))
+            return false;
 
-    const UINT64 row_pitch  = Align(footprint.Footprint.Width * 4, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
-    const UINT64 total_bytes = row_pitch * footprint.Footprint.Height;
-    block_size_ = static_cast<UINT>(total_bytes);
+        const int bank = shared_bank_[layer_key];
+        ID3D12Resource* dst = shared_[layer_key][bank].d3d12_tex;
+        assert(dst);
 
-    if (!EnsureReadbackPool(tex_w, tex_h, static_cast<UINT>(row_pitch), total_bytes))
-        return false;
+        D3D12_TEXTURE_COPY_LOCATION src_loc = {};
+        src_loc.pResource = tex;
+        src_loc.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+        src_loc.SubresourceIndex = 0;
 
-    assert(rb_row_pitch_ >= static_cast<UINT>(row_pitch) && "readback pool row_pitch must be >= requested row_pitch");
-    assert(rb_buffer_bytes_ >= total_bytes && "readback pool buffer must be large enough for total_bytes");
-    {
-        const UINT64 gpu_write_bytes = static_cast<UINT64>(rb_row_pitch_) * (footprint.Footprint.Height - 1)
-                                       + static_cast<UINT64>(footprint.Footprint.Width) * 4;
-        assert(gpu_write_bytes <= rb_buffer_bytes_ && "GPU copy footprint must fit within readback buffer");
+        D3D12_TEXTURE_COPY_LOCATION dst_loc = {};
+        dst_loc.pResource = dst;
+        dst_loc.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+        dst_loc.SubresourceIndex = 0;
+
+        cmd_list_->CopyTextureRegion(&dst_loc, 0, 0, 0, &src_loc, &box);
+
+        Output out;
+        out.layer_id  = layer_key;
+        out.d3d11_tex = shared_[layer_key][bank].d3d11_tex;
+        shared_bank_[layer_key] ^= 1;
+        block_size_ = clip_w * clip_h * 4;
+
+        data_pack_[data_pack_index_ == 0 ? 0 : 1].push_back(out);
+    } else {
+        // ---- CPU path: copy source → readback buffer ----
+        D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint;
+        device_->GetCopyableFootprints(&desc, 0, 1, 0, &footprint, nullptr, nullptr, &buffer_size_);
+
+        footprint.Footprint.Width  = clip_w;
+        footprint.Footprint.Height = clip_h;
+        footprint.Footprint.Depth  = 1;
+
+        const UINT64 row_pitch  = Align(footprint.Footprint.Width * 4, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
+        const UINT64 total_bytes = row_pitch * footprint.Footprint.Height;
+        block_size_ = static_cast<UINT>(total_bytes);
+
+        if (!EnsureReadbackPool(tex_w, tex_h, static_cast<UINT>(row_pitch), total_bytes))
+            return false;
+
+        const int bank = rb_next_bank_[layer_key];
+        ID3D12Resource* rb_buf = rb_res_[layer_key][bank];
+        assert(rb_buf && "readback buffer resource must exist");
+        if (!rb_buf) return false;
+
+        uint8_t* const cpu_ptr = rb_cpu_[layer_key][bank];
+        assert(cpu_ptr && "readback CPU pointer must be non-null");
+
+        D3D12_TEXTURE_COPY_LOCATION src_loc = {};
+        src_loc.pResource = tex;
+        src_loc.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+        src_loc.SubresourceIndex = 0;
+
+        D3D12_TEXTURE_COPY_LOCATION dst_loc = {};
+        dst_loc.pResource = rb_buf;
+        dst_loc.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+        footprint.Footprint.RowPitch = rb_row_pitch_;
+        dst_loc.PlacedFootprint = footprint;
+
+        cmd_list_->CopyTextureRegion(&dst_loc, 0, 0, 0, &src_loc, &box);
+
+        Output out;
+        out.cpu_ptr  = cpu_ptr;
+        out.layer_id = layer_key;
+        rb_next_bank_[layer_key] ^= 1;
+
+        data_pack_[data_pack_index_ == 0 ? 0 : 1].push_back(out);
     }
-
-    const int bank = rb_next_bank_[layer_key];
-    ID3D12Resource* rb_buf = rb_res_[layer_key][bank];
-    assert(rb_buf && "readback buffer resource must exist");
-    if (!rb_buf)
-        return false;
-
-    uint8_t* const cpu_ptr = rb_cpu_[layer_key][bank];
-    assert(cpu_ptr && "readback CPU pointer must be non-null");
-    assert(rb_buffer_bytes_ > 0 && "readback buffer size must be positive");
-
-    D3D12_TEXTURE_COPY_LOCATION src_loc = {};
-    src_loc.pResource = tex;
-    src_loc.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
-    src_loc.SubresourceIndex = 0;
-
-    D3D12_TEXTURE_COPY_LOCATION dst_loc = {};
-    dst_loc.pResource = rb_buf;
-    dst_loc.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
-    footprint.Footprint.RowPitch = rb_row_pitch_;
-    dst_loc.PlacedFootprint = footprint;
-
-    cmd_list_->CopyTextureRegion(&dst_loc, 0, 0, 0, &src_loc, &box);
-
-    FrameBuffer buf;
-    buf.stage_buffer = rb_buf;
-    buf.cpu_base     = rb_cpu_[layer_key][bank];
-    buf.frame_bytes  = static_cast<size_t>(total_bytes);
-    buf.layer_id     = layer_key;
-    rb_next_bank_[layer_key] ^= 1;
-
-    data_pack_[data_pack_index_ == 0 ? 0 : 1].push_back(buf);
 
     if (image_index_ == (static_cast<int>(streams.size()) - 1)) {
         cmd_list_->Close();
@@ -254,7 +431,7 @@ bool Converter::Submit(const SenderFrame* frame, int layer_key) {
     return true;
 }
 
-std::vector<FrameBuffer> Converter::Consume() {
+std::vector<Output> Converter::Consume() {
     if (!frame_complete_) {
         return {};
     }
@@ -262,17 +439,16 @@ std::vector<FrameBuffer> Converter::Consume() {
     int ready_idx = (data_pack_index_ + 1) % 2;
     if (ready_idx < 0)
         ready_idx = 0;
-    std::vector<FrameBuffer> result = std::move(data_pack_[ready_idx]);
+    std::vector<Output> result = std::move(data_pack_[ready_idx]);
     data_pack_[ready_idx].clear();
 
-    for (const auto& buf : result) {
-        assert(buf.cpu_base && "Consume: cpu_base must not be null");
-        assert(buf.stage_buffer && "Consume: stage_buffer must not be null");
-        assert(buf.frame_bytes > 0 && buf.frame_bytes <= rb_buffer_bytes_ && "Consume: frame_bytes must be positive and within pool buffer size");
-        assert(buf.layer_id >= 0 && buf.layer_id < kMaxLayers && "Consume: layer_id must be valid");
-        const size_t canary_offset = static_cast<size_t>(rb_buffer_bytes_) - sizeof(uint32_t);
-        const uint32_t canary = *reinterpret_cast<const uint32_t*>(buf.cpu_base + canary_offset);
-        assert(canary == 0xDEADBEEF && "GPU WRITE OVERRUN DETECTED: canary corrupted — GPU wrote past buffer bounds!");
+    for (const auto& out : result) {
+        if (out.cpu_ptr) {
+            assert(out.layer_id >= 0 && out.layer_id < kMaxLayers && "Consume: layer_id must be valid");
+            const size_t canary_offset = static_cast<size_t>(rb_buffer_bytes_) - sizeof(uint32_t);
+            const uint32_t canary = *reinterpret_cast<const uint32_t*>(out.cpu_ptr + canary_offset);
+            assert(canary == 0xDEADBEEF && "GPU WRITE OVERRUN DETECTED: canary corrupted — GPU wrote past buffer bounds!");
+        }
     }
     return result;
 }
