@@ -7,10 +7,14 @@
 
 #include "renderstream.h"
 #include "renderstream.hpp"
-#include "gpu.h"
+#include "converter.h"
 #include "link.h"
 #include "logging.h"
-#include "sender.h"
+#ifdef RS_SENDER_NOVANDI
+#include "sender/nova_ndi_sender.h"
+#else
+#include "sender/ndi_sender.h"
+#endif
 #include "streams.h"
 
 static std::string GetArg(const wchar_t* key) {
@@ -38,6 +42,11 @@ static std::string GetArg(const wchar_t* key) {
 }
 
 static std::unique_ptr<rs::Link> g_link;
+#ifdef RS_SENDER_NOVANDI
+static std::unique_ptr<rs::ISender> g_sender = std::make_unique<rs::NovaNdiSender>();
+#else
+static std::unique_ptr<rs::ISender> g_sender = std::make_unique<rs::NdiSender>();
+#endif
 
 extern "C" RENDER_STREAM_API void rs_registerLoggingFunc(logger_t fn)        { rs::log::SetInfoCallback(fn);    }
 extern "C" RENDER_STREAM_API void rs_registerErrorLoggingFunc(logger_t fn)   { rs::log::SetErrorCallback(fn);   }
@@ -50,10 +59,12 @@ extern "C" RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor, in
     (void)expectedVersionMajor;
     (void)expectedVersionMinor;
 
+#ifndef RS_SENDER_NOVANDI
     if (!NDIlib_initialize()) {
         rs::log::Error("[rs_initialise] NDIlib_initialize failed");
         return RS_ERROR_UNSPECIFIED;
     }
+#endif
 
     try {
         g_link = std::make_unique<rs::Link>();
@@ -67,9 +78,11 @@ extern "C" RENDER_STREAM_API RS_ERROR rs_initialise(int expectedVersionMajor, in
 
 extern "C" RENDER_STREAM_API RS_ERROR rs_shutdown() {
     g_link.reset();
-    rs::GpuContext::Instance().Shutdown();
-    rs::Sender::Instance().Stop();
+    rs::Converter::Instance().Shutdown();
+    g_sender->Stop();
+#ifndef RS_SENDER_NOVANDI
     NDIlib_destroy();
+#endif
     return RS_ERROR_SUCCESS;
 }
 
@@ -84,7 +97,7 @@ extern "C" RENDER_STREAM_API RS_ERROR rs_useDX12SharedHeapFlag(UseDX12SharedHeap
 }
 
 extern "C" RENDER_STREAM_API RS_ERROR rs_initialiseGpGpuWithDX12DeviceAndQueue(ID3D12Device* device, ID3D12CommandQueue* queue) {
-    if (!rs::GpuContext::Instance().Initialize(device, queue)) {
+    if (!rs::Converter::Instance().Initialize(device, queue)) {
         rs::log::Error("rs_initialiseGpGpuWithDX12DeviceAndQueue: GPU init failed");
         return RS_ERROR_UNSPECIFIED;
     }
@@ -169,9 +182,13 @@ extern "C" RENDER_STREAM_API RS_ERROR rs_getStreams(StreamDescriptions* out, uin
         }
 
         std::string prefix = GetArg(L"dc_node");
-        rs::Sender::Instance().Start(prefix);
-        rs::log::Info("[rs_getStreams] NDI started: %zu layers, prefix '%s'",
-                      rs::Streams().size(), prefix.empty() ? "(none)" : prefix.c_str());
+        if (g_sender->Start(prefix)) {
+            rs::log::Info("[rs_getStreams] Sender started: %zu layers, prefix '%s'",
+                          g_sender->LayerCount(), prefix.empty() ? "(none)" : prefix.c_str());
+        } else {
+            rs::log::Error("[rs_getStreams] Sender start failed for prefix '%s'",
+                           prefix.empty() ? "(none)" : prefix.c_str());
+        }
     }
 
     const auto& loaded = rs::Streams();
@@ -387,13 +404,26 @@ extern "C" RENDER_STREAM_API RS_ERROR rs_getSkeletonJointNames(uint64_t schemaHa
 extern "C" RENDER_STREAM_API RS_ERROR rs_sendFrame2(StreamHandle streamHandle, const SenderFrame* frame, const FrameResponseData* frameData) {
     int layer_key = static_cast<int>(streamHandle) - 1;
 
-    if (!rs::GpuContext::Instance().SubmitFrame(frame, layer_key))
+    rs::FrameFormat fmt = g_sender->WantsGpuTextures() ? rs::FrameFormat::kD3D11 : rs::FrameFormat::kCPU;
+    if (!rs::Converter::Instance().Submit(frame, layer_key, fmt))
         return RS_ERROR_UNSPECIFIED;
 
-    auto ready_pack = rs::GpuContext::Instance().ConsumeReadyPack();
-    for (const auto& buf : ready_pack) {
-        if (buf.cpu_base)
-            rs::Sender::Instance().Send(buf.layer_id, buf.cpu_base);
+    auto ready = rs::Converter::Instance().Consume();
+    for (const auto& out : ready) {
+        if (out.cpu_ptr) {
+            if (!g_sender->Send(out.layer_id, out.cpu_ptr)) {
+                static int s_send_fail = 0;
+                if (++s_send_fail <= 10)
+                    rs::log::Info("[rs_sendFrame2] Send failed for layer %d", out.layer_id);
+            }
+        }
+        if (out.d3d11_tex) {
+            if (!g_sender->SendTexture(out.d3d11_tex, out.layer_id)) {
+                static int s_gpu_send_fail = 0;
+                if (++s_gpu_send_fail <= 10)
+                    rs::log::Info("[rs_sendFrame2] SendTexture failed for layer %d", out.layer_id);
+            }
+        }
     }
 
     if (frameData && frameData->cameraData && g_link)

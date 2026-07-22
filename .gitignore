@@ -1,1 +1,6 @@
 build/
+build_novandi/
+third_party/ndi/
+third_party/NovaNDISenderCore/
+tools/sender_verify/
+tools/d3d_interop_verify/

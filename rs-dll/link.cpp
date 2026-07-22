@@ -291,13 +291,13 @@ RS_ERROR Link::AwaitFrame(int timeoutMs, FrameData* data) {
     data->flags                = published_->flags;
     data->scene                = published_->scene;
 
-    static int s_frame_log = 0;
-    ++s_frame_log;
-    if (s_frame_log <= 5 || s_frame_log % 120 == 0)
-        rs::log::Info("[Link] AwaitFrame #%d t=%.3f dt=%.4f scene=%u flags=%u cameras=%zu params=%zu texts=%zu images=%zu",
-            s_frame_log, t, dt, published_->scene, published_->flags,
-            published_->cameras.size(), published_->param_values.size(),
-            published_->text_values.size(), published_->image_refs.size());
+    // static int s_frame_log = 0;
+    // ++s_frame_log;
+    // if (s_frame_log <= 5 || s_frame_log % 120 == 0)
+    //     rs::log::Info("[Link] AwaitFrame #%d t=%.3f dt=%.4f scene=%u flags=%u cameras=%zu params=%zu texts=%zu images=%zu",
+    //         s_frame_log, t, dt, published_->scene, published_->flags,
+    //         published_->cameras.size(), published_->param_values.size(),
+    //         published_->text_values.size(), published_->image_refs.size());
 
     return RS_ERROR_SUCCESS;
 }
