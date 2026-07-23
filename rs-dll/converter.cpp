@@ -33,13 +33,19 @@ bool Converter::Initialize(ID3D12Device* device, ID3D12CommandQueue* queue) {
 
     ID3D12DebugDevice* debug_dev = nullptr;
     if (SUCCEEDED(device_->QueryInterface(IID_PPV_ARGS(&debug_dev)))) {
-        rs::log::Info("[Converter] D3D12 debug layer active — GPU errors will be reported");
+        rs::log::Info("[Converter] D3D12 debug layer active - GPU errors will be reported");
         debug_dev->Release();
     } else {
         rs::log::Info("[Converter] D3D12 debug layer not active (pass -d3ddebug to UE for GPU diagnostics)");
     }
 
-    EnsureResources();
+    for (int i = 0; i < 2; ++i) {
+        device_->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&allocator_[i]));
+        device_->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence_[i]));
+        fence_event_[i] = CreateEvent(nullptr, false, false, nullptr);
+    }
+    device_->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, allocator_[0], nullptr, IID_PPV_ARGS(&cmd_list_));
+
     InitD3D11();
     return true;
 }
@@ -76,7 +82,8 @@ void Converter::Shutdown() {
     }
     device_ = nullptr;
     queue_  = nullptr;
-    for (auto& pack : data_pack_) pack.clear();
+    for (auto& pack : data_pack_)
+        pack.clear();
     data_pack_index_ = -1;
     frame_complete_  = false;
     image_index_     = 0;
@@ -85,32 +92,19 @@ void Converter::Shutdown() {
     rs::log::Info("[Converter] Shutdown: complete");
 }
 
-void Converter::EnsureResources() {
-    if (!device_) return;
-    for (int i = 0; i < 2; ++i) {
-        if (!allocator_[i])
-            device_->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&allocator_[i]));
-        if (!fence_[i]) {
-            device_->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&fence_[i]));
-            fence_event_[i] = CreateEvent(nullptr, false, false, nullptr);
-        }
-    }
-    if (!cmd_list_)
-        device_->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, allocator_[0], nullptr, IID_PPV_ARGS(&cmd_list_));
-}
-
 // ---------------------------------------------------------------------------
 // D3D11 interop for GPU sender path
 // ---------------------------------------------------------------------------
 bool Converter::InitD3D11() {
-    if (!device_) return false;
+    if (!device_)
+        return false;
 
     LUID luid = device_->GetAdapterLuid();
 
     IDXGIFactory4* factory = nullptr;
     HRESULT hr = CreateDXGIFactory1(IID_PPV_ARGS(&factory));
     if (FAILED(hr) || !factory) {
-        rs::log::Info("[Converter] InitD3D11: CreateDXGIFactory1 failed (hr=0x%lX) — GPU sender unavailable",
+        rs::log::Info("[Converter] InitD3D11: CreateDXGIFactory1 failed (hr=0x%lX) - GPU sender unavailable",
                       static_cast<unsigned long>(hr));
         return false;
     }
@@ -119,7 +113,7 @@ bool Converter::InitD3D11() {
     hr = factory->EnumAdapterByLuid(luid, IID_PPV_ARGS(&adapter));
     factory->Release();
     if (FAILED(hr) || !adapter) {
-        rs::log::Info("[Converter] InitD3D11: EnumAdapterByLuid failed (hr=0x%lX) — GPU sender unavailable",
+        rs::log::Info("[Converter] InitD3D11: EnumAdapterByLuid failed (hr=0x%lX) - GPU sender unavailable",
                       static_cast<unsigned long>(hr));
         return false;
     }
@@ -131,22 +125,29 @@ bool Converter::InitD3D11() {
     adapter->Release();
 
     if (FAILED(hr) || !d3d11_dev_) {
-        rs::log::Info("[Converter] InitD3D11: D3D11CreateDevice failed (hr=0x%lX) — GPU sender unavailable",
+        rs::log::Info("[Converter] InitD3D11: D3D11CreateDevice failed (hr=0x%lX) - GPU sender unavailable",
                       static_cast<unsigned long>(hr));
         return false;
     }
 
-    rs::log::Info("[Converter] InitD3D11: D3D11 device created — GPU sender available");
+    rs::log::Info("[Converter] InitD3D11: D3D11 device created - GPU sender available");
     return true;
 }
 
 void Converter::ReleaseD3D11() {
-    if (d3d11_ctx_) { d3d11_ctx_->Release(); d3d11_ctx_ = nullptr; }
-    if (d3d11_dev_) { d3d11_dev_->Release(); d3d11_dev_ = nullptr; }
+    if (d3d11_ctx_) {
+        d3d11_ctx_->Release();
+        d3d11_ctx_ = nullptr;
+    }
+    if (d3d11_dev_) {
+        d3d11_dev_->Release();
+        d3d11_dev_ = nullptr;
+    }
 }
 
 bool Converter::EnsureSharedPool(int width, int height) {
-    if (!d3d11_dev_ || !device_) return false;
+    if (!d3d11_dev_ || !device_)
+        return false;
 
     if (shared_ready_ && shared_w_ >= static_cast<UINT>(width) && shared_h_ >= static_cast<UINT>(height))
         return true;
@@ -162,8 +163,17 @@ bool Converter::EnsureSharedPool(int width, int height) {
     if (n_l > kMaxLayers)
         n_l = kMaxLayers;
 
-    // Create shared texture on D3D11 side, open on D3D12 side.
-    // (reverse of the NATURAL approach, but verified working via d3d_interop_verify.exe)
+    // D3D11 creates shared texture, D3D12 opens via OpenSharedHandle.
+    //
+    // NovaPlayer uses both directions: D3D12Computer / CudaExternalConvert
+    // use natural (D3D12 create + D3D11 OpenSharedResource1), while
+    // D3D11CopyToD3D12 / SharedResourceCopy12 use this reverse approach.
+    //
+    // Natural direction works in standalone tests but triggers GPU crash
+    // (NVIDIA Aftermath TDR) on UE's D3D12 device — CreateCommittedResource
+    // with SHARED heap during active GPU queues is detected as a hang.
+    // Reverse direction avoids this: OpenSharedHandle is a lightweight
+    // reference, not a new allocation, so it passes UE's validation.
     D3D11_TEXTURE2D_DESC d3d11Desc = {};
     d3d11Desc.Width            = w;
     d3d11Desc.Height           = h;
@@ -172,7 +182,7 @@ bool Converter::EnsureSharedPool(int width, int height) {
     d3d11Desc.Format           = DXGI_FORMAT_B8G8R8A8_UNORM;
     d3d11Desc.SampleDesc.Count = 1;
     d3d11Desc.Usage            = D3D11_USAGE_DEFAULT;
-    d3d11Desc.BindFlags        = D3D11_BIND_SHADER_RESOURCE;
+    d3d11Desc.BindFlags        = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
     d3d11Desc.MiscFlags        = D3D11_RESOURCE_MISC_SHARED;
 
     for (int l = 0; l < n_l; ++l) {
@@ -234,8 +244,14 @@ void Converter::ReleaseSharedPool() {
     for (int l = 0; l < kMaxLayers; ++l) {
         shared_bank_[l] = 0;
         for (int b = 0; b < 2; ++b) {
-            if (shared_[l][b].d3d11_tex) { shared_[l][b].d3d11_tex->Release(); shared_[l][b].d3d11_tex = nullptr; }
-            if (shared_[l][b].d3d12_tex) { shared_[l][b].d3d12_tex->Release(); shared_[l][b].d3d12_tex = nullptr; }
+            if (shared_[l][b].d3d11_tex) {
+                shared_[l][b].d3d11_tex->Release();
+                shared_[l][b].d3d11_tex = nullptr;
+            }
+            if (shared_[l][b].d3d12_tex) {
+                shared_[l][b].d3d12_tex->Release();
+                shared_[l][b].d3d12_tex = nullptr;
+            }
         }
     }
     shared_ready_ = false;
@@ -243,7 +259,7 @@ void Converter::ReleaseSharedPool() {
 }
 
 // ---------------------------------------------------------------------------
-// Submit — CPU readback or D3D11 interop
+// Submit - CPU readback or D3D11 interop
 // ---------------------------------------------------------------------------
 bool Converter::Submit(const SenderFrame* frame, int layer_key, FrameFormat fmt) {
     assert(frame);
@@ -295,7 +311,7 @@ bool Converter::Submit(const SenderFrame* frame, int layer_key, FrameFormat fmt)
     assert(box.right <= static_cast<UINT>(tex_w) && box.bottom <= static_cast<UINT>(tex_h) && "clip must be within texture bounds");
 
     if (fmt == FrameFormat::kD3D11) {
-        // ---- GPU path: copy source → shared D3D12 texture ----
+        // GPU path: copy source -> shared D3D12 texture
         if (!d3d11_dev_)
             return false;
         if (!EnsureSharedPool(static_cast<int>(clip_w), static_cast<int>(clip_h)))
@@ -325,7 +341,7 @@ bool Converter::Submit(const SenderFrame* frame, int layer_key, FrameFormat fmt)
 
         data_pack_[data_pack_index_ == 0 ? 0 : 1].push_back(out);
     } else {
-        // ---- CPU path: copy source → readback buffer ----
+        // CPU path: copy source -> readback buffer
         D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint;
         device_->GetCopyableFootprints(&desc, 0, 1, 0, &footprint, nullptr, nullptr, &buffer_size_);
 
@@ -343,7 +359,8 @@ bool Converter::Submit(const SenderFrame* frame, int layer_key, FrameFormat fmt)
         const int bank = rb_next_bank_[layer_key];
         ID3D12Resource* rb_buf = rb_res_[layer_key][bank];
         assert(rb_buf && "readback buffer resource must exist");
-        if (!rb_buf) return false;
+        if (!rb_buf)
+            return false;
 
         uint8_t* const cpu_ptr = rb_cpu_[layer_key][bank];
         assert(cpu_ptr && "readback CPU pointer must be non-null");
@@ -432,9 +449,8 @@ bool Converter::Submit(const SenderFrame* frame, int layer_key, FrameFormat fmt)
 }
 
 std::vector<Output> Converter::Consume() {
-    if (!frame_complete_) {
+    if (!frame_complete_) 
         return {};
-    }
     frame_complete_ = false;
     int ready_idx = (data_pack_index_ + 1) % 2;
     if (ready_idx < 0)
@@ -478,7 +494,8 @@ void Converter::ReleaseReadbackPool() {
 }
 
 bool Converter::EnsureReadbackPool(int frame_w, int frame_h, UINT req_row_pitch, UINT64 req_total_bytes) {
-    if (!device_) return false;
+    if (!device_)
+        return false;
     assert(req_row_pitch > 0 && req_total_bytes > 0 && "readback pool request must have positive size");
 
     int res_w = (std::max)(1, frame_w);
