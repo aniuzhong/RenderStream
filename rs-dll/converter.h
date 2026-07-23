@@ -37,7 +37,6 @@ private:
     }
 
     // CPU path (readback)
-    void EnsureResources();
     bool EnsureReadbackPool(int width, int height, UINT row_pitch, UINT64 total_bytes);
     void ReleaseReadbackPool();
 
