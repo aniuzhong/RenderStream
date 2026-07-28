@@ -1,4 +1,4 @@
-// node_probe_example.cpp — probe rs-agent nodes on LAN.
+// node_probe_example.cpp - probe rs-agent nodes on LAN.
 // Usage: node_probe_example.exe [timeout_ms] [project_path]
 
 #include <cstdio>

@@ -152,7 +152,7 @@ void Link::OnTick(const std::string& line) {
 
 void Link::OnDisconnect() {
     quit_ = true;
-    rs::log::Info("[Link] session ended — quit flag set");
+    rs::log::Info("[Link] session ended - quit flag set");
     session_.reset();
     BeginAccept();
 }

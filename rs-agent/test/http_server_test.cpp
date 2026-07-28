@@ -136,7 +136,7 @@ TEST_CASE("POST /api/unreal/kill terminates process") {
     auto j = nlohmann::json::parse(res->body);
     REQUIRE(j["success"] == true);
 
-    // Kill is graceful — wait for IoRunner's polling to detect exit or deadline
+    // Kill is graceful - wait for IoRunner's polling to detect exit or deadline
     for (int i = 0; i < 80 && !fix.pm.List().empty(); ++i)
         std::this_thread::sleep_for(50ms);
     REQUIRE(fix.pm.List().empty());
@@ -147,7 +147,7 @@ TEST_CASE("GET /api/renderstream/schema with missing project returns 400") {
     auto cli = MakeClient();
     auto res = cli.Get("/api/renderstream/schema");
     REQUIRE(res);
-    // Returns JSON error — check body
+    // Returns JSON error - check body
     auto j = nlohmann::json::parse(res->body);
     REQUIRE(j.contains("error"));
 }

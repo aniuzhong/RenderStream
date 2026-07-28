@@ -1,4 +1,4 @@
-// NovaNdiSender — ISender backed by NovaNDISenderCore.dll.
+// NovaNdiSender - ISender backed by NovaNDISenderCore.dll.
 // CPU path: BGRA frame-push. GPU path: D3D12→D3D11 interop + HX encoding.
 // All constants and function-pointer types are mirrored locally; no headers from
 // NovaPlayer or FFmpeg are required at build time.
@@ -44,7 +44,7 @@ bool NovaNdiSender::LoadDLL() {
     char* lastSep = strrchr(selfPath, '\\');
     if (lastSep) *lastSep = '\0';
 
-    // NovaNDISenderCore runtime directory — sibling to renderstream.dll
+    // NovaNDISenderCore runtime directory - sibling to renderstream.dll
     char subDir[MAX_PATH];
     snprintf(subDir, sizeof(subDir), "%s\\NovaNDISenderCore", selfPath);
 
@@ -193,13 +193,13 @@ bool NovaNdiSender::Start(const std::string& dc_node) {
             if (l.gpu_context) {
                 pfn_start_(l.gpu_context);
                 rs::log::Info("[NovaNdiSender] Start: GPU '%s' HX %dx%d", ndi_name, l.width, l.height);
-                continue;  // GPU path active — skip CPU fallback context
+                continue;  // GPU path active - skip CPU fallback context
             }
-            rs::log::Info("[NovaNdiSender] Start: GPU CreateSendFrameContext failed for '%s' — falling back to CPU",
+            rs::log::Info("[NovaNdiSender] Start: GPU CreateSendFrameContext failed for '%s' - falling back to CPU",
                           ndi_name);
         }
 
-        // CPU context (BGRA) — fallback when GPU unavailable or failed
+        // CPU context (BGRA) - fallback when GPU unavailable or failed
         l.context = pfn_create_(nullptr, kDeviceTypeNone,
                                 reinterpret_cast<const uint8_t*>(ndi_name),
                                 kVideoModeBGRA, 60.0f,
@@ -207,9 +207,20 @@ bool NovaNdiSender::Start(const std::string& dc_node) {
         if (!l.context) {
             rs::log::Error("[NovaNdiSender] Start: CPU CreateSendFrameContext failed for '%s'", ndi_name);
             for (auto& [id2, l2] : layers_) {
-                if (id2 == layer_id) break;
-                if (l2.gpu_context) { pfn_stop_(l2.gpu_context); void* c = l2.gpu_context; pfn_release_(&c); l2.gpu_context = nullptr; }
-                if (l2.context)     { pfn_stop_(l2.context);     void* c = l2.context;     pfn_release_(&c); l2.context     = nullptr; }
+                if (id2 == layer_id)
+                    break;
+                if (l2.gpu_context) {
+                    pfn_stop_(l2.gpu_context);
+                    void* c = l2.gpu_context;
+                    pfn_release_(&c);
+                    l2.gpu_context = nullptr;
+                }
+                if (l2.context) {
+                    pfn_stop_(l2.context);
+                    void* c = l2.context;
+                    pfn_release_(&c);
+                    l2.context = nullptr;
+                }
             }
             layers_.clear();
             return false;
@@ -223,7 +234,10 @@ bool NovaNdiSender::Start(const std::string& dc_node) {
     gpu_ready_ = false;
     if (d3d11) {
         for (auto& [id, l] : layers_) {
-            if (l.gpu_context) { gpu_ready_ = true; break; }
+            if (l.gpu_context) {
+                gpu_ready_ = true;
+                break;
+            }
         }
     }
     rs::log::Info("[NovaNdiSender] Start: success, %zu layers ready (gpu=%d)", layers_.size(), gpu_ready_ ? 1 : 0);
@@ -264,7 +278,7 @@ bool NovaNdiSender::Send(int layer_id, const uint8_t* data) {
 }
 
 // ---------------------------------------------------------------------------
-// GPU path: D3D11 texture → HX encoder → NDI
+// GPU path: D3D11 texture -> HX encoder -> NDI
 // ---------------------------------------------------------------------------
 bool NovaNdiSender::SendTexture(void* d3d11_tex, int layer_id) {
     if (!d3d11_tex)
@@ -296,11 +310,12 @@ bool NovaNdiSender::SendTexture(void* d3d11_tex, int layer_id) {
     bool ok = pfn_send_(l.gpu_context, planes, linesizes, l.width, l.height,
                         kAVPixFmtD3D11, nullptr);
 
-    static int s_gpu_frame = 0;
-    if (++s_gpu_frame <= 3)
-        rs::log::Info("[NovaNdiSender] SendTexture(%d): ctx=%p tex=%p %dx%d -> %s",
-                      layer_id, l.gpu_context, d3d11_tex, l.width, l.height,
-                      ok ? "OK" : "FAILED");
+    // Per-frame SendTexture log - uncomment for GPU path diagnostics.
+    // static int s_gpu_frame = 0;
+    // if (++s_gpu_frame <= 3)
+    //     rs::log::Info("[NovaNdiSender] SendTexture(%d): ctx=%p tex=%p %dx%d -> %s",
+    //                   layer_id, l.gpu_context, d3d11_tex, l.width, l.height,
+    //                   ok ? "OK" : "FAILED");
     return ok;
 }
 

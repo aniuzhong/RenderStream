@@ -42,7 +42,7 @@ bool IsAlreadyRunning() {
         CloseHandle(g_instance_mutex);
         g_instance_mutex = nullptr;
     }
-    // If !exists, we own the mutex — keep it alive for our lifetime
+    // If !exists, we own the mutex - keep it alive for our lifetime
     return exists;
 }
 
@@ -209,7 +209,7 @@ int wmain(int argc, wchar_t* argv[]) {
     std::thread server_thread(RunServer);
     RunMessageLoop();
 
-    // Tray message loop exited — request server stop
+    // Tray message loop exited - request server stop
     g_quit_requested = true;
     server_thread.join();
 

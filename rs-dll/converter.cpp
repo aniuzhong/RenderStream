@@ -170,7 +170,7 @@ bool Converter::EnsureSharedPool(int width, int height) {
     // D3D11CopyToD3D12 / SharedResourceCopy12 use this reverse approach.
     //
     // Natural direction works in standalone tests but triggers GPU crash
-    // (NVIDIA Aftermath TDR) on UE's D3D12 device — CreateCommittedResource
+    // (NVIDIA Aftermath TDR) on UE's D3D12 device - CreateCommittedResource
     // with SHARED heap during active GPU queues is detected as a hang.
     // Reverse direction avoids this: OpenSharedHandle is a lightweight
     // reference, not a new allocation, so it passes UE's validation.
@@ -418,22 +418,23 @@ bool Converter::Submit(const SenderFrame* frame, int layer_key, FrameFormat fmt)
                 const UINT64 after = fence_[wait_idx]->GetCompletedValue();
 
                 if (wait_result != WAIT_OBJECT_0) {
-                    rs::log::Error("[Converter] FENCE TIMEOUT #%d: slot=%d expected=%llu before=%llu after=%llu waited=%.1fms — likely TDR or GPU hang",
+                    rs::log::Error("[Converter] FENCE TIMEOUT #%d: slot=%d expected=%llu before=%llu after=%llu waited=%.1fms - likely TDR or GPU hang",
                         s_frame, wait_idx, expected, before, after, wait_ms);
-                    assert(wait_result == WAIT_OBJECT_0 && "GPU fence wait must succeed within timeout (5s) — possible TDR or GPU hang");
+                    assert(wait_result == WAIT_OBJECT_0 && "GPU fence wait must succeed within timeout (5s) - possible TDR or GPU hang");
                 } else if (wait_ms > 1000.0) {
-                    rs::log::Error("[Converter] FENCE SLOW #%d: slot=%d expected=%llu before=%llu after=%llu waited=%.1fms — GPU under heavy load",
+                    rs::log::Error("[Converter] FENCE SLOW #%d: slot=%d expected=%llu before=%llu after=%llu waited=%.1fms - GPU under heavy load",
                         s_frame, wait_idx, expected, before, after, wait_ms);
                 } else if (wait_ms > 100.0) {
                     rs::log::Info("[Converter] FENCE WARN #%d: slot=%d expected=%llu before=%llu after=%llu waited=%.1fms",
                         s_frame, wait_idx, expected, before, after, wait_ms);
-                } else if (s_frame <= 30) {
+                } /* else if (s_frame <= 30) {
+                    // Per-frame fence logging - useful for debugging timing issues.
                     rs::log::Info("[Converter] FENCE #%d: slot=%d expected=%llu before=%llu after=%llu waited=%.1fms",
                         s_frame, wait_idx, expected, before, after, wait_ms);
-                }
-            } else if (s_frame <= 5) {
+                } */
+            } /* else if (s_frame <= 5) {
                 rs::log::Info("[Converter] FENCE #%d: slot=%d NO WAIT (first frame or fence already signaled)", s_frame, wait_idx);
-            }
+            } */
         }
 
         assert(data_pack_index_ < 0 ||
@@ -463,7 +464,7 @@ std::vector<Output> Converter::Consume() {
             assert(out.layer_id >= 0 && out.layer_id < kMaxLayers && "Consume: layer_id must be valid");
             const size_t canary_offset = static_cast<size_t>(rb_buffer_bytes_) - sizeof(uint32_t);
             const uint32_t canary = *reinterpret_cast<const uint32_t*>(out.cpu_ptr + canary_offset);
-            assert(canary == 0xDEADBEEF && "GPU WRITE OVERRUN DETECTED: canary corrupted — GPU wrote past buffer bounds!");
+            assert(canary == 0xDEADBEEF && "GPU WRITE OVERRUN DETECTED: canary corrupted - GPU wrote past buffer bounds!");
         }
     }
     return result;
