@@ -114,7 +114,7 @@ TEST_CASE("Destructor cleans up handles without crash") {
         REQUIRE(pid != 0);
         ExternalKill(pid);  // terminate before destroying pm
         io.run_for(500ms);
-        // pm destroyed here — handle already closed by poll, no leak
+        // pm destroyed here - handle already closed by poll, no leak
     }
     REQUIRE(true);
 }

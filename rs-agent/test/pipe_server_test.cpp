@@ -87,7 +87,7 @@ TEST_CASE("Data can be updated between connections") {
 TEST_CASE("Empty data serves valid streams JSON") {
     IoRunner runner;
     PipeServer ps(runner.io);
-    // No SetStreamData call — default empty
+    // No SetStreamData call - default empty
     ps.Start();
 
     std::string received = ReadFromPipe();

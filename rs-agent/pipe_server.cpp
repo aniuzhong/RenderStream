@@ -17,7 +17,7 @@ PipeServer::PipeServer(asio::io_context& io)
 
 PipeServer::~PipeServer() {
     running_ = false;
-    // Clean up synchronously — io_context may already be stopped
+    // Clean up synchronously - io_context may already be stopped
     accept_event_.reset();
     if (accept_pipe_) {
         CancelIo(accept_pipe_);
@@ -101,7 +101,7 @@ void PipeServer::BeginAccept() {
             OnAcceptComplete(ec);
         });
     } else if (!connected && err == ERROR_PIPE_CONNECTED) {
-        // Client was already waiting — proceed synchronously
+        // Client was already waiting - proceed synchronously
         CloseHandle(accept_ov_.hEvent);
         accept_ov_.hEvent = nullptr;
 
@@ -165,7 +165,7 @@ void PipeServer::OnAcceptComplete(const std::error_code& ec) {
         return;
     }
 
-    // Client connected — finalize overlapped
+    // Client connected - finalize overlapped
     DWORD bytes = 0;
     GetOverlappedResult(accept_pipe_, &accept_ov_, &bytes, FALSE);
 

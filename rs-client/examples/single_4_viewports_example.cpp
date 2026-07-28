@@ -1,4 +1,4 @@
-// single_4_viewports_example.cpp — single-node 4-viewport tick source.
+// single_4_viewports_example.cpp - single-node 4-viewport tick source.
 //
 // Launches a 4-viewport UE session, then connects to renderstream.dll's
 // TCP listener and sends NDJSON ticks at 60 fps.  Uses the C-style

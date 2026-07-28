@@ -1,4 +1,4 @@
-// cluster_example.cpp — Dual-node nDisplay cluster launcher.
+// cluster_example.cpp - Dual-node nDisplay cluster launcher.
 //
 // 1. Discovers rs-agent nodes on LAN
 // 2. Generates a shared nDisplay config with all discovered nodes

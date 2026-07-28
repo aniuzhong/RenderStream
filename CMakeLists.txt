@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 project(RenderStream LANGUAGES CXX)
 
 if(NOT WIN32)
-    message(WARNING "Building on non-Windows — only rs-client is supported.")
+    message(WARNING "Building on non-Windows - only rs-client is supported.")
 endif()
 
 if(NOT CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -29,7 +29,7 @@ include(FetchContent)
 set(FETCHCONTENT_UPDATES_DISCONNECTED TRUE)
 
 # ---------------------------------------------------------------------------
-# Shared dependencies — fetched once, used by all subdirectories
+# Shared dependencies - fetched once, used by all subdirectories
 # ---------------------------------------------------------------------------
 
 # ASIO (standalone, header-only)
@@ -55,7 +55,7 @@ set(JSON_BuildTests OFF CACHE INTERNAL "")
 set(JSON_Install OFF CACHE INTERNAL "")
 FetchContent_MakeAvailable(nlohmann_json)
 
-# fmt (used by spdlog + restinio — single shared instance)
+# fmt (used by spdlog + restinio - single shared instance)
 FetchContent_Declare(
     fmt
     GIT_REPOSITORY https://github.com/fmtlib/fmt.git
