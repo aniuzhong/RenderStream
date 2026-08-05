@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="sender">
+      <UniqueIdentifier>{A1B2C3D4-1111-2222-3333-444455556666}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="converter.cpp" />
+    <ClCompile Include="link.cpp" />
+    <ClCompile Include="logging.cpp" />
+    <ClCompile Include="renderstream.cpp" />
+    <ClCompile Include="streams.cpp" />
+    <ClCompile Include="sender\nova_ndi_sender.cpp">
+      <Filter>sender</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="converter.h" />
+    <ClInclude Include="link.h" />
+    <ClInclude Include="logging.h" />
+    <ClInclude Include="streams.h" />
+    <ClInclude Include="sender\nova_ndi_sender.h">
+      <Filter>sender</Filter>
+    </ClInclude>
+    <ClInclude Include="sender\sender.h">
+      <Filter>sender</Filter>
+    </ClInclude>
+  </ItemGroup>
+</Project>

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="utils">
+      <UniqueIdentifier>{B2C3D4E5-2222-3333-4444-555566667777}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="llhttp">
+      <UniqueIdentifier>{C3D4E5F6-3333-4444-5555-666677778888}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="http_server.cpp" />
+    <ClCompile Include="lan_announcer.cpp" />
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="pipe_server.cpp" />
+    <ClCompile Include="process_manager.cpp" />
+    <ClCompile Include="utils\lan_net.cpp">
+      <Filter>utils</Filter>
+    </ClCompile>
+    <ClCompile Include="..\third_party\llhttp\src\llhttp.c">
+      <Filter>llhttp</Filter>
+    </ClCompile>
+    <ClCompile Include="..\third_party\llhttp\src\http.c">
+      <Filter>llhttp</Filter>
+    </ClCompile>
+    <ClCompile Include="..\third_party\llhttp\src\api.c">
+      <Filter>llhttp</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="http_server.h" />
+    <ClInclude Include="lan_announcer.h" />
+    <ClInclude Include="logger.h" />
+    <ClInclude Include="pipe_server.h" />
+    <ClInclude Include="process_manager.h" />
+    <ClInclude Include="utils\lan_net.h">
+      <Filter>utils</Filter>
+    </ClInclude>
+    <ClInclude Include="utils\encoding.h">
+      <Filter>utils</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="rs-agent-icon.rc" />
+  </ItemGroup>
+</Project>

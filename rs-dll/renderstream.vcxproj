@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{8E2F5C4A-91B3-4D6E-A7C8-2F1B9D4E5A63}</ProjectGuid>
+    <RootNamespace>renderstream</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v143</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="Shared">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <TargetName>renderstream</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>UNICODE;_UNICODE;_WINDOWS;_USRDLL;RS_SENDER_NOVANDI;ASIO_STANDALONE;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)..\common;$(ProjectDir)..\third_party\asio\asio\include;$(ProjectDir)..\third_party\json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalOptions>/permissive- /utf-8 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>d3d11.lib;d3d12.lib;dxgi.lib;ole32.lib;uuid.lib;winmm.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command>if exist "$(SolutionDir)..\..\NovaPlayer\bin\NovaNDISenderCore.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\NovaNDISenderCore.dll" "$(OutDir)NovaNDISenderCore\"
+if exist "$(SolutionDir)..\..\NovaPlayer\bin\Processing.NDI.Lib.x64.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\Processing.NDI.Lib.x64.dll" "$(OutDir)NovaNDISenderCore\"
+if exist "$(SolutionDir)..\..\NovaPlayer\bin\avcodecd.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\avcodecd.dll" "$(OutDir)NovaNDISenderCore\"
+if exist "$(SolutionDir)..\..\NovaPlayer\bin\avformatd.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\avformatd.dll" "$(OutDir)NovaNDISenderCore\"
+if exist "$(SolutionDir)..\..\NovaPlayer\bin\avutild.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\avutild.dll" "$(OutDir)NovaNDISenderCore\"
+if exist "$(SolutionDir)..\..\NovaPlayer\bin\swresampled.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\swresampled.dll" "$(OutDir)NovaNDISenderCore\"
+if exist "$(SolutionDir)..\..\NovaPlayer\bin\swscaled.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\swscaled.dll" "$(OutDir)NovaNDISenderCore\"
+if exist "$(SolutionDir)..\..\NovaPlayer\bin\avfilterd.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\avfilterd.dll" "$(OutDir)NovaNDISenderCore\"
+if exist "$(SolutionDir)..\..\NovaPlayer\bin\avdeviced.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\avdeviced.dll" "$(OutDir)NovaNDISenderCore\"</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <PreprocessorDefinitions>UNICODE;_UNICODE;_WINDOWS;_USRDLL;RS_SENDER_NOVANDI;ASIO_STANDALONE;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(ProjectDir);$(ProjectDir)..\common;$(ProjectDir)..\third_party\asio\asio\include;$(ProjectDir)..\third_party\json\single_include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <AdditionalOptions>/permissive- /utf-8 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <AdditionalDependencies>d3d11.lib;d3d12.lib;dxgi.lib;ole32.lib;uuid.lib;winmm.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <PostBuildEvent>
+      <Command>if exist "$(SolutionDir)..\..\NovaPlayer\bin\NovaNDISenderCore.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\NovaNDISenderCore.dll" "$(OutDir)NovaNDISenderCore\"
+if exist "$(SolutionDir)..\..\NovaPlayer\bin\Processing.NDI.Lib.x64.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\Processing.NDI.Lib.x64.dll" "$(OutDir)NovaNDISenderCore\"
+if exist "$(SolutionDir)..\..\NovaPlayer\bin\avcodec.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\avcodec.dll" "$(OutDir)NovaNDISenderCore\"
+if exist "$(SolutionDir)..\..\NovaPlayer\bin\avformat.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\avformat.dll" "$(OutDir)NovaNDISenderCore\"
+if exist "$(SolutionDir)..\..\NovaPlayer\bin\avutil.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\avutil.dll" "$(OutDir)NovaNDISenderCore\"
+if exist "$(SolutionDir)..\..\NovaPlayer\bin\swresample.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\swresample.dll" "$(OutDir)NovaNDISenderCore\"
+if exist "$(SolutionDir)..\..\NovaPlayer\bin\swscale.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\swscale.dll" "$(OutDir)NovaNDISenderCore\"
+if exist "$(SolutionDir)..\..\NovaPlayer\bin\avfilter.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\avfilter.dll" "$(OutDir)NovaNDISenderCore\"
+if exist "$(SolutionDir)..\..\NovaPlayer\bin\avdevice.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\avdevice.dll" "$(OutDir)NovaNDISenderCore\"</Command>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="converter.cpp" />
+    <ClCompile Include="link.cpp" />
+    <ClCompile Include="logging.cpp" />
+    <ClCompile Include="renderstream.cpp" />
+    <ClCompile Include="streams.cpp" />
+    <ClCompile Include="sender\nova_ndi_sender.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="converter.h" />
+    <ClInclude Include="link.h" />
+    <ClInclude Include="logging.h" />
+    <ClInclude Include="streams.h" />
+    <ClInclude Include="sender\nova_ndi_sender.h" />
+    <ClInclude Include="sender\sender.h" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>
