@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -57,17 +57,7 @@
     <Link>
       <AdditionalDependencies>d3d11.lib;d3d12.lib;dxgi.lib;ole32.lib;uuid.lib;winmm.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
-    <PostBuildEvent>
-      <Command>if exist "$(SolutionDir)..\..\NovaPlayer\bin\NovaNDISenderCore.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\NovaNDISenderCore.dll" "$(OutDir)NovaNDISenderCore\"
-if exist "$(SolutionDir)..\..\NovaPlayer\bin\Processing.NDI.Lib.x64.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\Processing.NDI.Lib.x64.dll" "$(OutDir)NovaNDISenderCore\"
-if exist "$(SolutionDir)..\..\NovaPlayer\bin\avcodecd.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\avcodecd.dll" "$(OutDir)NovaNDISenderCore\"
-if exist "$(SolutionDir)..\..\NovaPlayer\bin\avformatd.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\avformatd.dll" "$(OutDir)NovaNDISenderCore\"
-if exist "$(SolutionDir)..\..\NovaPlayer\bin\avutild.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\avutild.dll" "$(OutDir)NovaNDISenderCore\"
-if exist "$(SolutionDir)..\..\NovaPlayer\bin\swresampled.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\swresampled.dll" "$(OutDir)NovaNDISenderCore\"
-if exist "$(SolutionDir)..\..\NovaPlayer\bin\swscaled.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\swscaled.dll" "$(OutDir)NovaNDISenderCore\"
-if exist "$(SolutionDir)..\..\NovaPlayer\bin\avfilterd.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\avfilterd.dll" "$(OutDir)NovaNDISenderCore\"
-if exist "$(SolutionDir)..\..\NovaPlayer\bin\avdeviced.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\avdeviced.dll" "$(OutDir)NovaNDISenderCore\"</Command>
-    </PostBuildEvent>
+    
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <ClCompile>
@@ -81,17 +71,7 @@ if exist "$(SolutionDir)..\..\NovaPlayer\bin\avdeviced.dll" xcopy /Y /I "$(Solut
     <Link>
       <AdditionalDependencies>d3d11.lib;d3d12.lib;dxgi.lib;ole32.lib;uuid.lib;winmm.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
-    <PostBuildEvent>
-      <Command>if exist "$(SolutionDir)..\..\NovaPlayer\bin\NovaNDISenderCore.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\NovaNDISenderCore.dll" "$(OutDir)NovaNDISenderCore\"
-if exist "$(SolutionDir)..\..\NovaPlayer\bin\Processing.NDI.Lib.x64.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\Processing.NDI.Lib.x64.dll" "$(OutDir)NovaNDISenderCore\"
-if exist "$(SolutionDir)..\..\NovaPlayer\bin\avcodec.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\avcodec.dll" "$(OutDir)NovaNDISenderCore\"
-if exist "$(SolutionDir)..\..\NovaPlayer\bin\avformat.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\avformat.dll" "$(OutDir)NovaNDISenderCore\"
-if exist "$(SolutionDir)..\..\NovaPlayer\bin\avutil.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\avutil.dll" "$(OutDir)NovaNDISenderCore\"
-if exist "$(SolutionDir)..\..\NovaPlayer\bin\swresample.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\swresample.dll" "$(OutDir)NovaNDISenderCore\"
-if exist "$(SolutionDir)..\..\NovaPlayer\bin\swscale.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\swscale.dll" "$(OutDir)NovaNDISenderCore\"
-if exist "$(SolutionDir)..\..\NovaPlayer\bin\avfilter.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\avfilter.dll" "$(OutDir)NovaNDISenderCore\"
-if exist "$(SolutionDir)..\..\NovaPlayer\bin\avdevice.dll" xcopy /Y /I "$(SolutionDir)..\..\NovaPlayer\bin\avdevice.dll" "$(OutDir)NovaNDISenderCore\"</Command>
-    </PostBuildEvent>
+    
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="converter.cpp" />
