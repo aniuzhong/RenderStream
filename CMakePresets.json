@@ -1,0 +1,24 @@
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "vendored",
+      "displayName": "Offline vendored dependencies",
+      "description": "Configure using third_party/ copies instead of fetching from GitHub (fully offline)",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build-vendored",
+      "cacheVariables": {
+        "FETCHCONTENT_SOURCE_DIR_ASIO": "${sourceDir}/third_party/asio",
+        "FETCHCONTENT_SOURCE_DIR_NLOHMANN_JSON": "${sourceDir}/third_party/json",
+        "FETCHCONTENT_SOURCE_DIR_FMT": "${sourceDir}/third_party/fmt",
+        "FETCHCONTENT_SOURCE_DIR_LLHTTP": "${sourceDir}/third_party/llhttp",
+        "FETCHCONTENT_SOURCE_DIR_EXPECTED-LITE": "${sourceDir}/third_party/expected-lite",
+        "FETCHCONTENT_SOURCE_DIR_SPDLOG": "${sourceDir}/third_party/spdlog",
+        "FETCHCONTENT_SOURCE_DIR_RESTINIO": "${sourceDir}/third_party/restinio",
+        "FETCHCONTENT_SOURCE_DIR_CATCH2": "${sourceDir}/third_party/catch2",
+        "FETCHCONTENT_SOURCE_DIR_HTTPLIB": "${sourceDir}/third_party/httplib"
+      }
+    }
+  ]
+}
